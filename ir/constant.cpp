@@ -52,11 +52,8 @@ expr FloatConst::getTypeConstraints() const {
 }
 
 StateValue FloatConst::toSMT(State &s) const {
-  if (auto n = get_if<uint64_t>(&val)) {
-    return { expr::mkUInt(*n, getType().bits())
-               .BV2float(getType().getDummyValue(true).value),
-             true };
-  }
+  if (auto n = get_if<uint64_t>(&val))
+    return { expr::mkUInt(*n, getType().bits()), true };
 
   expr e;
   double v = get<double>(val);
@@ -66,7 +63,7 @@ StateValue FloatConst::toSMT(State &s) const {
   case FloatType::Double:  e = expr::mkDouble(v); break;
   case FloatType::Unknown: UNREACHABLE();
   }
-  return { move(e), true };
+  return { e.float2BV(), true };
 }
 
 

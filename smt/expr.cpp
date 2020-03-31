@@ -1398,6 +1398,12 @@ expr expr::BV2float(const expr &type) const {
       return arg;
   }
 
+  expr cond, then, els;
+  if (isIf(cond, then, els) &&
+      then.isAppOf(Z3_OP_FPA_TO_IEEE_BV) &&
+      els.isAppOf(Z3_OP_FPA_TO_IEEE_BV))
+    return mkIf(cond, then.BV2float(type), els.BV2float(type));
+
   return simplify_const(Z3_mk_fpa_to_fp_bv(ctx(), ast(), type.sort()), *this);
 }
 

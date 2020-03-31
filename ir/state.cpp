@@ -237,12 +237,8 @@ State::addFnCall(const string &name, vector<StateValue> &&inputs,
   auto &I = call_data_pair.first;
   bool inserted = call_data_pair.second;
 
-  auto mk_val = [&](const Type &t, const string &name) {
-    if (t.isPtrType())
-      return memory.mkFnRet(name.c_str(), I->first.args_ptr);
-
-    auto v = expr::mkFreshVar(name.c_str(), t.getDummyValue(false).value);
-    return make_pair(v, v);
+  auto mkFnRet = [&](Type *t, const string &name) {
+    return t->mkFnRet(name.c_str(), *this, I->first.args_ptr);
   };
 
   if (inserted) {
@@ -253,7 +249,7 @@ State::addFnCall(const string &name, vector<StateValue> &&inputs,
       string valname = name + "#val";
       string npname = name + "#np";
       for (auto t : out_types) {
-        values.emplace_back(mk_val(*t, valname).first,
+        values.emplace_back(mkFnRet(t, valname.c_str()).first,
                             expr::mkFreshVar(npname.c_str(), false));
       }
     }
@@ -261,7 +257,8 @@ State::addFnCall(const string &name, vector<StateValue> &&inputs,
     string ub_name = string(name) + "#ub";
     I->second = { move(values), expr::mkFreshVar(ub_name.c_str(), false),
                   writes_memory
-                  ? memory.mkCallState(argmemonly ? &I->first.args_ptr : nullptr)
+                  ? memory.mkCallState(argmemonly ? &I->first.args_ptr
+                                                  : nullptr)
                   : Memory::CallState(), true };
   } else {
     I->second.used = true;
@@ -281,7 +278,7 @@ State::addFnCall(const string &name, vector<StateValue> &&inputs,
   auto T = out_types.begin();
   auto var_name = name + "#pval";
   for (auto &[v, np] : I->second.retvals) {
-    auto [val_poison, var] = mk_val(**T, var_name);
+    auto [val_poison, var] = mkFnRet(*T, var_name);
     ret.emplace_back(expr::mkIf(all_args_np, v, val_poison), expr(np));
     addQuantVar(move(var));
     ++T;

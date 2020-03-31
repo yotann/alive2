@@ -196,10 +196,15 @@ static expr any_fp_zero(State &s, expr v) {
                     v);
 }
 
-static StateValue fm_poison(State &s, expr a, expr b, expr c,
+static StateValue fm_poison(State &s, const expr &a0, const expr &b0,
+                            const expr &c0, const Type &ty,
                             function<expr(expr&,expr&,expr&)> fn,
                             FastMathFlags fmath, bool only_input,
                             bool is_ternary = true) {
+  expr a = ty.fromInt(a0);
+  expr b = ty.fromInt(b0);
+  expr c = ty.fromInt(c0);
+
   if (fmath.flags & FastMathFlags::NSZ) {
     a = any_fp_zero(s, move(a));
     b = any_fp_zero(s, move(b));
@@ -235,25 +240,25 @@ static StateValue fm_poison(State &s, expr a, expr b, expr c,
   if (fmath.flags & FastMathFlags::NSZ && !only_input)
     val = any_fp_zero(s, move(val));
 
-  return { move(val), move(non_poison) };
+  return { only_input ? move(val) : ty.toInt(s, move(val)), move(non_poison) };
 }
 
-static StateValue fm_poison(State &s, expr a, expr b,
-                            function<expr(expr&,expr&)> fn,
+static StateValue fm_poison(State &s, const expr &a, const expr &b,
+                            const Type &ty, function<expr(expr&,expr&)> fn,
                             FastMathFlags fmath, bool only_input) {
-  return fm_poison(s, move(a), move(b), expr(),
+  return fm_poison(s, a, b, expr(), ty,
                    [&](expr &a, expr &b, expr &c) { return fn(a, b); },
                    fmath, only_input, false);
 }
 
 StateValue BinOp::toSMT(State &s) const {
   bool vertical_zip = false;
-  function<StateValue(const expr&, const expr&, const expr&, const expr&)>
-    fn, scalar_op;
+  function<StateValue(const expr&, const expr&, const expr&, const expr&,
+                      const Type&)> fn, scalar_op;
 
   switch (op) {
   case Add:
-    fn = [&](auto a, auto ap, auto b, auto bp) -> StateValue {
+    fn = [&](auto &a, auto &ap, auto &b, auto &bp, auto &ty) -> StateValue {
       expr non_poison = true;
       if (flags & NSW)
         non_poison &= a.add_no_soverflow(b);
@@ -264,7 +269,7 @@ StateValue BinOp::toSMT(State &s) const {
     break;
 
   case Sub:
-    fn = [&](auto a, auto ap, auto b, auto bp) -> StateValue {
+    fn = [&](auto &a, auto &ap, auto &b, auto &bp, auto &ty) -> StateValue {
       expr non_poison = true;
       if (flags & NSW)
         non_poison &= a.sub_no_soverflow(b);
@@ -275,7 +280,7 @@ StateValue BinOp::toSMT(State &s) const {
     break;
 
   case Mul:
-    fn = [&](auto a, auto ap, auto b, auto bp) -> StateValue {
+    fn = [&](auto &a, auto &ap, auto &b, auto &bp, auto &ty) -> StateValue {
       expr non_poison = true;
       if (flags & NSW)
         non_poison &= a.mul_no_soverflow(b);
@@ -286,7 +291,7 @@ StateValue BinOp::toSMT(State &s) const {
     break;
 
   case SDiv:
-    fn = [&](auto a, auto ap, auto b, auto bp) -> StateValue {
+    fn = [&](auto &a, auto &ap, auto &b, auto &bp, auto &ty) -> StateValue {
       expr non_poison = true;
       div_ub(s, a, b, ap, bp, true);
       if (flags & Exact)
@@ -296,7 +301,7 @@ StateValue BinOp::toSMT(State &s) const {
     break;
 
   case UDiv:
-    fn = [&](auto a, auto ap, auto b, auto bp) -> StateValue {
+    fn = [&](auto &a, auto &ap, auto &b, auto &bp, auto &ty) -> StateValue {
       expr non_poison = true;
       div_ub(s, a, b, ap, bp, false);
       if (flags & Exact)
@@ -306,21 +311,21 @@ StateValue BinOp::toSMT(State &s) const {
     break;
 
   case SRem:
-    fn = [&](auto a, auto ap, auto b, auto bp) -> StateValue {
+    fn = [&](auto &a, auto &ap, auto &b, auto &bp, auto &ty) -> StateValue {
       div_ub(s, a, b, ap, bp, true);
       return { a.srem(b), true };
     };
     break;
 
   case URem:
-    fn = [&](auto a, auto ap, auto b, auto bp) -> StateValue {
+    fn = [&](auto &a, auto &ap, auto &b, auto &bp, auto &ty) -> StateValue {
       div_ub(s, a, b, ap, bp, false);
       return { a.urem(b), true };
     };
     break;
 
   case Shl:
-    fn = [&](auto a, auto ap, auto b, auto bp) -> StateValue {
+    fn = [&](auto &a, auto &ap, auto &b, auto &bp, auto &ty) -> StateValue {
       auto non_poison = b.ult(b.bits());
       if (flags & NSW)
         non_poison &= a.shl_no_soverflow(b);
@@ -332,7 +337,7 @@ StateValue BinOp::toSMT(State &s) const {
     break;
 
   case AShr:
-    fn = [&](auto a, auto ap, auto b, auto bp) -> StateValue {
+    fn = [&](auto &a, auto &ap, auto &b, auto &bp, auto &ty) -> StateValue {
       auto non_poison = b.ult(b.bits());
       if (flags & Exact)
         non_poison &= a.ashr_exact(b);
@@ -341,7 +346,7 @@ StateValue BinOp::toSMT(State &s) const {
     break;
 
   case LShr:
-    fn = [&](auto a, auto ap, auto b, auto bp) -> StateValue {
+    fn = [&](auto &a, auto &ap, auto &b, auto &bp, auto &ty) -> StateValue {
       auto non_poison = b.ult(b.bits());
       if (flags & Exact)
         non_poison &= a.lshr_exact(b);
@@ -350,56 +355,56 @@ StateValue BinOp::toSMT(State &s) const {
     break;
 
   case SAdd_Sat:
-    fn = [](auto a, auto ap, auto b, auto bp) -> StateValue {
+    fn = [](auto &a, auto &ap, auto &b, auto &bp, auto &ty) -> StateValue {
       return { a.sadd_sat(b), true };
     };
     break;
 
   case UAdd_Sat:
-    fn = [](auto a, auto ap, auto b, auto bp) -> StateValue {
+    fn = [](auto &a, auto &ap, auto &b, auto &bp, auto &ty) -> StateValue {
       return { a.uadd_sat(b), true };
     };
     break;
 
   case SSub_Sat:
-    fn = [](auto a, auto ap, auto b, auto bp) -> StateValue {
+    fn = [](auto &a, auto &ap, auto &b, auto &bp, auto &ty) -> StateValue {
       return { a.ssub_sat(b), true };
     };
     break;
 
   case USub_Sat:
-    fn = [](auto a, auto ap, auto b, auto bp) -> StateValue {
+    fn = [](auto &a, auto &ap, auto &b, auto &bp, auto &ty) -> StateValue {
       return { a.usub_sat(b), true };
     };
     break;
 
   case And:
-    fn = [](auto a, auto ap, auto b, auto bp) -> StateValue {
+    fn = [](auto &a, auto &ap, auto &b, auto &bp, auto &ty) -> StateValue {
       return { a & b, true };
     };
     break;
 
   case Or:
-    fn = [](auto a, auto ap, auto b, auto bp) -> StateValue {
+    fn = [](auto &a, auto &ap, auto &b, auto &bp, auto &ty) -> StateValue {
       return { a | b, true };
     };
     break;
 
   case Xor:
-    fn = [](auto a, auto ap, auto b, auto bp) -> StateValue {
+    fn = [](auto &a, auto &ap, auto &b, auto &bp, auto &ty) -> StateValue {
       return { a ^ b, true };
     };
     break;
 
   case Cttz:
-    fn = [](auto a, auto ap, auto b, auto bp) -> StateValue {
+    fn = [](auto &a, auto &ap, auto &b, auto &bp, auto &ty) -> StateValue {
       return { a.cttz(),
                b == 0u || a != 0u };
     };
     break;
 
   case Ctlz:
-    fn = [](auto a, auto ap, auto b, auto bp) -> StateValue {
+    fn = [](auto &a, auto &ap, auto &b, auto &bp, auto &ty) -> StateValue {
       return { a.ctlz(),
                b == 0u || a != 0u };
     };
@@ -407,95 +412,95 @@ StateValue BinOp::toSMT(State &s) const {
 
   case SAdd_Overflow:
     vertical_zip = true;
-    fn = [](auto a, auto ap, auto b, auto bp) -> StateValue {
+    fn = [](auto &a, auto &ap, auto &b, auto &bp, auto &ty) -> StateValue {
       return { a + b, (!a.add_no_soverflow(b)).toBVBool() };
     };
     break;
 
   case UAdd_Overflow:
     vertical_zip = true;
-    fn = [](auto a, auto ap, auto b, auto bp) -> StateValue {
+    fn = [](auto &a, auto &ap, auto &b, auto &bp, auto &ty) -> StateValue {
       return { a + b, (!a.add_no_uoverflow(b)).toBVBool() };
     };
     break;
 
   case SSub_Overflow:
     vertical_zip = true;
-    fn = [](auto a, auto ap, auto b, auto bp) -> StateValue {
+    fn = [](auto &a, auto &ap, auto &b, auto &bp, auto &ty) -> StateValue {
       return { a - b, (!a.sub_no_soverflow(b)).toBVBool() };
     };
     break;
 
   case USub_Overflow:
     vertical_zip = true;
-    fn = [](auto a, auto ap, auto b, auto bp) -> StateValue {
+    fn = [](auto &a, auto &ap, auto &b, auto &bp, auto &ty) -> StateValue {
       return { a - b, (!a.sub_no_uoverflow(b)).toBVBool() };
     };
     break;
 
   case SMul_Overflow:
     vertical_zip = true;
-    fn = [](auto a, auto ap, auto b, auto bp) -> StateValue {
+    fn = [](auto &a, auto &ap, auto &b, auto &bp, auto &ty) -> StateValue {
       return { a * b, (!a.mul_no_soverflow(b)).toBVBool() };
     };
     break;
 
   case UMul_Overflow:
     vertical_zip = true;
-    fn = [](auto a, auto ap, auto b, auto bp) -> StateValue {
+    fn = [](auto &a, auto &ap, auto &b, auto &bp, auto &ty) -> StateValue {
       return { a * b, (!a.mul_no_uoverflow(b)).toBVBool() };
     };
     break;
 
   case FAdd:
-    fn = [&](auto a, auto ap, auto b, auto bp) -> StateValue {
-      return fm_poison(s, a, b, [](expr &a, expr &b) { return a.fadd(b); },
+    fn = [&](auto &a, auto &ap, auto &b, auto &bp, auto &ty) -> StateValue {
+      return fm_poison(s, a, b, ty, [](expr &a, expr &b) { return a.fadd(b); },
                        fmath, false);
     };
     break;
 
   case FSub:
-    fn = [&](auto a, auto ap, auto b, auto bp) -> StateValue {
-      return fm_poison(s, a, b, [](expr &a, expr &b) { return a.fsub(b); },
+    fn = [&](auto &a, auto &ap, auto &b, auto &bp, auto &ty) -> StateValue {
+      return fm_poison(s, a, b, ty, [](expr &a, expr &b) { return a.fsub(b); },
                        fmath, false);
     };
     break;
 
   case FMul:
-    fn = [&](auto a, auto ap, auto b, auto bp) -> StateValue {
-      return fm_poison(s, a, b, [](expr &a, expr &b) { return a.fmul(b); },
+    fn = [&](auto &a, auto &ap, auto &b, auto &bp, auto &ty) -> StateValue {
+      return fm_poison(s, a, b, ty, [](expr &a, expr &b) { return a.fmul(b); },
                        fmath, false);
     };
     break;
 
   case FDiv:
-    fn = [&](auto a, auto ap, auto b, auto bp) -> StateValue {
-      return fm_poison(s, a, b, [](expr &a, expr &b) { return a.fdiv(b); },
+    fn = [&](auto &a, auto &ap, auto &b, auto &bp, auto &ty) -> StateValue {
+      return fm_poison(s, a, b, ty, [](expr &a, expr &b) { return a.fdiv(b); },
                        fmath, false);
     };
     break;
 
   case FRem:
-    fn = [&](auto a, auto ap, auto b, auto bp) -> StateValue {
+    fn = [&](auto &a, auto &ap, auto &b, auto &bp, auto &ty) -> StateValue {
       // TODO; Z3 has no support for LLVM's frem which is actually an fmod
-      return fm_poison(s, a, b, [](expr &a, expr &b) { return expr(); }, fmath,
-                       false);
+      return fm_poison(s, a, b, ty, [](expr &a, expr &b) { return expr(); },
+                       fmath, false);
     };
     break;
   }
 
   function<pair<StateValue,StateValue>(const expr&, const expr&, const expr&,
-                                       const expr&)> zip_op;
+                                       const expr&, const Type&)> zip_op;
   if (vertical_zip) {
-    zip_op = [&](auto a, auto ap, auto b, auto bp) {
-      auto [v1, v2] = fn(a, ap, b, bp);
+    zip_op = [&](auto &a, auto &ap, auto &b, auto &bp, auto &ty) {
+      auto [v1, v2] = fn(a, ap, b, bp, ty);
       expr non_poison = ap && bp;
       StateValue sv1(move(v1), expr(non_poison));
       return make_pair(move(sv1), StateValue(move(v2), move(non_poison)));
     };
   } else {
-    scalar_op = [&](auto a, auto ap, auto b, auto bp) -> StateValue {
-      auto [v, np] = fn(a, ap, b, bp);
+    scalar_op = [&](auto a, auto ap, auto b, auto bp, auto &ty) -> StateValue {
+      auto [v, np] = fn(a, ap, b, bp, ty);
       return { move(v), ap && bp && np };
     };
   }
@@ -509,19 +514,21 @@ StateValue BinOp::toSMT(State &s) const {
 
     if (vertical_zip) {
       auto ty = lhs->getType().getAsAggregateType();
+      auto &ty_elem = ty->getChild(0);
       vector<StateValue> vals1, vals2;
 
       for (unsigned i = 0, e = ty->numElementsConst(); i != e; ++i) {
         auto ai = ty->extract(a, i);
         auto bi = ty->extract(b, i);
         auto [v1, v2] = zip_op(ai.value, ai.non_poison, bi.value,
-                               bi.non_poison);
+                               bi.non_poison, ty_elem);
         vals1.emplace_back(move(v1));
         vals2.emplace_back(move(v2));
       }
       vals.emplace_back(ty->aggregateVals(vals1));
       vals.emplace_back(ty->aggregateVals(vals2));
     } else {
+      auto &ty_elem = ty->getChild(0);
       StateValue tmp;
       for (unsigned i = 0, e = ty->numElementsConst(); i != e; ++i) {
         auto ai = ty->extract(a, i);
@@ -537,7 +544,7 @@ StateValue BinOp::toSMT(State &s) const {
           break;
         }
         vals.emplace_back(scalar_op(ai.value, ai.non_poison, bi->value,
-                                    bi->non_poison));
+                                    bi->non_poison, ty_elem));
       }
     }
     return ty->aggregateVals(vals);
@@ -545,12 +552,13 @@ StateValue BinOp::toSMT(State &s) const {
 
   if (vertical_zip) {
     vector<StateValue> vals;
-    auto [v1, v2] = zip_op(a.value, a.non_poison, b.value, b.non_poison);
+    auto [v1, v2] = zip_op(a.value, a.non_poison, b.value, b.non_poison,
+                           lhs->getType());
     vals.emplace_back(move(v1));
     vals.emplace_back(move(v2));
     return getType().getAsAggregateType()->aggregateVals(vals);
   }
-  return scalar_op(a.value, a.non_poison, b.value, b.non_poison);
+  return scalar_op(a.value, a.non_poison, b.value, b.non_poison, getType());
 }
 
 expr BinOp::getTypeConstraints(const Function &f) const {
@@ -627,7 +635,7 @@ void UnaryOp::print(ostream &os) const {
 }
 
 StateValue UnaryOp::toSMT(State &s) const {
-  function<expr(const expr&)> fn;
+  function<expr(const expr&, const Type&)> fn;
 
   switch (op) {
   case Copy:
@@ -636,13 +644,13 @@ StateValue UnaryOp::toSMT(State &s) const {
       return val->toSMT(s);
     return s[*val];
   case BitReverse:
-    fn = [](auto v) { return v.bitreverse(); };
+    fn = [](auto &v, auto &ty) { return v.bitreverse(); };
     break;
   case BSwap:
-    fn = [](auto v) { return v.bswap(); };
+    fn = [](auto &v, auto &ty) { return v.bswap(); };
     break;
   case Ctpop:
-    fn = [](auto v) { return v.ctpop(); };
+    fn = [](auto &v, auto &ty) { return v.ctpop(); };
     break;
   case IsConstant: {
     expr one = expr::mkUInt(1, 1);
@@ -658,7 +666,7 @@ StateValue UnaryOp::toSMT(State &s) const {
     // TODO
     if (!fmath.isNone())
       return {};
-    fn = [](auto v) { return v.fneg(); };
+    fn = [&](auto &v, auto &ty) { return ty.toInt(s, ty.fromInt(v).fneg()); };
     break;
   }
 
@@ -667,13 +675,14 @@ StateValue UnaryOp::toSMT(State &s) const {
   if (getType().isVectorType()) {
     vector<StateValue> vals;
     auto ty = getType().getAsAggregateType();
+    auto &elem_ty = ty->getChild(0);
     for (unsigned i = 0, e = ty->numElementsConst(); i != e; ++i) {
       auto vi = ty->extract(v, i);
-      vals.emplace_back(fn(vi.value), move(vi.non_poison));
+      vals.emplace_back(fn(vi.value, elem_ty), move(vi.non_poison));
     }
     return ty->aggregateVals(vals);
   }
-  return { fn(v.value), expr(v.non_poison) };
+  return { fn(v.value, getType()), expr(v.non_poison) };
 }
 
 expr UnaryOp::getTypeConstraints(const Function &f) const {
@@ -751,25 +760,27 @@ StateValue TernaryOp::toSMT(State &s) const {
   auto &av = s[*a];
   auto &bv = s[*b];
   auto &cv = s[*c];
-  function<StateValue(const expr&, const expr&, const expr&)> fn;
+  function<StateValue(const expr&, const expr&, const expr&, const Type&)> fn;
 
   switch (op) {
   case FShl:
-    fn = [](auto a, auto b, auto c) -> StateValue {
+    fn = [](auto &a, auto &b, auto &c, auto &ty) -> StateValue {
       return { expr::fshl(a, b, c), true };
     };
     break;
 
   case FShr:
-    fn = [](auto a, auto b, auto c) -> StateValue {
+    fn = [](auto &a, auto &b, auto &c, auto &ty) -> StateValue {
       return { expr::fshr(a, b, c), true };
     };
     break;
 
   case FMA:
-    fn = [&](auto a, auto b, auto c) -> StateValue {
-      return fm_poison(s, a, b, c, [](expr &a, expr &b, expr &c) {
-                                   return expr::fma(a, b, c); }, fmath, false);
+    fn = [&](auto &a, auto &b, auto &c, auto &ty) -> StateValue {
+      return fm_poison(s, a, b, c, ty,
+                       [](expr &a, expr &b, expr &c) {
+                         return expr::fma(a, b, c);
+                       }, fmath, false);
     };
     break;
   }
@@ -777,18 +788,19 @@ StateValue TernaryOp::toSMT(State &s) const {
   if (getType().isVectorType()) {
     vector<StateValue> vals;
     auto ty = getType().getAsAggregateType();
+    auto &ty_elem = ty->getChild(0);
 
     for (unsigned i = 0, e = ty->numElementsConst(); i != e; ++i) {
       auto ai = ty->extract(av, i);
       auto bi = ty->extract(bv, i);
       auto ci = ty->extract(cv, i);
-      auto [v, np] = fn(ai.value, bi.value, ci.value);
+      auto [v, np] = fn(ai.value, bi.value, ci.value, ty_elem);
       vals.emplace_back(move(v), ai.non_poison && bi.non_poison &&
                                  ci.non_poison && np);
     }
     return ty->aggregateVals(vals);
   }
-  auto [v, np] = fn(av.value, bv.value, cv.value);
+  auto [v, np] = fn(av.value, bv.value, cv.value, getType());
   return { move(v), av.non_poison && bv.non_poison && cv.non_poison && np };
 }
 
@@ -844,75 +856,82 @@ void ConversionOp::print(ostream &os) const {
 
 StateValue ConversionOp::toSMT(State &s) const {
   auto v = s[*val];
-  function<StateValue(expr &&, const Type &)> fn;
+  function<StateValue(expr&&, const Type&, const Type&)> fn;
 
   switch (op) {
   case SExt:
-    fn = [](auto &&val, auto &to_type) -> StateValue {
-      return { val.sext(to_type.bits() - val.bits()), true };
+    fn = [](auto &&val, auto &from_ty, auto &to_ty) -> StateValue {
+      return { val.sext(to_ty.bits() - val.bits()), true };
     };
     break;
   case ZExt:
-    fn = [](auto &&val, auto &to_type) -> StateValue {
-      return { val.zext(to_type.bits() - val.bits()), true };
+    fn = [](auto &&val, auto &from_ty, auto &to_ty) -> StateValue {
+      return { val.zext(to_ty.bits() - val.bits()), true };
     };
     break;
   case Trunc:
-    fn = [](auto &&val, auto &to_type) -> StateValue {
-      return { val.trunc(to_type.bits()), true };
+    fn = [](auto &&val, auto &from_ty, auto &to_ty) -> StateValue {
+      return { val.trunc(to_ty.bits()), true };
     };
     break;
   case BitCast:
-    fn = [](auto &&val, auto &to_type) -> StateValue {
-      return { to_type.fromInt(move(val)), true };
+    fn = [](auto &&val, auto &from_ty, auto &to_ty) -> StateValue {
+      return { move(val), true };
     };
     break;
   case SIntToFP:
-    fn = [](auto &&val, auto &to_type) -> StateValue {
-      return { val.sint2fp(to_type.getDummyValue(false).value), true };
+    fn = [&](auto &&val, auto &from_ty, auto &to_ty) -> StateValue {
+      return { to_ty.toInt(s, val.sint2fp(to_ty.getDummyNativeValue())),
+               true };
     };
     break;
   case UIntToFP:
-    fn = [](auto &&val, auto &to_type) -> StateValue {
-      return { val.uint2fp(to_type.getDummyValue(false).value), true };
+    fn = [&](auto &&val, auto &from_ty, auto &to_ty) -> StateValue {
+      return { to_ty.toInt(s, val.uint2fp(to_ty.getDummyNativeValue())),
+               true };
     };
     break;
   case FPToSInt:
-    fn = [](auto &&val, auto &to_type) -> StateValue {
-      return { val.fp2sint(to_type.bits()),
-               val.foge(expr::IntSMin(to_type.bits()).sint2fp(val)) &&
-               val.fole(expr::IntSMax(to_type.bits()).sint2fp(val)) &&
+    fn = [](auto &&val0, auto &from_ty, auto &to_ty) -> StateValue {
+      expr val = from_ty.fromInt(move(val0));
+      return { val.fp2sint(to_ty.bits()),
+               val.foge(expr::IntSMin(to_ty.bits()).sint2fp(val)) &&
+               val.fole(expr::IntSMax(to_ty.bits()).sint2fp(val)) &&
                !val.isInf() };
     };
     break;
   case FPToUInt:
-    fn = [](auto &&val, auto &to_type) -> StateValue {
-      return { val.fp2uint(to_type.bits()),
+    fn = [](auto &&val0, auto &from_ty, auto &to_ty) -> StateValue {
+      expr val = from_ty.fromInt(move(val0));
+      return { val.fp2uint(to_ty.bits()),
                val.foge(expr::mkFloat(0, val)) &&
-               val.fole(expr::IntUMax(to_type.bits()).uint2fp(val)) &&
+               val.fole(expr::IntUMax(to_ty.bits()).uint2fp(val)) &&
                !val.isInf() };
     };
     break;
   case FPExt:
   case FPTrunc:
-    fn = [](auto &&val, auto &to_type) -> StateValue {
-      return { val.float2Float(to_type.getDummyValue(false).value), true };
+    fn = [&](auto &&val, auto &from_ty, auto &to_ty) -> StateValue {
+      return { to_ty.toInt(s, from_ty.fromInt(move(val))
+                                     .float2Float(to_ty.getDummyNativeValue())),
+               true };
     };
     break;
   case Ptr2Int:
-    fn = [&](auto &&val, auto &to_type) -> StateValue {
-      return { s.getMemory().ptr2int(val).zextOrTrunc(to_type.bits()), true };
+    fn = [&](auto &&val, auto &from_ty, auto &to_ty) -> StateValue {
+      return { s.getMemory().ptr2int(val).zextOrTrunc(to_ty.bits()), true };
     };
     break;
   case Int2Ptr:
-    fn = [&](auto &&val, auto &to_type) -> StateValue {
+    fn = [&](auto &&val, auto &from_ty, auto &to_ty) -> StateValue {
       return { s.getMemory().int2ptr(val), true };
     };
     break;
   }
 
-  auto scalar = [&](StateValue &&sv, const Type &to_type) -> StateValue {
-    auto [v, np] = fn(move(sv.value), to_type);
+  auto scalar =
+    [&](StateValue &&sv, auto &from_ty, const Type &to_ty) -> StateValue {
+    auto [v, np] = fn(move(sv.value), from_ty, to_ty);
     return { move(v), sv.non_poison && np };
   };
 
@@ -936,7 +955,8 @@ StateValue ConversionOp::toSMT(State &s) const {
 
     for (unsigned i = 0; i != elems; ++i) {
       unsigned idx = (little_endian && op == BitCast) ? elems - i - 1 : i;
-      vals.emplace_back(scalar(valty->extract(v, idx), retty->getChild(idx)));
+      vals.emplace_back(scalar(valty->extract(v, idx), valty->getChild(idx),
+                               retty->getChild(idx)));
     }
     return retty->aggregateVals(vals);
   }
@@ -945,7 +965,7 @@ StateValue ConversionOp::toSMT(State &s) const {
   if (op == BitCast)
     v.non_poison = v.non_poison == 0;
 
-  return scalar(move(v), getType());
+  return scalar(move(v), val->getType(), getType());
 }
 
 expr ConversionOp::getTypeConstraints(const Function &f) const {
@@ -1217,7 +1237,7 @@ static StateValue pack_return(Type &ty, vector<StateValue> &vals,
 
   auto ret = vals[idx++];
   if (ty.isFloatType() && (flags & FnCall::NNaN))
-    ret.non_poison &= !ret.value.isNaN();
+    ret.non_poison &= !ty.fromInt(ret.value).isNaN();
   return ret;
 }
 
@@ -1428,7 +1448,7 @@ StateValue FCmp::toSMT(State &s) const {
   auto &a_eval = s[*a];
   auto &b_eval = s[*b];
 
-  auto fn = [&](const auto &a, const auto &b) -> StateValue {
+  auto fn = [&](const auto &a, const auto &b, const Type &ty) -> StateValue {
     auto cmp = [&](const expr &a, const expr &b) {
       switch (cond) {
       case OEQ: return a.foeq(b);
@@ -1448,18 +1468,20 @@ StateValue FCmp::toSMT(State &s) const {
       }
       UNREACHABLE();
     };
-    auto [val, np] = fm_poison(s, a.value, b.value, cmp, fmath, true);
+    auto [val, np] = fm_poison(s, a.value, b.value, ty, cmp, fmath, true);
     return { val.toBVBool(), a.non_poison && b.non_poison && np };
   };
 
   if (auto agg = a->getType().getAsAggregateType()) {
     vector<StateValue> vals;
+    auto &ty_elem = agg->getChild(0);
     for (unsigned i = 0, e = agg->numElementsConst(); i != e; ++i) {
-      vals.emplace_back(fn(agg->extract(a_eval, i), agg->extract(b_eval, i)));
+      vals.emplace_back(fn(agg->extract(a_eval, i), agg->extract(b_eval, i),
+                           ty_elem));
     }
     return getType().getAsAggregateType()->aggregateVals(vals);
   }
-  return fn(a_eval, b_eval);
+  return fn(a_eval, b_eval, a->getType());
 }
 
 expr FCmp::getTypeConstraints(const Function &f) const {

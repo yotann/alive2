@@ -18,6 +18,10 @@ static constexpr unsigned var_type_bits = 3;
 static constexpr unsigned var_bw_bits = 8;
 static constexpr unsigned var_vector_elements = 10;
 
+static expr poison_to_bv(const expr &np, unsigned bw) {
+  return np.isBV() ? np
+                   : expr::mkIf(np, expr::mkUInt(0, bw), expr::mkInt(-1, bw));
+}
 
 namespace IR {
 
@@ -26,6 +30,10 @@ VoidType Type::voidTy;
 unsigned Type::np_bits() const {
   auto bw = bits();
   return does_sub_byte_access ? bw : (unsigned)divide_up(bw, bits_byte);
+}
+
+StateValue Type::getDummyValue(bool non_poison) const {
+  return { getDummyNativeValue(), non_poison };
 }
 
 expr Type::var(const char *var, unsigned bits) const {
@@ -205,42 +213,29 @@ const StructType* Type::getAsStructType() const {
   return nullptr;
 }
 
-expr Type::toBV(expr e) const {
-  return e;
-}
-
 StateValue Type::toBV(StateValue v) const {
-  expr val = toBV(move(v.value));
-  auto bw = np_bits();
-  return { move(val),
-           expr::mkIf(v.non_poison, expr::mkUInt(0, bw), expr::mkInt(-1, bw)) };
-}
-
-expr Type::fromBV(expr e) const {
-  return e;
+  return { move(v.value), poison_to_bv(v.non_poison, np_bits()) };
 }
 
 StateValue Type::fromBV(StateValue v) const {
-  return { fromBV(move(v.value)), v.non_poison == 0 };
+  return { move(v.value), v.non_poison == 0 };
 }
 
 expr Type::toInt(State &s, expr v) const {
-  return toBV(move(v));
+  return v;
 }
 
 StateValue Type::toInt(State &s, StateValue v) const {
-  expr val = toInt(s, move(v.value));
-  auto bw = np_bits();
-  return { move(val),
-           expr::mkIf(v.non_poison, expr::mkUInt(0, bw), expr::mkInt(-1, bw)) };
+  return { toInt(s, move(v.value)),
+           poison_to_bv(v.non_poison, np_bits()) };
 }
 
-expr Type::fromInt(expr e) const {
-  return fromBV(move(e));
+expr Type::fromInt(expr e, bool native) const {
+  return e;
 }
 
-StateValue Type::fromInt(StateValue v) const {
-  return { fromInt(move(v.value)), v.non_poison == 0 };
+StateValue Type::fromInt(StateValue v, bool native) const {
+  return { fromInt(move(v.value), native), v.non_poison == 0 };
 }
 
 expr Type::combine_poison(const expr &boolean, const expr &orig) const {
@@ -251,6 +246,13 @@ expr Type::combine_poison(const expr &boolean, const expr &orig) const {
 pair<expr, vector<expr>> Type::mkUndefInput(State &s, unsigned attrs) const {
   auto var = expr::mkFreshVar("undef", mkInput(s, "", attrs));
   return { var, { var } };
+}
+
+pair<expr, expr>
+Type::mkFnRet(const char *prefix, State &s,
+              const vector<pair<StateValue, bool>> &ptr_inputs) const {
+  auto v = expr::mkFreshVar(prefix, getDummyNativeValue());
+  return { v, v };
 }
 
 ostream& operator<<(ostream &os, const Type &t) {
@@ -271,8 +273,8 @@ unsigned VoidType::bits() const {
   UNREACHABLE();
 }
 
-StateValue VoidType::getDummyValue(bool non_poison) const {
-  return { false, non_poison };
+expr VoidType::getDummyNativeValue() const {
+  return false;
 }
 
 expr VoidType::getTypeConstraints() const {
@@ -306,8 +308,8 @@ unsigned IntType::bits() const {
   return bitwidth;
 }
 
-StateValue IntType::getDummyValue(bool non_poison) const {
-  return { expr::mkUInt(0, bits()), non_poison };
+expr IntType::getDummyNativeValue() const {
+  return expr::mkUInt(0, bits());
 }
 
 expr IntType::getTypeConstraints() const {
@@ -384,23 +386,10 @@ const FloatType* FloatType::getAsFloatType() const {
   return this;
 }
 
-expr FloatType::toBV(expr e) const {
-  return e.float2BV();
-}
-
-StateValue FloatType::toBV(StateValue v) const {
-  return Type::toBV(move(v));
-}
-
-expr FloatType::fromBV(expr e) const {
-  return e.BV2float(getDummyValue(true).value);
-}
-
-StateValue FloatType::fromBV(StateValue v) const {
-  return Type::fromBV(move(v));
-}
-
 expr FloatType::toInt(State &s, expr fp) const {
+  if (fp.isBV())
+    return fp;
+
   expr isnan = fp.isNaN();
   expr val = fp.float2BV();
 
@@ -451,9 +440,13 @@ bool FloatType::isNaNInt(const expr &e) const {
   return ok && exponent.isAllOnes();
 }
 
-expr FloatType::fromInt(expr e) const {
+expr FloatType::fromInt(expr e, bool native) const {
+  assert(!e.isValid() || e.isBV());
+  if (!native)
+    return e;
+
   if (isNaNInt(e))
-    return expr::mkNaN(getDummyValue(true).value);
+    return expr::mkNaN(getDummyNativeValue());
 
   expr cond, then, els, n, n2;
   // match (ite (isNaN x) int_nan (fp.to_ieee_bv x))
@@ -464,11 +457,11 @@ expr FloatType::fromInt(expr e) const {
       n.eq(n2))
     return n;
 
-  return fromBV(move(e));
+  return e.BV2float(getDummyNativeValue());
 }
 
-StateValue FloatType::fromInt(StateValue v) const {
-  return Type::fromInt(move(v));
+StateValue FloatType::fromInt(StateValue v, bool native) const {
+  return Type::fromInt(move(v), native);
 }
 
 expr FloatType::sizeVar() const {
@@ -476,14 +469,17 @@ expr FloatType::sizeVar() const {
 }
 
 StateValue FloatType::getDummyValue(bool non_poison) const {
-  expr e;
+  return { expr::mkUInt(0, bits()), non_poison };
+}
+
+expr FloatType::getDummyNativeValue() const {
   switch (fpType) {
-  case Half:    e = expr::mkHalf(0); break;
-  case Float:   e = expr::mkFloat(0); break;
-  case Double:  e = expr::mkDouble(0); break;
+  case Half:    return expr::mkHalf(0);
+  case Float:   return expr::mkFloat(0);
+  case Double:  return expr::mkDouble(0);
   case Unknown: UNREACHABLE();
   }
-  return { move(e), non_poison };
+  UNREACHABLE();
 }
 
 expr FloatType::getTypeConstraints() const {
@@ -528,25 +524,41 @@ FloatType::refines(State &src_s, State &tgt_s, const StateValue &src,
                    const StateValue &tgt) const {
   expr non_poison = src.non_poison && tgt.non_poison;
   return { src.non_poison.implies(tgt.non_poison),
-           (src.non_poison && tgt.non_poison).implies(src.value == tgt.value) };
+           (src.non_poison && tgt.non_poison).implies(
+             fromInt(src.value) == fromInt(tgt.value)) };
 }
 
 expr FloatType::mkInput(State &s, const char *name, unsigned attrs) const {
+  expr e;
   switch (fpType) {
-  case Half:    return expr::mkHalfVar(name);
-  case Float:   return expr::mkFloatVar(name);
-  case Double:  return expr::mkDoubleVar(name);
+  case Half:    e = expr::mkHalfVar(name); break;
+  case Float:   e = expr::mkFloatVar(name); break;
+  case Double:  e = expr::mkDoubleVar(name); break;
   case Unknown: UNREACHABLE();
   }
-  UNREACHABLE();
+  return e.float2BV();
 }
 
-void FloatType::printVal(ostream &os, State &s, const expr &e) const {
+pair<expr, vector<expr>>
+FloatType::mkUndefInput(State &s, unsigned attributes) const {
+  auto var = expr::mkFreshVar("undef", getDummyNativeValue());
+  return { var.float2BV(), { var } };
+}
+
+pair<expr, expr>
+FloatType::mkFnRet(const char *prefix, State &s,
+                   const vector<pair<StateValue, bool>> &ptr_inputs) const {
+  auto var = expr::mkFreshVar(prefix, getDummyNativeValue());
+  return { var.float2BV(), var };
+}
+
+void FloatType::printVal(ostream &os, State &s, const expr &e_bv) const {
+  expr e = e_bv.BV2float(getDummyNativeValue());
   if (e.isNaN().isTrue()) {
     os << "NaN";
     return;
   }
-  e.float2BV().printHexadecimal(os);
+  e_bv.printHexadecimal(os);
   os << " (";
   if (e.isFPZero().isTrue()) {
     os << (e.isFPNeg().isTrue() ? "-0.0" : "+0.0");
@@ -591,8 +603,8 @@ unsigned PtrType::np_bits() const {
   return 1;
 }
 
-StateValue PtrType::getDummyValue(bool non_poison) const {
-  return { expr::mkUInt(0, bits()), non_poison };
+expr PtrType::getDummyNativeValue() const {
+  return expr::mkUInt(0, bits());
 }
 
 expr PtrType::getTypeConstraints() const {
@@ -629,12 +641,12 @@ StateValue PtrType::toInt(State &s, StateValue v) const {
   return Type::toInt(s, move(v));
 }
 
-expr PtrType::fromInt(expr v) const {
+expr PtrType::fromInt(expr v, bool native) const {
   return v;
 }
 
-StateValue PtrType::fromInt(StateValue v) const {
-  return Type::fromInt(move(v));
+StateValue PtrType::fromInt(StateValue v, bool native) const {
+  return Type::fromInt(move(v), native);
 }
 
 pair<expr, expr>
@@ -654,6 +666,12 @@ expr PtrType::mkInput(State &s, const char *name, unsigned attrs) const {
 pair<expr, vector<expr>> PtrType::mkUndefInput(State &s, unsigned attrs) const {
   auto [val, var] = s.getMemory().mkUndefInput(attrs);
   return { move(val), { move(var) } };
+}
+
+pair<expr, expr>
+PtrType::mkFnRet(const char *prefix, State &s,
+                 const vector<pair<StateValue, bool>> &ptr_inputs) const {
+  return s.getMemory().mkFnRet(prefix, ptr_inputs);
 }
 
 void PtrType::printVal(ostream &os, State &s, const expr &e) const {
@@ -765,6 +783,10 @@ StateValue AggregateType::getDummyValue(bool non_poison) const {
   return aggregateVals(vals);
 }
 
+expr AggregateType::getDummyNativeValue() const {
+  UNREACHABLE();
+}
+
 expr AggregateType::getTypeConstraints() const {
   expr r(true), elems = numElements();
   for (unsigned i = 0, e = children.size(); i != e; ++i) {
@@ -818,18 +840,6 @@ expr AggregateType::enforceAggregateType(vector<Type*> *element_types) const {
   return r;
 }
 
-expr AggregateType::toBV(expr e) const {
-  return Type::toBV(move(e));
-}
-
-StateValue AggregateType::toBV(StateValue v) const {
-  return v;
-}
-
-expr AggregateType::fromBV(expr e) const {
-  return Type::fromBV(move(e));
-}
-
 StateValue AggregateType::fromBV(StateValue v) const {
   return v;
 }
@@ -851,11 +861,11 @@ StateValue AggregateType::toInt(State &s, StateValue v) const {
   return ret;
 }
 
-expr AggregateType::fromInt(expr v) const {
+expr AggregateType::fromInt(expr v, bool native) const {
   UNREACHABLE();
 }
 
-StateValue AggregateType::fromInt(StateValue v) const {
+StateValue AggregateType::fromInt(StateValue v, bool native) const {
   UNREACHABLE();
 }
 
@@ -877,7 +887,6 @@ expr AggregateType::mkInput(State &s, const char *name, unsigned attrs) const {
   for (unsigned i = 0; i < elements; ++i) {
     string c_name = string(name) + "#" + to_string(i);
     auto v = children[i]->mkInput(s, c_name.c_str(), attrs);
-    v = children[i]->toBV(move(v));
     val = i == 0 ? move(v) : val.concat(v);
   }
   return val;
@@ -890,11 +899,16 @@ AggregateType::mkUndefInput(State &s, unsigned attrs) const {
 
   for (unsigned i = 0; i < elements; ++i) {
     auto [v, vs] = children[i]->mkUndefInput(s, attrs);
-    v = children[i]->toBV(move(v));
     val = i == 0 ? move(v) : val.concat(v);
     vars.insert(vars.end(), vs.begin(), vs.end());
   }
   return { move(val), move(vars) };
+}
+
+pair<expr, expr>
+AggregateType::mkFnRet(const char *prefix, State &s,
+                       const vector<pair<StateValue, bool>> &ptr_inputs) const {
+  UNREACHABLE();
 }
 
 unsigned AggregateType::numPointerElements() const {
@@ -1006,8 +1020,8 @@ StateValue VectorType::update(const StateValue &vector,
   expr mask_np = ~expr::mkInt(-1, bw_np_elem).concat(fill_np).lshr(idx_np);
   expr np_shifted = val_bv.non_poison.concat(fill_np).lshr(idx_np);
 
-  return fromBV({ (vector.value & mask_v) | nv_shifted,
-                  (vector.non_poison & mask_np) | np_shifted});
+  return { (vector.value & mask_v) | nv_shifted,
+           (vector.non_poison & mask_np) | np_shifted };
 }
 
 expr VectorType::getTypeConstraints() const {
@@ -1136,6 +1150,10 @@ unsigned SymbolicType::np_bits() const {
 
 StateValue SymbolicType::getDummyValue(bool non_poison) const {
   DISPATCH(getDummyValue(non_poison), UNREACHABLE());
+}
+
+expr SymbolicType::getDummyNativeValue() const {
+  DISPATCH(getDummyNativeValue(), UNREACHABLE());
 }
 
 expr SymbolicType::getTypeConstraints() const {
@@ -1278,18 +1296,6 @@ const StructType* SymbolicType::getAsStructType() const {
   return &*s;
 }
 
-expr SymbolicType::toBV(expr e) const {
-  DISPATCH(toBV(move(e)), UNREACHABLE());
-}
-
-StateValue SymbolicType::toBV(StateValue val) const {
-  DISPATCH(toBV(move(val)), UNREACHABLE());
-}
-
-expr SymbolicType::fromBV(expr e) const {
-  DISPATCH(fromBV(move(e)), UNREACHABLE());
-}
-
 StateValue SymbolicType::fromBV(StateValue val) const {
   DISPATCH(fromBV(move(val)), UNREACHABLE());
 }
@@ -1302,12 +1308,12 @@ StateValue SymbolicType::toInt(State &st, StateValue val) const {
   DISPATCH(toInt(st, move(val)), UNREACHABLE());
 }
 
-expr SymbolicType::fromInt(expr e) const {
-  DISPATCH(fromInt(move(e)), UNREACHABLE());
+expr SymbolicType::fromInt(expr e, bool native) const {
+  DISPATCH(fromInt(move(e), native), UNREACHABLE());
 }
 
-StateValue SymbolicType::fromInt(StateValue val) const {
-  DISPATCH(fromInt(move(val)), UNREACHABLE());
+StateValue SymbolicType::fromInt(StateValue val, bool native) const {
+  DISPATCH(fromInt(move(val), native), UNREACHABLE());
 }
 
 pair<expr, expr>
@@ -1323,6 +1329,12 @@ expr SymbolicType::mkInput(State &st, const char *name, unsigned attrs) const {
 pair<expr, vector<expr>>
 SymbolicType::mkUndefInput(State &st, unsigned attrs) const {
   DISPATCH(mkUndefInput(st, attrs), UNREACHABLE());
+}
+
+pair<expr, expr>
+SymbolicType::mkFnRet(const char *prefix, State &st,
+                      const vector<pair<StateValue, bool>> &ptr_inputs) const {
+  DISPATCH(mkFnRet(prefix, st, ptr_inputs), UNREACHABLE());
 }
 
 void SymbolicType::printVal(ostream &os, State &st, const expr &e) const {

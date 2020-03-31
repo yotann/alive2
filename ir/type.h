@@ -44,8 +44,9 @@ public:
   virtual unsigned bits() const = 0;
   virtual unsigned np_bits() const;
 
-  // to use when one needs the corresponding SMT type
-  virtual IR::StateValue getDummyValue(bool non_poison) const = 0;
+  // to use when one needs the corresponding SMT type (BV type)
+  virtual IR::StateValue getDummyValue(bool non_poison) const;
+  virtual smt::expr getDummyNativeValue() const = 0;
 
   virtual smt::expr getTypeConstraints() const = 0;
   virtual smt::expr sizeVar() const;
@@ -89,15 +90,13 @@ public:
   virtual const AggregateType* getAsAggregateType() const;
   virtual const StructType* getAsStructType() const;
 
-  virtual smt::expr toBV(smt::expr e) const;
-  virtual IR::StateValue toBV(IR::StateValue v) const;
-  virtual smt::expr fromBV(smt::expr e) const;
+  IR::StateValue toBV(IR::StateValue v) const;
   virtual IR::StateValue fromBV(IR::StateValue v) const;
 
   virtual smt::expr toInt(State &s, smt::expr v) const;
   virtual IR::StateValue toInt(State &s, IR::StateValue v) const;
-  virtual smt::expr fromInt(smt::expr v) const;
-  virtual IR::StateValue fromInt(IR::StateValue v) const;
+  virtual smt::expr fromInt(smt::expr v, bool native = true) const;
+  virtual IR::StateValue fromInt(IR::StateValue v, bool native = true) const;
 
   // combine existing poison value in BV repr with a new boolean expr
   smt::expr combine_poison(const smt::expr &boolean,
@@ -112,6 +111,9 @@ public:
     mkInput(State &s, const char *name, unsigned attributes) const = 0;
   virtual std::pair<smt::expr, std::vector<smt::expr>>
     mkUndefInput(State &s, unsigned attributes) const;
+  virtual std::pair<smt::expr, smt::expr> mkFnRet(
+    const char *prefix, State &s,
+    const std::vector<std::pair<StateValue, bool>> &ptr_inputs) const;
 
   virtual void printVal(std::ostream &os, State &s,
                         const smt::expr &e) const = 0;
@@ -130,7 +132,7 @@ class VoidType final : public Type {
 public:
   VoidType() : Type("void") {}
   unsigned bits() const override;
-  IR::StateValue getDummyValue(bool non_poison) const override;
+  smt::expr getDummyNativeValue() const override;
   smt::expr getTypeConstraints() const override;
   void fixup(const smt::Model &m) override;
   std::pair<smt::expr, smt::expr>
@@ -153,7 +155,7 @@ public:
     : Type(std::move(name)), bitwidth(bitwidth), defined(true) {}
 
   unsigned bits() const override;
-  IR::StateValue getDummyValue(bool non_poison) const override;
+  smt::expr getDummyNativeValue() const override;
   smt::expr getTypeConstraints() const override;
   smt::expr sizeVar() const override;
   smt::expr operator==(const IntType &rhs) const;
@@ -190,6 +192,7 @@ public:
   FpType getFpType() const { return fpType; };
 
   IR::StateValue getDummyValue(bool non_poison) const override;
+  smt::expr getDummyNativeValue() const override;
   smt::expr getTypeConstraints() const override;
   smt::expr sizeVar() const override;
   smt::expr operator==(const FloatType &rhs) const;
@@ -197,19 +200,20 @@ public:
   bool isFloatType() const override;
   smt::expr enforceFloatType() const override;
   const FloatType* getAsFloatType() const override;
-  smt::expr toBV(smt::expr e) const override;
-  IR::StateValue toBV(IR::StateValue v) const override;
-  smt::expr fromBV(smt::expr e) const override;
-  IR::StateValue fromBV(IR::StateValue v) const override;
   smt::expr toInt(State &s, smt::expr v) const override;
   IR::StateValue toInt(State &s, IR::StateValue v) const override;
-  smt::expr fromInt(smt::expr v) const override;
-  IR::StateValue fromInt(IR::StateValue v) const override;
+  smt::expr fromInt(smt::expr v, bool native = true) const override;
+  IR::StateValue fromInt(IR::StateValue v, bool native = true) const override;
   std::pair<smt::expr, smt::expr>
     refines(State &src_s, State &tgt_s, const StateValue &src,
             const StateValue &tgt) const override;
   smt::expr
     mkInput(State &s, const char *name, unsigned attributes) const override;
+  std::pair<smt::expr, std::vector<smt::expr>>
+    mkUndefInput(State &s, unsigned attributes) const override;
+  std::pair<smt::expr, smt::expr> mkFnRet(
+    const char *prefix, State &s,
+    const std::vector<std::pair<StateValue, bool>> &ptr_inputs) const override;
   void printVal(std::ostream &os, State &s, const smt::expr &e) const override;
   void print(std::ostream &os) const override;
 };
@@ -226,7 +230,7 @@ public:
   PtrType(unsigned addr_space);
   unsigned bits() const override;
   unsigned np_bits() const override;
-  IR::StateValue getDummyValue(bool non_poison) const override;
+  smt::expr getDummyNativeValue() const override;
   smt::expr getTypeConstraints() const override;
   smt::expr sizeVar() const override;
   smt::expr operator==(const PtrType &rhs) const;
@@ -235,8 +239,8 @@ public:
   smt::expr enforcePtrType() const override;
   smt::expr toInt(State &s, smt::expr v) const override;
   IR::StateValue toInt(State &s, IR::StateValue v) const override;
-  smt::expr fromInt(smt::expr v) const override;
-  IR::StateValue fromInt(IR::StateValue v) const override;
+  smt::expr fromInt(smt::expr v, bool native = true) const override;
+  IR::StateValue fromInt(IR::StateValue v, bool native = true) const override;
   std::pair<smt::expr, smt::expr>
     refines(State &src_s, State &tgt_s, const StateValue &src,
             const StateValue &tgt) const override;
@@ -244,6 +248,9 @@ public:
     mkInput(State &s, const char *name, unsigned attributes) const override;
   std::pair<smt::expr, std::vector<smt::expr>>
     mkUndefInput(State &s, unsigned attributes) const override;
+  std::pair<smt::expr, smt::expr> mkFnRet(
+    const char *prefix, State &s,
+    const std::vector<std::pair<StateValue, bool>> &ptr_inputs) const override;
   void printVal(std::ostream &os, State &s, const smt::expr &e) const override;
   void print(std::ostream &os) const override;
 };
@@ -274,20 +281,18 @@ public:
   unsigned bits() const override;
   unsigned np_bits() const override;
   IR::StateValue getDummyValue(bool non_poison) const override;
+  smt::expr getDummyNativeValue() const override;
   smt::expr getTypeConstraints() const override;
   smt::expr sizeVar() const override;
   smt::expr operator==(const AggregateType &rhs) const;
   void fixup(const smt::Model &m) override;
   smt::expr enforceAggregateType(
     std::vector<Type *> *element_types) const override;
-  smt::expr toBV(smt::expr e) const override;
-  IR::StateValue toBV(IR::StateValue v) const override;
-  smt::expr fromBV(smt::expr e) const override;
   IR::StateValue fromBV(IR::StateValue v) const override;
   smt::expr toInt(State &s, smt::expr v) const override;
   IR::StateValue toInt(State &s, IR::StateValue v) const override;
-  smt::expr fromInt(smt::expr v) const override;
-  IR::StateValue fromInt(IR::StateValue v) const override;
+  smt::expr fromInt(smt::expr v, bool native = true) const override;
+  IR::StateValue fromInt(IR::StateValue v, bool native = true) const override;
   std::pair<smt::expr, smt::expr>
     refines(State &src_s, State &tgt_s, const StateValue &src,
             const StateValue &tgt) const override;
@@ -295,6 +300,9 @@ public:
     mkInput(State &s, const char *name, unsigned attributes) const override;
   std::pair<smt::expr, std::vector<smt::expr>>
     mkUndefInput(State &s, unsigned attributes) const override;
+  std::pair<smt::expr, smt::expr> mkFnRet(
+    const char *prefix, State &s,
+    const std::vector<std::pair<StateValue, bool>> &ptr_inputs) const override;
   unsigned numPointerElements() const;
   void printVal(std::ostream &os, State &s, const smt::expr &e) const override;
   const AggregateType* getAsAggregateType() const override;
@@ -365,6 +373,7 @@ public:
   unsigned bits() const override;
   unsigned np_bits() const override;
   IR::StateValue getDummyValue(bool non_poison) const override;
+  smt::expr getDummyNativeValue() const override;
   smt::expr getTypeConstraints() const override;
   smt::expr sizeVar() const override;
   smt::expr scalarSize() const override;
@@ -387,14 +396,11 @@ public:
   const FloatType* getAsFloatType() const override;
   const AggregateType* getAsAggregateType() const override;
   const StructType* getAsStructType() const override;
-  smt::expr toBV(smt::expr e) const override;
-  IR::StateValue toBV(IR::StateValue v) const override;
-  smt::expr fromBV(smt::expr e) const override;
   IR::StateValue fromBV(IR::StateValue v) const override;
   smt::expr toInt(State &s, smt::expr v) const override;
   IR::StateValue toInt(State &s, IR::StateValue v) const override;
-  smt::expr fromInt(smt::expr v) const override;
-  IR::StateValue fromInt(IR::StateValue v) const override;
+  smt::expr fromInt(smt::expr v, bool native = true) const override;
+  IR::StateValue fromInt(IR::StateValue v, bool native = true) const override;
   std::pair<smt::expr, smt::expr>
     refines(State &src_s, State &tgt_s, const StateValue &src,
             const StateValue &tgt) const override;
@@ -402,6 +408,9 @@ public:
     mkInput(State &s, const char *name, unsigned attributes) const override;
   std::pair<smt::expr, std::vector<smt::expr>>
     mkUndefInput(State &s, unsigned attributes) const override;
+  std::pair<smt::expr, smt::expr> mkFnRet(
+    const char *prefix, State &s,
+    const std::vector<std::pair<StateValue, bool>> &ptr_inputs) const override;
   void printVal(std::ostream &os, State &s, const smt::expr &e) const override;
   void print(std::ostream &os) const override;
 };

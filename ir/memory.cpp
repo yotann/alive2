@@ -233,7 +233,7 @@ Byte Byte::mkNonPtrByte(const Memory &m, const expr &val) {
 
 Byte Byte::mkPoisonByte(const Memory &m) {
   IntType ty("", bits_byte);
-  auto v = ty.toBV(ty.getDummyValue(false));
+  auto v = ty.toInt(m.getState(), ty.getDummyValue(false));
   return { m, v.value, v.non_poison };
 }
 
@@ -338,7 +338,7 @@ static StateValue bytesToValue(const Memory &m, const vector<Byte> &bytes,
       val = first ? move(v) : v.concat(val);
       first = false;
     }
-    return toType.fromInt(val.trunc(bitsize));
+    return toType.fromInt(val.trunc(bitsize), false);
   }
 }
 

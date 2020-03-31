@@ -302,6 +302,8 @@ public:
 
   unsigned num_nonlocals() const;
 
+  State& getState() const { return *state; }
+
   static Memory mkIf(const smt::expr &cond, const Memory &then,
                      const Memory &els);
 
