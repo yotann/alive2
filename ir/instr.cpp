@@ -12,6 +12,7 @@
 #include <functional>
 #include <numeric>
 #include <sstream>
+#include <iostream>
 
 using namespace smt;
 using namespace util;
@@ -833,6 +834,42 @@ bool BinOp::isDivOrRem() const {
   default:
     return false;
   }
+}
+
+util::ConcreteVal BinOp::concreteEval(std::map<const Value *, util::ConcreteVal> &concrete_vals) const{
+  util::ConcreteVal v;
+  auto v_op = operands();
+  
+  bool firstOp = true;
+  if (op == Op::Add){//TODO distinguish between nuw and nsw
+    for (auto operand: v_op){
+      auto I = concrete_vals.find(operand);
+      if (I == concrete_vals.end()){
+        cout << "[BinOp::concreteEval] concrete values for operand not found. Aborting" << '\n';
+        assert(false);
+      }
+      else{
+        if (I->second.isPoison()){
+           v.setPoison(true);
+           return v;
+        }
+        auto op_apint = I->second.getVal(); 
+        if (firstOp){
+          auto ap_zero = llvm::APInt(op_apint.getBitWidth(),0);
+          v.setVal(ap_zero);
+          firstOp = false;
+        }
+        bool ov_flag = false;
+        auto ap_sum = v.getVal().sadd_ov(op_apint,ov_flag);
+        v.setVal(ap_sum);
+        //TODO check for ov_flag
+      } 
+    }
+  }
+  else{
+    cout << "[BinOP:concreteEval] not supported on this bin inst yet" << '\n';
+  }
+  return v;
 }
 
 
@@ -1995,6 +2032,66 @@ expr ICmp::getTypeConstraints(const Function &f) const {
 
 unique_ptr<Instr> ICmp::dup(const string &suffix) const {
   return make_unique<ICmp>(getType(), getName() + suffix, cond, *a, *b);
+}
+
+util::ConcreteVal ICmp::concreteEval(std::map<const Value *, util::ConcreteVal> &concrete_vals) const{
+  //TODO support icmp with vector operands
+  util::ConcreteVal v;
+  auto a_I = concrete_vals.find(a);
+  assert(a_I != concrete_vals.end());
+  auto& concrete_a = a_I->second;
+  auto b_I = concrete_vals.find(b);
+  assert(b_I != concrete_vals.end());
+  auto& concrete_b = b_I->second;
+  if (concrete_a.isPoison() || concrete_b.isPoison()){
+    v.setPoison(true);
+    return v;
+  }
+  bool icmp_res = false;
+  switch (cond) {
+    case EQ:
+      icmp_res = concrete_a.getVal().eq(concrete_b.getVal());
+      break;
+    case NE:  
+      icmp_res = concrete_a.getVal().ne(concrete_b.getVal());
+      break;
+    case SLE: 
+      icmp_res = concrete_a.getVal().sle(concrete_b.getVal());
+      break;
+    case SLT: 
+      icmp_res = concrete_a.getVal().slt(concrete_b.getVal());
+      break;
+    case SGE: 
+      icmp_res = concrete_a.getVal().sge(concrete_b.getVal());
+      break;
+    case SGT: 
+      icmp_res = concrete_a.getVal().sgt(concrete_b.getVal());
+      break;
+    case ULE:
+      icmp_res = concrete_a.getVal().ule(concrete_b.getVal());
+      break;
+    case ULT: 
+      icmp_res = concrete_a.getVal().ult(concrete_b.getVal());
+      break;
+    case UGE: 
+      icmp_res = concrete_a.getVal().uge(concrete_b.getVal());
+      break;
+    case UGT: 
+      icmp_res = concrete_a.getVal().ugt(concrete_b.getVal());
+      break;
+    case Any:
+        UNREACHABLE();
+  }
+  if (icmp_res){
+    auto ap_true = llvm::APInt(1,1);
+    v.setVal(ap_true);
+  }
+  else{
+    auto ap_false = llvm::APInt(1,0);
+    v.setVal(ap_false);
+  }
+    
+  return v;
 }
 
 

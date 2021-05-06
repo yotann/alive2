@@ -4,6 +4,8 @@
 // Distributed under the MIT license that can be found in the LICENSE file.
 
 #include "ir/value.h"
+#include "llvm/ADT/APInt.h"
+#include "util/concreteval.h"
 #include <string>
 #include <utility>
 #include <vector>
@@ -68,6 +70,7 @@ public:
   StateValue toSMT(State &s) const override;
   smt::expr getTypeConstraints(const Function &f) const override;
   std::unique_ptr<Instr> dup(const std::string &suffix) const override;
+  util::ConcreteVal concreteEval(std::map<const Value *, util::ConcreteVal> &concrete_vals) const;//TODO probably need to declare this in Instr
 };
 
 
@@ -257,6 +260,7 @@ public:
   StateValue toSMT(State &s) const override;
   smt::expr getTypeConstraints(const Function &f) const override;
   std::unique_ptr<Instr> dup(const std::string &suffix) const override;
+  util::ConcreteVal concreteEval(std::map<const Value *, util::ConcreteVal> &concrete_vals) const;//TODO probably need to declare this in Instr
 };
 
 
@@ -362,6 +366,12 @@ public:
 
   auto& getTrue() const { return *dst_true; }
   auto getFalse() const { return dst_false; }
+
+  //adding these because the above naming is rather inconsistent 
+  //but I don't want to break their use by changing the return type
+  const BasicBlock* getTruePtr() const {return dst_true;}
+  const BasicBlock* getFalsePtr() const {return dst_false;}
+  Value* getCondPtr() const {return cond;}
 
   void replaceTargetWith(const BasicBlock *F, const BasicBlock *T) override;
   std::vector<Value*> operands() const override;
