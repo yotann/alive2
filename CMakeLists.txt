@@ -138,6 +138,7 @@ set(UTIL_SRCS
   util/stopwatch.cpp
   util/symexec.cpp
   util/unionfind.cpp
+  util/concreteval.cpp
 )
 
 add_library(util STATIC ${UTIL_SRCS})
@@ -181,6 +182,10 @@ if (BUILD_LLVM_UTILS OR BUILD_TV)
 
   add_llvm_executable(alive-exec
     "tools/alive-exec.cpp"
+  )
+
+  add_llvm_executable(alive-exec-concrete
+    "tools/alive-exec-concrete.cpp"
   )
 
 else()
@@ -228,6 +233,7 @@ if (BUILD_LLVM_UTILS OR BUILD_TV)
 #  target_link_libraries(alive2 PRIVATE ${llvm_libs})
   target_link_libraries(alive-tv PRIVATE ${ALIVE_LIBS_LLVM} ${llvm_libs})
   target_link_libraries(alive-exec PRIVATE ${ALIVE_LIBS_LLVM} ${llvm_libs})
+  target_link_libraries(alive-exec-concrete PRIVATE ${ALIVE_LIBS_LLVM} ${llvm_libs})
 endif()
 
 if (CYGWIN)
@@ -242,6 +248,7 @@ else()
   if (BUILD_LLVM_UTILS OR BUILD_TV)
     target_link_libraries(alive-tv PRIVATE ${Z3_LIBRARIES})
     target_link_libraries(alive-exec PRIVATE ${Z3_LIBRARIES})
+    target_link_libraries(alive-exec-concrete PRIVATE ${Z3_LIBRARIES})
   endif()
 endif()
 
