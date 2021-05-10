@@ -230,7 +230,8 @@ add_executable(alive-jobserver
 
 if (BUILD_LLVM_UTILS OR BUILD_TV)
   llvm_map_components_to_libnames(llvm_libs support core irreader analysis passes transformutils)
-#  target_link_libraries(alive2 PRIVATE ${llvm_libs})
+  target_link_libraries(alive PRIVATE ${llvm_libs})
+  #target_link_libraries(alive2 PRIVATE ${llvm_libs})
   target_link_libraries(alive-tv PRIVATE ${ALIVE_LIBS_LLVM} ${llvm_libs})
   target_link_libraries(alive-exec PRIVATE ${ALIVE_LIBS_LLVM} ${llvm_libs})
   target_link_libraries(alive-exec-concrete PRIVATE ${ALIVE_LIBS_LLVM} ${llvm_libs})
