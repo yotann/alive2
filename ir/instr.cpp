@@ -850,7 +850,7 @@ util::ConcreteVal BinOp::concreteEval(std::map<const Value *, util::ConcreteVal>
   if (op == Op::Add){//TODO distinguish between nuw and nsw
     for (auto operand: v_op){
       auto I = concrete_vals.find(operand);
-      if (I->second.isPoison()){
+      if (I->second.isPoison()){//is the way we treat poison for all binops the same? is so refactor
         v.setPoison(true);
         return v;
       }
@@ -864,6 +864,38 @@ util::ConcreteVal BinOp::concreteEval(std::map<const Value *, util::ConcreteVal>
       auto ap_sum = v.getVal().sadd_ov(op_apint,ov_flag);
       v.setVal(ap_sum);
       //TODO check for ov_flag
+    }
+  }
+  else if (op == Op::And){
+    for (auto operand: v_op){
+      auto I = concrete_vals.find(operand);
+      if (I->second.isPoison()){
+        v.setPoison(true);
+        return v;
+      }
+      auto op_apint = I->second.getVal(); 
+      if (firstOp){
+        v.setVal(op_apint);
+        firstOp = false;
+        continue;
+      }
+      v.getVal()&=op_apint;
+    }
+  }
+  else if (op == Op::Or){
+    for (auto operand: v_op){
+      auto I = concrete_vals.find(operand);
+      if (I->second.isPoison()){
+        v.setPoison(true);
+        return v;
+      }
+      auto op_apint = I->second.getVal(); 
+      if (firstOp){
+        v.setVal(op_apint);
+        firstOp = false;
+        continue;
+      }
+      v.getVal()|=op_apint;
     }
   }
   else{
