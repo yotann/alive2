@@ -839,31 +839,31 @@ bool BinOp::isDivOrRem() const {
 util::ConcreteVal BinOp::concreteEval(std::map<const Value *, util::ConcreteVal> &concrete_vals) const{
   util::ConcreteVal v;
   auto v_op = operands();
-  
-  bool firstOp = true;
-  if (op == Op::Add){//TODO distinguish between nuw and nsw
-    for (auto operand: v_op){
+  for (auto operand: v_op){
       auto I = concrete_vals.find(operand);
       if (I == concrete_vals.end()){
         cout << "[BinOp::concreteEval] concrete values for operand not found. Aborting" << '\n';
         assert(false);
       }
-      else{
-        if (I->second.isPoison()){
-           v.setPoison(true);
-           return v;
-        }
-        auto op_apint = I->second.getVal(); 
-        if (firstOp){
-          auto ap_zero = llvm::APInt(op_apint.getBitWidth(),0);
-          v.setVal(ap_zero);
-          firstOp = false;
-        }
-        bool ov_flag = false;
-        auto ap_sum = v.getVal().sadd_ov(op_apint,ov_flag);
-        v.setVal(ap_sum);
-        //TODO check for ov_flag
-      } 
+  }
+  bool firstOp = true;
+  if (op == Op::Add){//TODO distinguish between nuw and nsw
+    for (auto operand: v_op){
+      auto I = concrete_vals.find(operand);
+      if (I->second.isPoison()){
+        v.setPoison(true);
+        return v;
+      }
+      auto op_apint = I->second.getVal(); 
+      if (firstOp){
+        auto ap_zero = llvm::APInt(op_apint.getBitWidth(),0);
+        v.setVal(ap_zero);
+        firstOp = false;
+      }
+      bool ov_flag = false;
+      auto ap_sum = v.getVal().sadd_ov(op_apint,ov_flag);
+      v.setVal(ap_sum);
+      //TODO check for ov_flag
     }
   }
   else{
