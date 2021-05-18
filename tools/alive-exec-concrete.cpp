@@ -178,6 +178,7 @@ int main(int argc, char **argv) {
   
   cout << "Alive-concrete\n";
   
+  
   std::string Usage =
       R"EOF(Alive2 stand-alone translation validator:
 version )EOF";
