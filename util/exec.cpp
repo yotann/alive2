@@ -47,9 +47,7 @@ void sym_exec(State &s) {
     assert(I == concrete_vals.end());
     if (dynamic_cast<const IntConst *>(&i)){
         auto const_ptr = dynamic_cast<const IntConst *>(&i);
-        //cout << "constant: " << i.getName() << " type: " << i.getType().toString() 
-        //<< " bitwidth: " << i.getType().bits() <<'\n';
-        util::ConcreteVal new_val(false, llvm::APInt(i.getType().bits(),*(const_ptr->getInt())));//this breaks for constants wider than 64bits
+        util::ConcreteVal new_val(false, llvm::APInt(i.getType().bits(),*(const_ptr->getInt())));
         concrete_vals.emplace(&i, new_val);
       }
       else{//TODO for now we only support Int constants
@@ -124,18 +122,6 @@ void sym_exec(State &s) {
           }
           else{
             concrete_vals[icmp_ptr] = res_val;
-          }
-        }
-        else if (dynamic_cast<const Select *>(&i)){
-          //cout << "ICMP instr" << '\n';
-          auto select_ptr =  dynamic_cast<const Select *>(&i);
-          util::ConcreteVal res_val = select_ptr->concreteEval(concrete_vals);
-          auto I = concrete_vals.find(select_ptr);
-          if (I == concrete_vals.end()){
-            concrete_vals.emplace(select_ptr, res_val);  
-          }
-          else{
-            concrete_vals[select_ptr] = res_val;
           }
         }
         else if (dynamic_cast<const Return *>(&i)){

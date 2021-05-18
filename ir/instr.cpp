@@ -898,8 +898,51 @@ util::ConcreteVal BinOp::concreteEval(std::map<const Value *, util::ConcreteVal>
       v.getVal()|=op_apint;
     }
   }
+  else if (op == Op::Xor){
+    for (auto operand: v_op){
+      auto I = concrete_vals.find(operand);
+      if (I->second.isPoison()){
+        v.setPoison(true);
+        return v;
+      }
+      auto op_apint = I->second.getVal(); 
+      if (firstOp){
+        v.setVal(op_apint);
+        firstOp = false;
+        continue;
+      }
+      v.getVal()^=op_apint;
+    }
+  }
+  else if (op == Op::Abs){
+    //cout << "[BinOP:concreteEval] abs intrinsic" << '\n';
+    assert(v_op.size() == 2);
+    auto num_op = v_op[0];
+    auto min_flag_op = v_op[1];
+    auto num_concrete_I = concrete_vals.find(num_op);
+    auto& num_concrete = num_concrete_I->second;
+    //abs result is poison if first argument is poison and flag is dc in this case
+    if (num_concrete.isPoison()){
+      v.setPoison(true);
+      return v;
+    }
+    auto& flag_concrete = concrete_vals.find(min_flag_op)->second;
+    if (num_concrete.getVal().isMinSignedValue()){
+      if (flag_concrete.getVal().getBoolValue() == true){
+        v.setPoison(true);
+        return v;
+      }
+      else{
+        v.setVal(num_concrete.getVal());
+        return v;
+      }
+    }
+    auto abs_num = num_concrete.getVal().abs();
+    v.setVal(abs_num);
+    return v;
+  }
   else{
-    cout << "[BinOP:concreteEval] not supported on this bin inst yet" << '\n';
+    cout << "[BinOP:concreteEval] not supported on this binary instruction yet" << '\n';
   }
   return v;
 }
@@ -1521,6 +1564,46 @@ expr Select::getTypeConstraints(const Function &f) const {
 
 unique_ptr<Instr> Select::dup(const string &suffix) const {
   return make_unique<Select>(getType(), getName() + suffix, *cond, *a, *b);
+}
+
+util::ConcreteVal Select::concreteEval(std::map<const Value *, util::ConcreteVal> &concrete_vals) const{
+
+  util::ConcreteVal v;
+  auto a_I = concrete_vals.find(a);
+  assert(a_I != concrete_vals.end());
+  auto& concrete_a = a_I->second;
+  auto b_I = concrete_vals.find(b);
+  assert(b_I != concrete_vals.end());
+  auto& concrete_b = b_I->second;
+  auto cond_I = concrete_vals.find(cond);
+  assert(cond_I != concrete_vals.end());
+  auto& concrete_cond = cond_I->second;
+  
+  if (concrete_a.isPoison() || concrete_b.isPoison() || concrete_cond.isPoison()){
+    v.setPoison(true);
+    return v;
+  }
+  bool select_res = false;
+  //cout << "select concrete eval: cond bitwidth = " << concrete_cond.getVal().getBitWidth() << '\n';
+  //concrete_cond.print();
+  if (concrete_cond.getVal().getBitWidth()==1){
+    if (concrete_cond.getVal().getBoolValue()){
+      select_res = true;
+    }
+  }
+  else{
+    cout << "[Select::concreteEval] non boolean condition not supported yet" << '\n';
+    exit(EXIT_SUCCESS);
+  }
+  
+  if (select_res){
+    v.setVal(concrete_a.getVal());
+  }
+  else{
+    v.setVal(concrete_b.getVal());
+  }
+    
+  return v;
 }
 
 
