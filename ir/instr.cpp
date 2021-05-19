@@ -847,7 +847,10 @@ util::ConcreteVal BinOp::concreteEval(std::map<const Value *, util::ConcreteVal>
       }
   }
   bool firstOp = true;
-  if (op == Op::Add){//TODO distinguish between nuw and nsw
+  bool nsw_flag = flags & NSW;
+  bool nuw_flag = flags & NUW;
+
+  if (op == Op::Add){
     for (auto operand: v_op){
       auto I = concrete_vals.find(operand);
       if (I->second.isPoison()){//is the way we treat poison for all binops the same? is so refactor
@@ -856,14 +859,43 @@ util::ConcreteVal BinOp::concreteEval(std::map<const Value *, util::ConcreteVal>
       }
       auto op_apint = I->second.getVal(); 
       if (firstOp){
-        auto ap_zero = llvm::APInt(op_apint.getBitWidth(),0);
-        v.setVal(ap_zero);
+        v.setVal(op_apint);
         firstOp = false;
+        continue;
       }
-      bool ov_flag = false;
-      auto ap_sum = v.getVal().sadd_ov(op_apint,ov_flag);
-      v.setVal(ap_sum);
-      //TODO check for ov_flag
+      bool ov_flag_s = false;
+      bool ov_flag_u = false;
+      auto ap_sum_s = v.getVal().sadd_ov(op_apint,ov_flag_s);
+      auto ap_sum_u = v.getVal().uadd_ov(op_apint,ov_flag_u);
+      v.setVal(ap_sum_s);
+      if ((nsw_flag & ov_flag_s) || (nuw_flag & ov_flag_u)){
+        v.setPoison(true);
+        return v;
+      }
+    }
+  }
+  if (op == Op::Sub){
+    for (auto operand: v_op){
+      auto I = concrete_vals.find(operand);
+      if (I->second.isPoison()){//is the way we treat poison for all binops the same? is so refactor
+        v.setPoison(true);
+        return v;
+      }
+      auto op_apint = I->second.getVal(); 
+      if (firstOp){
+        v.setVal(op_apint);
+        firstOp = false;
+        continue;
+      }
+      bool ov_flag_s = false;
+      bool ov_flag_u = false;
+      auto ap_sub_s = v.getVal().ssub_ov(op_apint,ov_flag_s);
+      auto ap_sub_u = v.getVal().usub_ov(op_apint,ov_flag_u);
+      v.setVal(ap_sub_s);
+      if ((nsw_flag & ov_flag_s) || (nuw_flag & ov_flag_u)){
+        v.setPoison(true);
+        return v;
+      }
     }
   }
   else if (op == Op::And){
