@@ -901,6 +901,30 @@ util::ConcreteVal BinOp::concreteEval(std::map<const Value *, util::ConcreteVal>
       }
     }
   }
+  if (op == Op::Mul){
+    for (auto operand: v_op){
+      auto I = concrete_vals.find(operand);
+      if (I->second.isPoison()){//is the way we treat poison for all binops the same? is so refactor
+        v.setPoison(true);
+        return v;
+      }
+      auto op_apint = I->second.getVal(); 
+      if (firstOp){
+        v.setVal(op_apint);
+        firstOp = false;
+        continue;
+      }
+      bool ov_flag_s = false;
+      bool ov_flag_u = false;
+      auto ap_mul_s = v.getVal().smul_ov(op_apint,ov_flag_s);
+      auto ap_mul_u = v.getVal().umul_ov(op_apint,ov_flag_u);
+      v.setVal(ap_mul_s);
+      if ((nsw_flag & ov_flag_s) || (nuw_flag & ov_flag_u)){
+        v.setPoison(true);
+        return v;
+      }
+    }
+  }
   else if (op == Op::And){
     for (auto operand: v_op){
       auto I = concrete_vals.find(operand);
