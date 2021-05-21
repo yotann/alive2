@@ -49,8 +49,17 @@ void sym_exec(State &s) {
         auto const_ptr = dynamic_cast<const IntConst *>(&i);
         //cout << "constant: " << i.getName() << " type: " << i.getType().toString() 
         //<< " bitwidth: " << i.getType().bits() <<'\n';
-        util::ConcreteVal new_val(false, llvm::APInt(i.getType().bits(),*(const_ptr->getInt())));//this breaks for constants wider than 64bits
-        concrete_vals.emplace(&i, new_val);
+        //need to do this for constants that are larger than i64
+        if (const_ptr->getString()){
+          //cout << "encountered const stored as string: " << *(const_ptr->getString())<< '\n';
+          util::ConcreteVal new_val(false, llvm::APInt(i.getType().bits(),*(const_ptr->getString()),10));
+          concrete_vals.emplace(&i, new_val);
+        }
+        else if (const_ptr->getInt()){
+          //cout << "encountered const stored as int: " << *(const_ptr->getInt())<< '\n';
+          util::ConcreteVal new_val(false, llvm::APInt(i.getType().bits(),*(const_ptr->getInt())));
+          concrete_vals.emplace(&i, new_val);
+        }  
       }
       else{//TODO for now we only support Int constants
         cout << "Unsupported constant. Encountered non Int constant. Aborting!" << '\n';
