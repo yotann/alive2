@@ -28,6 +28,7 @@ public:
   StateValue toSMT(State &s) const override;
   smt::expr getTypeConstraints() const override;
   auto getInt() const { return std::get_if<int64_t>(&val); }
+  auto getString() const { return std::get_if<std::string>(&val);}
 };
 
 

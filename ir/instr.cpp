@@ -852,6 +852,7 @@ util::ConcreteVal BinOp::concreteEval(std::map<const Value *, util::ConcreteVal>
   bool firstOp = true;
   bool nsw_flag = flags & NSW;
   bool nuw_flag = flags & NUW;
+  bool exact_flag = flags & Exact;
 
   if (op == Op::Add){
     for (auto operand: v_op){
@@ -975,7 +976,6 @@ util::ConcreteVal BinOp::concreteEval(std::map<const Value *, util::ConcreteVal>
   }
   else if (op == Op::Abs){
     //cout << "[BinOP:concreteEval] abs intrinsic" << '\n';
-    assert(v_op.size() == 2);
     auto num_op = v_op[0];
     auto min_flag_op = v_op[1];
     auto num_concrete_I = concrete_vals.find(num_op);
@@ -999,6 +999,46 @@ util::ConcreteVal BinOp::concreteEval(std::map<const Value *, util::ConcreteVal>
     auto abs_num = num_concrete.getVal().abs();
     v.setVal(abs_num);
     return v;
+  }
+  else if (op == Op::LShr){
+    auto num_concrete = concrete_vals.find(lhs)->second;
+    auto shift_amt_concrete = concrete_vals.find(rhs)->second;
+    //first check if the shift amount is larger than the number's bitwidth -> return poison
+    //the maximum bitwidth for an integer type is 2^23-1 so the rhs cannot have a bitwidth larger than 2^23
+    if (num_concrete.isPoison()){
+      v.setPoison(true);
+      return v;
+    }
+    uint64_t max_shift = (1<<23);
+    auto shift_amt_u_limit = shift_amt_concrete.getVal().getLimitedValue((1<<23));
+    if ((shift_amt_u_limit == max_shift) ||
+        (shift_amt_u_limit >= num_concrete.getVal().getBitWidth())){
+      v.setPoison(true);
+      return v;
+    }
+    
+    //need to handle this special case to safely subtract 1 from num_concrete 
+    //when handling exact flag
+    if (shift_amt_u_limit == 0){
+      v.setVal(num_concrete.getVal());
+      return v;
+    }
+    //if any of the shifted bits is non-zero, we should return poison
+    if (exact_flag){
+      bool ov_flag_s = false;
+      auto ap_1{llvm::APInt(num_concrete.getVal().getBitWidth(),1)};
+      auto ap_mask{llvm::APInt(num_concrete.getVal().getBitWidth(),1)};
+      ap_mask = ap_mask.shl(shift_amt_u_limit);
+      ap_mask = ap_mask.ssub_ov(ap_1,ov_flag_s);
+      ap_mask &= num_concrete.getVal();
+      if (ap_mask.getBoolValue()){//exact shift returns poison
+        v.setPoison(true);
+        return v;
+      }
+    }
+    //at this point we can safely right shift our num by the amount
+    auto res = num_concrete.getVal().lshr(shift_amt_u_limit);
+    v.setVal(res);
   }
   else{
     cout << "[BinOP:concreteEval] not supported on this binary instruction yet" << '\n';
