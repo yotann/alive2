@@ -997,7 +997,7 @@ util::ConcreteVal BinOp::concreteEval(std::map<const Value *, util::ConcreteVal>
     v.setVal(abs_num);
     return v;
   }
-  else if (op == Op::LShr){
+  else if ((op == Op::LShr) || op == Op::AShr){
     auto num_concrete = concrete_vals.find(lhs)->second;
     auto shift_amt_concrete = concrete_vals.find(rhs)->second;
     //first check if the shift amount is larger than the number's bitwidth -> return poison
@@ -1033,8 +1033,14 @@ util::ConcreteVal BinOp::concreteEval(std::map<const Value *, util::ConcreteVal>
         return v;
       }
     }
+    auto res{llvm::APInt()};
     //at this point we can safely right shift our num by the amount
-    auto res = num_concrete.getVal().lshr(shift_amt_u_limit);
+    if (op== Op::LShr){
+      res = num_concrete.getVal().lshr(shift_amt_u_limit);
+    }
+    else{
+      res = num_concrete.getVal().ashr(shift_amt_u_limit);
+    }
     v.setVal(res);
   }
   else{

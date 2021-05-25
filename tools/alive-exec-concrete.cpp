@@ -29,6 +29,8 @@
 #include "llvm/Transforms/IPO/PassManagerBuilder.h"
 #include "llvm/Transforms/Utils/Cloning.h"
 #include "llvm/ADT/APInt.h"
+#include "llvm/ADT/APFloat.h"
+#include "llvm/ADT/StringRef.h"
 
 #include <fstream>
 #include <iostream>
@@ -177,6 +179,7 @@ int main(int argc, char **argv) {
 
   
   cout << "Alive-concrete\n";
+  
   
   
   std::string Usage =

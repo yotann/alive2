@@ -6,13 +6,13 @@
 #include "llvm/ADT/APInt.h"
 #include "llvm/ADT/SmallString.h"
 #include <memory>
+#include <variant>
 #include <iostream>
 
 namespace util {
   class ConcreteVal{
   private:
     bool poison;
-    //std::unique_ptr<llvm::APInt> val_ptr; 
     llvm::APInt val;
   public:
     ConcreteVal(): poison(false), val() {}
@@ -23,8 +23,6 @@ namespace util {
     ConcreteVal& operator=(ConcreteVal&& r) = default;
     void setPoison(bool poison);
     bool isPoison();
-    //void setValPtr(std::unique_ptr<llvm::APInt> new_val_ptr);
-    //std::unique_ptr<llvm::APInt> getValPtr();
     void setVal(llvm::APInt& v);
     llvm::APInt& getVal();
     void setConcreteVal(bool poison, std::unique_ptr<llvm::APInt> new_val_ptr);
