@@ -34,37 +34,56 @@ void sym_exec(State &s) {
   //cout << "iterating over function inputs\n";
   std::map<const Value *, util::ConcreteVal> concrete_vals;
   for (auto &i : f.getInputs()){
-    assert(i.getType().isIntType());//TODO for now we only support IntType
+    //TODO for now we support IntType and FloatType
+    assert(i.getType().isIntType() || i.getType().isFloatType());
     auto I = concrete_vals.find(&i);
     assert(I == concrete_vals.end());
-    util::ConcreteVal new_val(false,llvm::APInt(i.getType().bits(), 3));
-    concrete_vals.emplace(&i, new_val);  
-    //TODO need to handle other types declared in constant.h 
+    if (i.getType().isIntType()){
+      util::ConcreteVal new_val(false,llvm::APInt(i.getType().bits(), 3));
+      concrete_vals.emplace(&i, new_val);  
+    }
+    else if (i.getType().isFloatType()){
+      cout << "float input encountered " << '\n';
+      exit(EXIT_SUCCESS);
+    }
+    else{
+      cout << "Alive Interpreter. Unsupported input type. Aborting!" << '\n';
+      exit(EXIT_FAILURE);
+    }
   }
-
   for (auto &i : f.getConstants()){
     auto I = concrete_vals.find(&i);
     assert(I == concrete_vals.end());
-    if (dynamic_cast<const IntConst *>(&i)){
-        auto const_ptr = dynamic_cast<const IntConst *>(&i);
-        //cout << "constant: " << i.getName() << " type: " << i.getType().toString() 
-        //<< " bitwidth: " << i.getType().bits() <<'\n';
-        //need to do this for constants that are larger than i64
-        if (const_ptr->getString()){
-          //cout << "encountered const stored as string: " << *(const_ptr->getString())<< '\n';
-          util::ConcreteVal new_val(false, llvm::APInt(i.getType().bits(),*(const_ptr->getString()),10));
-          concrete_vals.emplace(&i, new_val);
-        }
-        else if (const_ptr->getInt()){
-          //cout << "encountered const stored as int: " << *(const_ptr->getInt())<< '\n';
-          util::ConcreteVal new_val(false, llvm::APInt(i.getType().bits(),*(const_ptr->getInt())));
-          concrete_vals.emplace(&i, new_val);
-        }  
+    //read poison consts
+    if (dynamic_cast<const PoisonValue *>(&i)){
+      util::ConcreteVal new_val(true, llvm::APInt(i.getType().bits(),0));
+      concrete_vals.emplace(&i, new_val);
+    }
+    else if (auto const_ptr = dynamic_cast<const IntConst *>(&i)){
+      //auto const_ptr = dynamic_cast<const IntConst *>(&i);
+      //cout << "constant: " << i.getName() << " type: " << i.getType().toString() 
+      //<< " bitwidth: " << i.getType().bits() << '\n';
+      //need to do this for constants that are larger than i64
+      if (const_ptr->getString()){
+        //cout << "encountered const stored as string: " << *(const_ptr->getString())<< '\n';
+        util::ConcreteVal new_val(false, llvm::APInt(i.getType().bits(),*(const_ptr->getString()),10));
+        concrete_vals.emplace(&i, new_val);
       }
-      else{//TODO for now we only support Int constants
-        cout << "Unsupported constant. Encountered non Int constant. Aborting!" << '\n';
-        exit(EXIT_FAILURE);
-      }
+      else if (const_ptr->getInt()){
+        //cout << "encountered const stored as int: " << *(const_ptr->getInt())<< '\n';
+        util::ConcreteVal new_val(false, llvm::APInt(i.getType().bits(),*(const_ptr->getInt())));
+        concrete_vals.emplace(&i, new_val);
+      }  
+    }
+    else if (auto const_ptr = dynamic_cast<const FloatConst *>(&i)){
+      cout << "float constant: " << const_ptr->getName() << " type: " << i.getType().toString() 
+      << " bitwidth: " << i.getType().bits() << '\n';
+      
+    }
+    else{//TODO for now we only support Int constants
+      cout << "Alive Interpreter. Unsupported constant type. Aborting!" << '\n';
+      exit(EXIT_FAILURE);
+    }
   }
 
   // add constants & inputs to State table first of all

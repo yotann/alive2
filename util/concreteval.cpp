@@ -12,14 +12,6 @@ namespace util{
     return this->poison;
   }
 
-  /*void ConcreteVal::setValPtr(std::unique_ptr<llvm::APInt> new_val_ptr){
-    val_ptr = std::move(new_val_ptr);
-  }*/
-  
-  /*std::unique_ptr<llvm::APInt> ConcreteVal::getValPtr(){
-    return val_ptr;
-  }*/
-
   void ConcreteVal::setVal(llvm::APInt& v){
     val = v;
   }
@@ -27,11 +19,6 @@ namespace util{
   llvm::APInt& ConcreteVal::getVal(){
     return val;
   }
-
-  /*void ConcreteVal::setConcreteVal(bool poison, std::unique_ptr<llvm::APInt> new_val_ptr){
-    setPoison(poison);
-    setValPtr(new_val_ptr);
-  }*/
 
   void ConcreteVal::print(){
     llvm::SmallString<40> S, U;
