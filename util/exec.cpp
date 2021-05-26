@@ -28,32 +28,97 @@ void sym_exec(State &s) {
     }
   }
   
+  cout << "running exec.cpp" << '\n';
   //TODO need to check for Value subclasses for inputs and constants
   //i.e. PoisonValue, UndefValue, and etc.
   //initialize inputs with concrete values
-  //cout << "iterating over function inputs\n";
   std::map<const Value *, util::ConcreteVal> concrete_vals;
   for (auto &i : f.getInputs()){
-    assert(i.getType().isIntType());//TODO for now we only support IntType
+    //TODO for now we support IntType and FloatType
+    assert(i.getType().isIntType() || i.getType().isFloatType());
     auto I = concrete_vals.find(&i);
     assert(I == concrete_vals.end());
-    util::ConcreteVal new_val(false,llvm::APInt(i.getType().bits(), 3));
-    concrete_vals.emplace(&i, new_val);  
-    //TODO need to handle other types declared in constant.h 
+    if (i.getType().isIntType()){
+      util::ConcreteVal new_val(false,llvm::APInt(i.getType().bits(), 3));
+      concrete_vals.emplace(&i, new_val);  
+    }
+    else if (i.getType().isFloatType()){
+      cout << "float input encountered " << '\n';
+      
+      if (i.bits() == 32){
+        util::ConcreteVal new_val(false,llvm::APFloat(3.0f));
+        concrete_vals.emplace(&i, new_val);  
+      }
+      else if(i.bits() == 64){
+        util::ConcreteVal new_val(false,llvm::APFloat(3.0));
+        concrete_vals.emplace(&i, new_val);
+      }
+      else{
+        cout << "Alive Interpreter. Unsupporter float input type. Aborting" << '\n';
+        exit(EXIT_FAILURE);
+      }
+    }
+    else{
+      cout << "Alive Interpreter. Unsupported input type. Aborting!" << '\n';
+      exit(EXIT_FAILURE);
+    }
   }
-
   for (auto &i : f.getConstants()){
     auto I = concrete_vals.find(&i);
     assert(I == concrete_vals.end());
-    if (dynamic_cast<const IntConst *>(&i)){
-        auto const_ptr = dynamic_cast<const IntConst *>(&i);
-        util::ConcreteVal new_val(false, llvm::APInt(i.getType().bits(),*(const_ptr->getInt())));
+    //read poison consts
+    if (dynamic_cast<const PoisonValue *>(&i)){
+      util::ConcreteVal new_val(true, llvm::APInt(i.getType().bits(),0));
+      concrete_vals.emplace(&i, new_val);
+    }
+    else if (auto const_ptr = dynamic_cast<const IntConst *>(&i)){
+      //auto const_ptr = dynamic_cast<const IntConst *>(&i);
+      //cout << "constant: " << i.getName() << " type: " << i.getType().toString() 
+      //<< " bitwidth: " << i.getType().bits() << '\n';
+      //need to do this for constants that are larger than i64
+      if (const_ptr->getString()){
+        //cout << "encountered const stored as string: " << *(const_ptr->getString())<< '\n';
+        util::ConcreteVal new_val(false, llvm::APInt(i.getType().bits(),*(const_ptr->getString()),10));
         concrete_vals.emplace(&i, new_val);
       }
-      else{//TODO for now we only support Int constants
-        cout << "Unsupported constant. Encountered non Int constant. Aborting!" << '\n';
-        exit(EXIT_FAILURE);
+      else if (const_ptr->getInt()){
+        //cout << "encountered const stored as int: " << *(const_ptr->getInt())<< '\n';
+        util::ConcreteVal new_val(false, llvm::APInt(i.getType().bits(),*(const_ptr->getInt())));
+        concrete_vals.emplace(&i, new_val);
+      }  
+    }
+    else if (auto const_ptr = dynamic_cast<const FloatConst *>(&i)){
+      assert((const_ptr->bits() == 32) || (const_ptr->bits() == 64));//TODO: add support for other FP types
+      cout << "float constant: " << const_ptr->getName() << " type: " << i.getType().toString() 
+      << " bitwidth: " << i.getType().bits() << '\n';
+      if (auto double_float = const_ptr->getDouble()){
+        cout << "double repr of float constant : " << *double_float << '\n';
+        if (const_ptr->bits() == 32){
+          //Since the original ir was representable using float, casting the double back to float should be
+          //safe I think but this looks pretty bad and should think of a better solution
+          util::ConcreteVal new_val(false,llvm::APFloat(static_cast<float>(*double_float)));
+          concrete_vals.emplace(&i, new_val);
+        }
+        else if (const_ptr->bits() == 64){
+          util::ConcreteVal new_val(false,llvm::APFloat(*double_float));
+          concrete_vals.emplace(&i, new_val);
+        }
+        else{
+          UNREACHABLE();
+        }
       }
+      if (auto string_float = const_ptr->getString()){
+        cout << "string repr of float constant : " << *string_float << '\n';
+      }
+      else if (auto int_float = const_ptr->getInt()){
+        cout << "int repr of float constant : " << *int_float << '\n';
+      }
+      
+    }
+    else{//TODO for now we only support Int constants
+      cout << "Alive Interpreter. Unsupported constant type. Aborting!" << '\n';
+      exit(EXIT_FAILURE);
+    }
   }
 
   // add constants & inputs to State table first of all
@@ -122,6 +187,18 @@ void sym_exec(State &s) {
           }
           else{
             concrete_vals[icmp_ptr] = res_val;
+          }
+        }
+        else if (dynamic_cast<const Select *>(&i)){
+          //cout << "ICMP instr" << '\n';
+          auto select_ptr =  dynamic_cast<const Select *>(&i);
+          util::ConcreteVal res_val = select_ptr->concreteEval(concrete_vals);
+          auto I = concrete_vals.find(select_ptr);
+          if (I == concrete_vals.end()){
+            concrete_vals.emplace(select_ptr, res_val);  
+          }
+          else{
+            concrete_vals[select_ptr] = res_val;
           }
         }
         else if (dynamic_cast<const Return *>(&i)){
