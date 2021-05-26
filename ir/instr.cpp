@@ -878,7 +878,24 @@ util::ConcreteVal BinOp::concreteEval(std::map<const Value *, util::ConcreteVal>
       }
     }
   }
-  if (op == Op::Sub){
+  else if (op == Op::FAdd){
+    for (auto operand: v_op){
+      auto I = concrete_vals.find(operand);
+      if (I->second.isPoison()){//is the way we treat poison for all binops the same? is so refactor
+        v.setPoison(true);
+        return v;
+      }
+      auto op_apfloat = I->second.getValFloat(); 
+      if (firstOp){
+        v.setVal(op_apfloat);
+        firstOp = false;
+        continue;
+      }
+      auto status = v.getValFloat().add(op_apfloat,llvm::APFloatBase::rmNearestTiesToEven);
+      assert(status == llvm::APFloatBase::opOK);//TODO handle inexact cases
+    }
+  }
+  else if (op == Op::Sub){
     for (auto operand: v_op){
       auto I = concrete_vals.find(operand);
       if (I->second.isPoison()){//is the way we treat poison for all binops the same? is so refactor
@@ -902,7 +919,7 @@ util::ConcreteVal BinOp::concreteEval(std::map<const Value *, util::ConcreteVal>
       }
     }
   }
-  if (op == Op::Mul){
+  else if (op == Op::Mul){
     for (auto operand: v_op){
       auto I = concrete_vals.find(operand);
       if (I->second.isPoison()){//is the way we treat poison for all binops the same? is so refactor

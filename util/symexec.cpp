@@ -31,7 +31,6 @@ void sym_exec(State &s) {
   //TODO need to check for Value subclasses for inputs and constants
   //i.e. PoisonValue, UndefValue, and etc.
   //initialize inputs with concrete values
-  //cout << "iterating over function inputs\n";
   std::map<const Value *, util::ConcreteVal> concrete_vals;
   for (auto &i : f.getInputs()){
     //TODO for now we support IntType and FloatType
@@ -44,7 +43,19 @@ void sym_exec(State &s) {
     }
     else if (i.getType().isFloatType()){
       cout << "float input encountered " << '\n';
-      exit(EXIT_SUCCESS);
+      
+      if (i.bits() == 32){
+        util::ConcreteVal new_val(false,llvm::APFloat(3.0f));
+        concrete_vals.emplace(&i, new_val);  
+      }
+      else if(i.bits() == 64){
+        util::ConcreteVal new_val(false,llvm::APFloat(3.0));
+        concrete_vals.emplace(&i, new_val);
+      }
+      else{
+        cout << "Alive Interpreter. Unsupporter float input type. Aborting" << '\n';
+        exit(EXIT_FAILURE);
+      }
     }
     else{
       cout << "Alive Interpreter. Unsupported input type. Aborting!" << '\n';
@@ -76,8 +87,31 @@ void sym_exec(State &s) {
       }  
     }
     else if (auto const_ptr = dynamic_cast<const FloatConst *>(&i)){
+      assert((const_ptr->bits() == 32) || (const_ptr->bits() == 64));//TODO: add support for other FP types
       cout << "float constant: " << const_ptr->getName() << " type: " << i.getType().toString() 
       << " bitwidth: " << i.getType().bits() << '\n';
+      if (auto double_float = const_ptr->getDouble()){
+        cout << "double repr of float constant : " << *double_float << '\n';
+        if (const_ptr->bits() == 32){
+          //Since the original ir was representable using float, casting the double back to float should be
+          //safe I think but this looks pretty bad and should think of a better solution
+          util::ConcreteVal new_val(false,llvm::APFloat(static_cast<float>(*double_float)));
+          concrete_vals.emplace(&i, new_val);
+        }
+        else if (const_ptr->bits() == 64){
+          util::ConcreteVal new_val(false,llvm::APFloat(*double_float));
+          concrete_vals.emplace(&i, new_val);
+        }
+        else{
+          UNREACHABLE();
+        }
+      }
+      if (auto string_float = const_ptr->getString()){
+        cout << "string repr of float constant : " << *string_float << '\n';
+      }
+      else if (auto int_float = const_ptr->getInt()){
+        cout << "int repr of float constant : " << *int_float << '\n';
+      }
       
     }
     else{//TODO for now we only support Int constants
