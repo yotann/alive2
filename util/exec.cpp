@@ -53,8 +53,12 @@ void sym_exec(State &s) {
         util::ConcreteVal new_val(false,llvm::APFloat(3.0));
         concrete_vals.emplace(&i, new_val);
       }
+      else if(i.bits() == 16){
+        util::ConcreteVal new_val(false,llvm::APFloat(llvm::APFloatBase::IEEEhalf(),"3.0"));
+        concrete_vals.emplace(&i, new_val);
+      }
       else{
-        cout << "Alive Interpreter. Unsupporter float input type. Aborting" << '\n';
+        cout << "Alive Interpreter. Unsupported float input type. Aborting" << '\n';
         exit(EXIT_FAILURE);
       }
     }
@@ -88,7 +92,9 @@ void sym_exec(State &s) {
       }  
     }
     else if (auto const_ptr = dynamic_cast<const FloatConst *>(&i)){
-      assert((const_ptr->bits() == 32) || (const_ptr->bits() == 64));//TODO: add support for other FP types
+      assert((const_ptr->bits() == 32) 
+          || (const_ptr->bits() == 64)
+          || (const_ptr->bits() == 16));//TODO: add support for other FP types
       cout << "float constant: " << const_ptr->getName() << " type: " << i.getType().toString() 
       << " bitwidth: " << i.getType().bits() << '\n';
       if (auto double_float = const_ptr->getDouble()){
@@ -111,6 +117,10 @@ void sym_exec(State &s) {
         cout << "string repr of float constant : " << *string_float << '\n';
       }
       else if (auto int_float = const_ptr->getInt()){
+        
+        util::ConcreteVal new_val(false,llvm::APFloat(llvm::APFloatBase::IEEEhalf(),llvm::APInt(16,*int_float)));
+        concrete_vals.emplace(&i, new_val);
+        
         cout << "int repr of float constant : " << *int_float << '\n';
       }
       
