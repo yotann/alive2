@@ -840,7 +840,6 @@ bool BinOp::isDivOrRem() const {
 }
 
 util::ConcreteVal BinOp::concreteEval(std::map<const Value *, util::ConcreteVal> &concrete_vals) const{
-  util::ConcreteVal v;
   auto v_op = operands();
   for (auto operand: v_op){
       auto I = concrete_vals.find(operand);
@@ -848,7 +847,8 @@ util::ConcreteVal BinOp::concreteEval(std::map<const Value *, util::ConcreteVal>
         cout << "[BinOp::concreteEval] concrete values for operand not found. Aborting" << '\n';
         assert(false);
       }
-  }
+  }  
+  util::ConcreteVal v;
   bool firstOp = true;
   bool nsw_flag = flags & NSW;
   bool nuw_flag = flags & NUW;
@@ -999,7 +999,6 @@ util::ConcreteVal BinOp::concreteEval(std::map<const Value *, util::ConcreteVal>
     }
   }
   else if (op == Op::Abs){
-    //cout << "[BinOP:concreteEval] abs intrinsic" << '\n';
     auto num_op = v_op[0];
     auto min_flag_op = v_op[1];
     auto num_concrete_I = concrete_vals.find(num_op);
@@ -1024,7 +1023,7 @@ util::ConcreteVal BinOp::concreteEval(std::map<const Value *, util::ConcreteVal>
     v.setVal(abs_num);
     return v;
   }
-  else if ((op == Op::LShr) || op == Op::AShr){
+  else if ((op == Op::LShr) || (op == Op::AShr)){
     auto num_concrete = concrete_vals.find(lhs)->second;
     auto shift_amt_concrete = concrete_vals.find(rhs)->second;
     //first check if the shift amount is larger than the number's bitwidth -> return poison
@@ -1040,7 +1039,6 @@ util::ConcreteVal BinOp::concreteEval(std::map<const Value *, util::ConcreteVal>
       v.setPoison(true);
       return v;
     }
-    
     //need to handle this special case to safely subtract 1 from num_concrete 
     //when handling exact flag
     if (shift_amt_u_limit == 0){
@@ -1070,8 +1068,49 @@ util::ConcreteVal BinOp::concreteEval(std::map<const Value *, util::ConcreteVal>
     }
     v.setVal(res);
   }
+  else if(op == Op::Shl){
+    auto lhs_bitwidth = concrete_vals.find(lhs)->second.getVal().getBitWidth();
+    util::ConcreteVal v(false,llvm::APInt(lhs_bitwidth, 0));
+    auto lhs_concrete = concrete_vals.find(lhs)->second;
+    auto shift_amt_concrete = concrete_vals.find(rhs)->second;
+    
+    if (lhs_concrete.isPoison()){
+      v.setPoison(true);
+      return v;
+    }
+    //first check if the shift amount is larger than the number's bitwidth -> return poison
+    //the maximum bitwidth for an integer type is 2^23-1 so the rhs cannot have a bitwidth larger than 2^23
+    uint64_t max_shift = (1<<23);
+    auto shift_amt_u_limit = shift_amt_concrete.getVal().getLimitedValue((1<<23));
+    if ((shift_amt_u_limit == max_shift) ||
+        (shift_amt_u_limit >= lhs_concrete.getVal().getBitWidth())){
+      v.setPoison(true);
+      return v;
+    }
+    //need to handle this special case to safely subtract 1 from num_concrete 
+    //when handling exact flag
+    if (shift_amt_u_limit == 0){
+      v.setVal(lhs_concrete.getVal());
+      return v;
+    }
+
+    auto res{llvm::APInt()};
+    if (!nuw_flag && !nsw_flag){
+      res = lhs_concrete.getVal().shl(shift_amt_u_limit);
+      v.setVal(res);
+      return v;
+    }
+    //if (nuw_flag){
+
+    //}
+    //
+    //if (nsw_flag){
+
+    //}
+    
+  }
   else{
-    cout << "[BinOP:concreteEval] not supported on this binary instruction yet" << '\n';
+    cout << "[BinOP:concreteEval] not supported on this instruction yet" << '\n';
   }
   return v;
 }
@@ -1248,6 +1287,42 @@ unique_ptr<Instr> UnaryOp::dup(const string &suffix) const {
   return make_unique<UnaryOp>(getType(), getName() + suffix, *val, op, fmath);
 }
 
+
+util::ConcreteVal UnaryOp::concreteEval(std::map<const Value *, util::ConcreteVal> &concrete_vals) const{
+  auto I = concrete_vals.find(val);
+  if (I == concrete_vals.end()){
+    cout << "[Unary::concreteEval] concrete value for operand not found. Aborting" << '\n';
+    assert(false);
+  }
+  
+  auto tgt_bitwidth = getType().bits();
+  util::ConcreteVal v(false, llvm::APInt(tgt_bitwidth,0));
+  if (I->second.isPoison()){
+    v.setPoison(true);
+    return v;
+  }
+  auto op_apint = I->second.getVal();
+  assert(op_apint.getBitWidth() == tgt_bitwidth);
+  if (op == Op::Ctpop){
+    uint64_t cnt = 0;
+    for (unsigned i = 0; i < tgt_bitwidth; ++i){
+      if (op_apint.extractBits(1,i).getBoolValue()){
+        cnt +=1;
+      }
+    }
+    util::ConcreteVal v(false, llvm::APInt(tgt_bitwidth,cnt));  
+    return v;
+  }
+  else{
+    cout << "[UnaryOp::concreteEval] not supported on this instruction yet" << '\n';
+  }
+  return v;
+  
+  //for (unsigned i = 0; i < nbits; ++i) {
+  //  res = res + extract(i, i).zext(nbits - 1);
+  //}
+
+}
 
 vector<Value*> UnaryReductionOp::operands() const {
   return { val };
@@ -1644,6 +1719,41 @@ unique_ptr<Instr> ConversionOp::dup(const string &suffix) const {
   return make_unique<ConversionOp>(getType(), getName() + suffix, *val, op);
 }
 
+util::ConcreteVal ConversionOp::concreteEval(std::map<const Value *, util::ConcreteVal> &concrete_vals) const{
+  
+  auto I = concrete_vals.find(val);
+  if (I == concrete_vals.end()){
+    cout << "[ConversionOp::concreteEval] concrete value for operand not found. Aborting" << '\n';
+    assert(false);
+  }
+  
+  auto tgt_bitwidth = getType().bits();
+  util::ConcreteVal v(false, llvm::APInt(tgt_bitwidth,0));
+  if (I->second.isPoison()){
+    v.setPoison(true);
+    return v;
+  }
+  auto op_apint = I->second.getVal();
+  if (op == Op::Trunc){
+    //assert(op_apint.getBitWidth() > tgt_bitwidth);already causes an error in APInt::trunc
+    auto res = op_apint.trunc(tgt_bitwidth); 
+    v.setVal(res);
+  }
+  else if (op == Op::ZExt){
+    //assert(op_apint.getBitWidth() < tgt_bitwidth);already causes an error in APInt::zext
+    auto res = op_apint.zext(tgt_bitwidth); 
+    v.setVal(res);
+  }
+  else if (op == Op::SExt){
+    //assert(op_apint.getBitWidth() < tgt_bitwidth);already causes an error in APInt::sext
+    auto res = op_apint.sext(tgt_bitwidth); 
+    v.setVal(res);
+  }
+  else{
+    cout << "[ConversionOp::concreteEval] not supported on this instruction yet" << '\n';
+  }
+  return v;
+}
 
 vector<Value*> Select::operands() const {
   return { cond, a, b };

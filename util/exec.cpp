@@ -187,6 +187,31 @@ void sym_exec(State &s) {
             concrete_vals[ptr] = res_val;
           }
         }
+        else if (dynamic_cast<const UnaryOp *>(&i)){
+          auto ptr =  dynamic_cast<const UnaryOp *>(&i);
+          util::ConcreteVal res_val = ptr->concreteEval(concrete_vals);
+          auto I = concrete_vals.find(ptr);
+          if (I == concrete_vals.end()){
+            concrete_vals.emplace(ptr, res_val);  
+          }
+          else{
+            concrete_vals[ptr] = res_val;
+          }
+        }
+        else if (dynamic_cast<const ConversionOp *>(&i)){
+          //auto v_op = i.operands();
+          //cout << "conv ops len" << v_op.size() << '\n';
+          //cout << i.getType().toString() << '\n';
+          auto ptr =  dynamic_cast<const ConversionOp *>(&i);
+          util::ConcreteVal res_val = ptr->concreteEval(concrete_vals);
+          auto I = concrete_vals.find(ptr);
+          if (I == concrete_vals.end()){
+            concrete_vals.emplace(ptr, res_val);  
+          }
+          else{
+            concrete_vals[ptr] = res_val;
+          }
+        }
         else if (dynamic_cast<const ICmp *>(&i)){
           //cout << "ICMP instr" << '\n';
           auto icmp_ptr =  dynamic_cast<const ICmp *>(&i);

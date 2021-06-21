@@ -100,6 +100,7 @@ public:
   StateValue toSMT(State &s) const override;
   smt::expr getTypeConstraints(const Function &f) const override;
   std::unique_ptr<Instr> dup(const std::string &suffix) const override;
+  util::ConcreteVal concreteEval(std::map<const Value *, util::ConcreteVal> &concrete_vals) const;
 };
 
 
@@ -173,6 +174,7 @@ public:
   StateValue toSMT(State &s) const override;
   smt::expr getTypeConstraints(const Function &f) const override;
   std::unique_ptr<Instr> dup(const std::string &suffix) const override;
+  util::ConcreteVal concreteEval(std::map<const Value *, util::ConcreteVal> &concrete_vals) const;
 };
 
 
