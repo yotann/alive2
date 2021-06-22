@@ -1095,19 +1095,34 @@ util::ConcreteVal BinOp::concreteEval(std::map<const Value *, util::ConcreteVal>
     }
 
     auto res{llvm::APInt()};
+    res = lhs_concrete.getVal().shl(shift_amt_u_limit);
     if (!nuw_flag && !nsw_flag){
-      res = lhs_concrete.getVal().shl(shift_amt_u_limit);
       v.setVal(res);
       return v;
     }
-    //if (nuw_flag){
-
-    //}
-    //
-    //if (nsw_flag){
-
-    //}
-    
+    if (nuw_flag){
+      auto lhs_copy {lhs_concrete.getVal()};
+      for (unsigned i=0; i < shift_amt_u_limit; ++i){
+        if (lhs_copy.isSignBitSet()){
+          v.setPoison(true);
+          return v;
+        }
+        lhs_copy<<=1;
+      }
+    }
+    if (nsw_flag){
+      bool res_sign_bit = res.isSignBitSet();
+      auto lhs_copy {lhs_concrete.getVal()};
+      for (unsigned i=0; i < shift_amt_u_limit; ++i){
+        if (lhs_copy.isSignBitSet() != res_sign_bit){
+          v.setPoison(true);
+          return v;
+        }
+        lhs_copy<<=1;
+      }
+    }
+    v.setVal(res);
+    return v;
   }
   else{
     cout << "[BinOP:concreteEval] not supported on this instruction yet" << '\n';
@@ -1318,10 +1333,6 @@ util::ConcreteVal UnaryOp::concreteEval(std::map<const Value *, util::ConcreteVa
   }
   return v;
   
-  //for (unsigned i = 0; i < nbits; ++i) {
-  //  res = res + extract(i, i).zext(nbits - 1);
-  //}
-
 }
 
 vector<Value*> UnaryReductionOp::operands() const {
