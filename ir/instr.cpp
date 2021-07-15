@@ -882,7 +882,7 @@ util::ConcreteVal BinOp::concreteEval(std::map<const Value *, util::ConcreteVal>
            op == Op::FSub){
     for (auto operand: v_op){
       auto I = concrete_vals.find(operand);
-      if (I->second.isPoison()){//is the way we treat poison for all binops the same? is so refactor
+      if (I->second.isPoison()){
         v.setPoison(true);
         return v;
       }
@@ -892,14 +892,38 @@ util::ConcreteVal BinOp::concreteEval(std::map<const Value *, util::ConcreteVal>
         firstOp = false;
         continue;
       }
+      if (fmath.isNNan()){
+        if (op_apfloat.isNaN()){
+          v.setPoison(true);
+            return v;
+        }
+      }
+      if (fmath.isNInf()){ 
+        if (op_apfloat.isInfinity()){
+            v.setPoison(true);
+            return v;
+        }
+      }
       if (op == Op::FAdd){
         auto status = v.getValFloat().add(op_apfloat,llvm::APFloatBase::rmNearestTiesToEven);
-        assert(status == llvm::APFloatBase::opOK);//TODO handle inexact cases
+        assert(status == llvm::APFloatBase::opOK);//TODO what to do about inexact cases?
       }
-      else {//Op::FSub
+      else if (op == Op::FSub) {
         auto status = v.getValFloat().subtract(op_apfloat,llvm::APFloatBase::rmNearestTiesToEven);
         assert(status == llvm::APFloatBase::opOK);//TODO handle inexact cases
       }
+      else{
+        UNREACHABLE();
+      }
+      if (fmath.isNNan() && v.getValFloat().isNaN()){
+          v.setPoison(true);
+          return v;
+      }
+      if (fmath.isNInf() && v.getValFloat().isInfinity()){
+          v.setPoison(true);
+          return v;
+      }
+
     }
   }
   else if (op == Op::Sub){
@@ -1302,6 +1326,14 @@ unique_ptr<Instr> UnaryOp::dup(const string &suffix) const {
   return make_unique<UnaryOp>(getType(), getName() + suffix, *val, op, fmath);
 }
 
+bool UnaryOp::isFPInstr() const{
+  if (op == Op::FNeg || 
+      op == Op::FAbs ||
+      op == Op::Ceil ||
+      op == Op::Floor)
+      return true;
+  return false;
+}
 
 util::ConcreteVal UnaryOp::concreteEval(std::map<const Value *, util::ConcreteVal> &concrete_vals) const{
   auto I = concrete_vals.find(val);
@@ -1309,8 +1341,39 @@ util::ConcreteVal UnaryOp::concreteEval(std::map<const Value *, util::ConcreteVa
     cout << "[Unary::concreteEval] concrete value for operand not found. Aborting" << '\n';
     assert(false);
   }
-  
   auto tgt_bitwidth = getType().bits();
+  if (isFPInstr()){
+    cout << "unary fp instr bitwidth = " << tgt_bitwidth << '\n';
+      util::ConcreteVal v(I->second);
+      auto op_apfloat = I->second.getValFloat();
+      if (v.isPoison()){
+        return v;
+      }
+
+      if (fmath.isNNan()){
+        if (op_apfloat.isNaN()){
+          v.setPoison(true);
+            return v;
+        }
+      }
+      if (fmath.isNInf()){ 
+        if (op_apfloat.isInfinity()){
+            v.setPoison(true);
+            return v;
+        }
+      }
+
+      if (op == Op::FNeg){
+        v.getValFloat().changeSign();
+      }
+      if (op == Op::FAbs){
+        v.getValFloat().clearSign();
+      }
+      // Does the output of a unary operation need to be checked again for fmath flags?
+      return v;
+      //auto op_apfloat = I->second.getValFloat();
+  }
+  
   util::ConcreteVal v(false, llvm::APInt(tgt_bitwidth,0));
   if (I->second.isPoison()){
     v.setPoison(true);
@@ -1332,7 +1395,7 @@ util::ConcreteVal UnaryOp::concreteEval(std::map<const Value *, util::ConcreteVa
     cout << "[UnaryOp::concreteEval] not supported on this instruction yet" << '\n';
   }
   return v;
-  
+
 }
 
 vector<Value*> UnaryReductionOp::operands() const {

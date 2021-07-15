@@ -38,6 +38,8 @@ struct FastMathFlags final {
   unsigned flags = None;
 
   bool isNone() const { return flags == None; }
+  bool isNNan() const { return flags & NNaN; }
+  bool isNInf() const {return flags & NInf;}
   friend std::ostream& operator<<(std::ostream &os, const FastMathFlags &fm);
 };
 
@@ -100,6 +102,7 @@ public:
   StateValue toSMT(State &s) const override;
   smt::expr getTypeConstraints(const Function &f) const override;
   std::unique_ptr<Instr> dup(const std::string &suffix) const override;
+  bool isFPInstr() const;
   util::ConcreteVal concreteEval(std::map<const Value *, util::ConcreteVal> &concrete_vals) const;
 };
 
