@@ -1327,10 +1327,14 @@ unique_ptr<Instr> UnaryOp::dup(const string &suffix) const {
 }
 
 bool UnaryOp::isFPInstr() const{
-  if (op == Op::FNeg || 
-      op == Op::FAbs ||
+  if (op == Op::FAbs || 
+      op == Op::FNeg ||
       op == Op::Ceil ||
-      op == Op::Floor)
+      op == Op::Floor ||
+      op == Op::Round ||
+      op == Op::RoundEven ||
+      op == Op::Trunc || 
+      op == Op::Sqrt)
       return true;
   return false;
 }
@@ -1363,15 +1367,32 @@ util::ConcreteVal UnaryOp::concreteEval(std::map<const Value *, util::ConcreteVa
         }
       }
 
-      if (op == Op::FNeg){
-        v.getValFloat().changeSign();
-      }
       if (op == Op::FAbs){
         v.getValFloat().clearSign();
       }
+      else if (op == Op::FNeg){
+        v.getValFloat().changeSign();
+      }
+      else if (op == Op::Ceil){//TODO what to do about inexact results?
+        v.getValFloat().roundToIntegral(llvm::RoundingMode::TowardPositive);
+      }
+      else if (op == Op::Floor){
+        v.getValFloat().roundToIntegral(llvm::RoundingMode::TowardNegative);
+      }
+      else if (op == Op::Round){
+        v.getValFloat().roundToIntegral(llvm::RoundingMode::NearestTiesToAway);
+      }
+      else if (op == Op::RoundEven){
+        v.getValFloat().roundToIntegral(llvm::RoundingMode::NearestTiesToEven);
+      }
+      else if (op == Op::Trunc){
+        v.getValFloat().roundToIntegral(llvm::RoundingMode::TowardZero);
+      }
+      else{
+        cout << "[UnaryOp::concreteEval] not supported on this instruction yet" << '\n';
+      }
       // Does the output of a unary operation need to be checked again for fmath flags?
       return v;
-      //auto op_apfloat = I->second.getValFloat();
   }
   
   util::ConcreteVal v(false, llvm::APInt(tgt_bitwidth,0));
