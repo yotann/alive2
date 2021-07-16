@@ -5,6 +5,7 @@
 #include "ir/state.h"
 #include "util/config.h"
 #include "util/symexec.h"
+#include "util/random.h"
 #include <iostream>
 
 using namespace IR;
@@ -39,6 +40,8 @@ void sym_exec(State &s) {
     auto I = concrete_vals.find(&i);
     assert(I == concrete_vals.end());
     if (i.getType().isIntType()) {
+      //auto rand_int64 = get_random_int64();
+      //cout << "input param random value = " << rand_int64 << "\n"; 
       util::ConcreteVal new_val(false, llvm::APInt(i.getType().bits(), 3));
       concrete_vals.emplace(&i, new_val);
     } else if (i.getType().isFloatType()) {
