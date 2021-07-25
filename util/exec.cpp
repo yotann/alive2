@@ -40,6 +40,7 @@ void sym_exec(State &s) {
     auto I = concrete_vals.find(&i);
     assert(I == concrete_vals.end());
     if (i.getType().isIntType()) {
+      // comment this to avoid random int function arguments 
       //auto rand_int64 = get_random_int64();
       //cout << "input param random value = " << rand_int64 << "\n"; 
       util::ConcreteVal new_val(false, llvm::APInt(i.getType().bits(), 3));
@@ -211,7 +212,6 @@ void sym_exec(State &s) {
             concrete_vals[ptr] = res_val;
           }
         } else if (dynamic_cast<const ICmp *>(&i)) {
-          // cout << "ICMP instr" << '\n';
           auto icmp_ptr = dynamic_cast<const ICmp *>(&i);
           util::ConcreteVal res_val = icmp_ptr->concreteEval(concrete_vals);
           auto I = concrete_vals.find(icmp_ptr);
@@ -219,6 +219,15 @@ void sym_exec(State &s) {
             concrete_vals.emplace(icmp_ptr, res_val);
           } else {
             concrete_vals[icmp_ptr] = res_val;
+          }
+        } else if (dynamic_cast<const FCmp *>(&i)) {
+          auto fcmp_ptr = dynamic_cast<const FCmp *>(&i);
+          util::ConcreteVal res_val = fcmp_ptr->concreteEval(concrete_vals);
+          auto I = concrete_vals.find(fcmp_ptr);
+          if (I == concrete_vals.end()) {
+            concrete_vals.emplace(fcmp_ptr, res_val);
+          } else {
+            concrete_vals[fcmp_ptr] = res_val;
           }
         } else if (dynamic_cast<const Select *>(&i)) {
           // cout << "ICMP instr" << '\n';

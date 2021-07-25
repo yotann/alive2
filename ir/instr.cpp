@@ -879,7 +879,10 @@ util::ConcreteVal BinOp::concreteEval(std::map<const Value *, util::ConcreteVal>
     }
   }
   else if (op == Op::FAdd ||
-           op == Op::FSub){
+           op == Op::FSub || 
+           op == Op::FMul ||
+           op == Op::FDiv ||
+           op == Op::FRem){
     for (auto operand: v_op){
       auto I = concrete_vals.find(operand);
       if (I->second.isPoison()){
@@ -904,25 +907,37 @@ util::ConcreteVal BinOp::concreteEval(std::map<const Value *, util::ConcreteVal>
             return v;
         }
       }
-      if (op == Op::FAdd){
+      if (op == Op::FAdd){// Assuming default floating-point environment
         auto status = v.getValFloat().add(op_apfloat,llvm::APFloatBase::rmNearestTiesToEven);
-        assert(status == llvm::APFloatBase::opOK);//TODO what to do about inexact cases?
+        assert(status == llvm::APFloatBase::opOK);
       }
       else if (op == Op::FSub) {
         auto status = v.getValFloat().subtract(op_apfloat,llvm::APFloatBase::rmNearestTiesToEven);
-        assert(status == llvm::APFloatBase::opOK);//TODO handle inexact cases
+        assert(status == llvm::APFloatBase::opOK);
+      }
+      else if (op == Op::FMul) {
+        auto status = v.getValFloat().multiply(op_apfloat,llvm::APFloatBase::rmNearestTiesToEven);
+        assert(status == llvm::APFloatBase::opOK);
+      }
+      else if (op == Op::FDiv) {
+        auto status = v.getValFloat().divide(op_apfloat,llvm::APFloatBase::rmNearestTiesToEven);
+        assert(status == llvm::APFloatBase::opOK);
+      }
+      else if (op == Op::FRem) {
+        // APFloat::remainder does not match the semantics
+        auto status = v.getValFloat().mod(op_apfloat);
+        assert(status == llvm::APFloatBase::opOK);
       }
       else{
         UNREACHABLE();
       }
       if (fmath.isNNan() && v.getValFloat().isNaN()){
           v.setPoison(true);
-          return v;
       }
       if (fmath.isNInf() && v.getValFloat().isInfinity()){
           v.setPoison(true);
-          return v;
       }
+      return v;
 
     }
   }
@@ -2626,6 +2641,133 @@ expr FCmp::getTypeConstraints(const Function &f) const {
 
 unique_ptr<Instr> FCmp::dup(const string &suffix) const {
   return make_unique<FCmp>(getType(), getName() + suffix, cond, *a, *b, fmath);
+}
+
+util::ConcreteVal FCmp::concreteEval(std::map<const Value *, util::ConcreteVal> &concrete_vals) const{
+  //TODO support fcmp with vector operands
+  util::ConcreteVal v;
+  auto a_I = concrete_vals.find(a);
+  assert(a_I != concrete_vals.end());
+  auto& concrete_a = a_I->second;
+  auto b_I = concrete_vals.find(b);
+  assert(b_I != concrete_vals.end());
+  auto& concrete_b = b_I->second;
+  if (concrete_a.isPoison() || concrete_b.isPoison()){
+    v.setPoison(true);
+    return v;
+  }
+  bool fcmp_res = false;
+  auto compare_res = concrete_a.getValFloat().compare(concrete_b.getValFloat());
+  switch (cond) {
+    case OEQ:
+      if ( ( compare_res == llvm::APFloatBase::cmpEqual ) && 
+           !( concrete_a.getValFloat().isNaN() && !concrete_a.getValFloat().isSignaling()) &&
+           !( concrete_b.getValFloat().isNaN() && !concrete_b.getValFloat().isSignaling()) ) {
+            fcmp_res = true;  
+           }
+      break;
+    case OGT:  
+      if ( ( compare_res == llvm::APFloatBase::cmpGreaterThan ) && 
+           !( concrete_a.getValFloat().isNaN() && !concrete_a.getValFloat().isSignaling()) &&
+           !( concrete_b.getValFloat().isNaN() && !concrete_b.getValFloat().isSignaling()) ) {
+            fcmp_res = true;  
+           }
+      break;
+    case OGE: 
+      if ( ( compare_res == llvm::APFloatBase::cmpGreaterThan || compare_res == llvm::APFloatBase::cmpEqual ) && 
+           !( concrete_a.getValFloat().isNaN() && !concrete_a.getValFloat().isSignaling()) &&
+           !( concrete_b.getValFloat().isNaN() && !concrete_b.getValFloat().isSignaling()) ) {
+            fcmp_res = true;  
+           }
+      break;
+    case OLT: 
+      if ( ( compare_res == llvm::APFloatBase::cmpLessThan ) && 
+           !( concrete_a.getValFloat().isNaN() && !concrete_a.getValFloat().isSignaling()) &&
+           !( concrete_b.getValFloat().isNaN() && !concrete_b.getValFloat().isSignaling()) ) {
+            fcmp_res = true;  
+           }
+      break;
+    case OLE: 
+      if ( ( compare_res == llvm::APFloatBase::cmpLessThan || compare_res == llvm::APFloatBase::cmpEqual ) && 
+           !( concrete_a.getValFloat().isNaN() && !concrete_a.getValFloat().isSignaling()) &&
+           !( concrete_b.getValFloat().isNaN() && !concrete_b.getValFloat().isSignaling()) ) {
+            fcmp_res = true;  
+           }
+      break;
+    case ONE: 
+      if ( ( compare_res != llvm::APFloatBase::cmpEqual ) && 
+           !( concrete_a.getValFloat().isNaN() && !concrete_a.getValFloat().isSignaling()) &&
+           !( concrete_b.getValFloat().isNaN() && !concrete_b.getValFloat().isSignaling()) ) {
+            fcmp_res = true;  
+           }
+      break;
+    case ORD:
+      if ( !( concrete_a.getValFloat().isNaN() && !concrete_a.getValFloat().isSignaling()) &&
+           !( concrete_b.getValFloat().isNaN() && !concrete_b.getValFloat().isSignaling()) ) {
+            fcmp_res = true;  
+           }
+      break;
+    case UEQ: 
+      if ( ( concrete_a.getValFloat().isNaN() && !concrete_a.getValFloat().isSignaling()) ||
+           ( concrete_b.getValFloat().isNaN() && !concrete_b.getValFloat().isSignaling()) ||
+           ( compare_res == llvm::APFloatBase::cmpEqual ) ) {
+            fcmp_res = true;  
+           }
+      break;
+    case UGT: 
+      if ( ( concrete_a.getValFloat().isNaN() && !concrete_a.getValFloat().isSignaling()) ||
+           ( concrete_b.getValFloat().isNaN() && !concrete_b.getValFloat().isSignaling()) ||
+           ( compare_res == llvm::APFloatBase::cmpGreaterThan ) ) {
+            fcmp_res = true;  
+           }
+      break;
+    case UGE: 
+      if ( ( concrete_a.getValFloat().isNaN() && !concrete_a.getValFloat().isSignaling()) ||
+           ( concrete_b.getValFloat().isNaN() && !concrete_b.getValFloat().isSignaling()) ||
+           ( compare_res == llvm::APFloatBase::cmpGreaterThan || compare_res == llvm::APFloatBase::cmpEqual) ) {
+            fcmp_res = true;  
+           }
+      break;
+    case ULT:
+      if ( ( concrete_a.getValFloat().isNaN() && !concrete_a.getValFloat().isSignaling()) ||
+           ( concrete_b.getValFloat().isNaN() && !concrete_b.getValFloat().isSignaling()) ||
+           ( compare_res == llvm::APFloatBase::cmpLessThan ) ) {
+            fcmp_res = true;  
+           }
+      break;
+    case ULE:
+      if ( ( concrete_a.getValFloat().isNaN() && !concrete_a.getValFloat().isSignaling()) ||
+           ( concrete_b.getValFloat().isNaN() && !concrete_b.getValFloat().isSignaling()) ||
+           ( compare_res == llvm::APFloatBase::cmpLessThan || compare_res == llvm::APFloatBase::cmpEqual ) ) {
+            fcmp_res = true;  
+           }
+      break;
+    case UNE:
+      if ( ( concrete_a.getValFloat().isNaN() && !concrete_a.getValFloat().isSignaling()) ||
+           ( concrete_b.getValFloat().isNaN() && !concrete_b.getValFloat().isSignaling()) ||
+           ( compare_res != llvm::APFloatBase::cmpEqual ) ) {
+            fcmp_res = true;  
+           }
+      break;
+    case UNO:
+      if ( ( concrete_a.getValFloat().isNaN() && !concrete_a.getValFloat().isSignaling()) ||
+           ( concrete_b.getValFloat().isNaN() && !concrete_b.getValFloat().isSignaling()) ) {
+            fcmp_res = true;  
+           }
+      break;
+    default:
+        UNREACHABLE();
+  }
+  if (fcmp_res){
+    auto ap_true = llvm::APInt(1,1);
+    v.setVal(ap_true);
+  }
+  else{
+    auto ap_false = llvm::APInt(1,0);
+    v.setVal(ap_false);
+  }
+    
+  return v;
 }
 
 
