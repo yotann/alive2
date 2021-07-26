@@ -941,7 +941,7 @@ util::ConcreteVal BinOp::concreteEval(std::map<const Value *, util::ConcreteVal>
 
     }
   }
-  else if (op == Op::FMax){
+  else if (op == Op::FMax || op == Op::FMin){
     auto lhs_concrete = concrete_vals.find(lhs)->second;
     auto rhs_concrete = concrete_vals.find(rhs)->second;
     if (lhs_concrete.isPoison() || rhs_concrete.isPoison()) {
@@ -961,10 +961,20 @@ util::ConcreteVal BinOp::concreteEval(std::map<const Value *, util::ConcreteVal>
     else {
       auto compare_res = lhs_concrete.getValFloat().compare(rhs_concrete.getValFloat());
       if (compare_res == llvm::APFloatBase::cmpGreaterThan) {
-        v.setVal(lhs_concrete.getValFloat());
+        if (op == Op::FMax){
+          v.setVal(lhs_concrete.getValFloat());
+        }
+        else{
+          v.setVal(rhs_concrete.getValFloat());
+        }
       }
       else {
-        v.setVal(rhs_concrete.getValFloat());
+        if (op == Op::FMax){
+          v.setVal(rhs_concrete.getValFloat());
+        }
+        else{
+          v.setVal(lhs_concrete.getValFloat());
+        }
       }
     }
     return v;
