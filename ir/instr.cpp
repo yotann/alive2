@@ -941,6 +941,34 @@ util::ConcreteVal BinOp::concreteEval(std::map<const Value *, util::ConcreteVal>
 
     }
   }
+  else if (op == Op::FMax){
+    auto lhs_concrete = concrete_vals.find(lhs)->second;
+    auto rhs_concrete = concrete_vals.find(rhs)->second;
+    if (lhs_concrete.isPoison() || rhs_concrete.isPoison()) {
+      v.setPoison(true);
+      return v;
+    }
+    if (lhs_concrete.getValFloat().isNaN() && rhs_concrete.getValFloat().isNaN()) {
+      auto qnan = llvm::APFloat::getQNaN(lhs_concrete.getValFloat().getSemantics());
+      v.setVal(qnan);
+    }
+    else if (lhs_concrete.getValFloat().isNaN()) {
+      v.setVal(rhs_concrete.getValFloat());
+    }
+    else if (rhs_concrete.getValFloat().isNaN()) {
+      v.setVal(lhs_concrete.getValFloat());
+    }
+    else {
+      auto compare_res = lhs_concrete.getValFloat().compare(rhs_concrete.getValFloat());
+      if (compare_res == llvm::APFloatBase::cmpGreaterThan) {
+        v.setVal(lhs_concrete.getValFloat());
+      }
+      else {
+        v.setVal(rhs_concrete.getValFloat());
+      }
+    }
+    return v;
+  }
   else if (op == Op::Sub){
     for (auto operand: v_op){
       auto I = concrete_vals.find(operand);
