@@ -15,18 +15,24 @@
 namespace util {
   class ConcreteVal{
   private:
-    bool poison;
+    enum Flags {
+      None = 0 , Poison = 1 << 0, Undef = 1 << 1
+    };
+    unsigned flags = Flags::None;
+    //bool poison;
     std::variant<llvm::APInt, llvm::APFloat> val;
   public:
-    ConcreteVal(): poison(false), val() {}
-    ConcreteVal(bool poison, llvm::APInt val): poison(poison), val(val) {}
-    ConcreteVal(bool poison, llvm::APFloat val): poison(poison), val(val) {}
+    ConcreteVal(): flags(Flags::None), val() {}
+    ConcreteVal(bool poison, llvm::APInt val);//: poison(poison), val(val) {}
+    ConcreteVal(bool poison, llvm::APFloat val);//: poison(poison), val(val) {}
     ConcreteVal(ConcreteVal& l) = default;
     ConcreteVal& operator=(ConcreteVal& l) = default;
     ConcreteVal( ConcreteVal&& r) = default;
     ConcreteVal& operator=(ConcreteVal&& r) = default;
     void setPoison(bool poison);
+    void setUndef();
     bool isPoison();
+    bool isUndef();
     void setVal(llvm::APInt& v);
     void setVal(llvm::APFloat& v);
     llvm::APInt& getVal();
