@@ -1253,7 +1253,7 @@ util::ConcreteVal BinOp::concreteEval(std::map<const Value *, util::ConcreteVal>
     v.setVal(res);
     return v;
   }
-  else if (op == Op::Ctlz){
+  else if (op == Op::Cttz || op == Op::Ctlz){
     auto lhs_concrete = concrete_vals.find(lhs)->second;
     auto is_zero_undef_concrete = concrete_vals.find(rhs)->second;
     auto lhs_bitwidth = lhs_concrete.getVal().getBitWidth();
@@ -1262,16 +1262,26 @@ util::ConcreteVal BinOp::concreteEval(std::map<const Value *, util::ConcreteVal>
       v.setPoison(true);
       return v;
     }
-    uint64_t cnt = 0;
     if (is_zero_undef_concrete.getVal().getBoolValue() && (lhs_concrete.getVal().getBoolValue() == false) ){
       v.setUndef();
       return v;
     }
-    for (unsigned i = lhs_bitwidth - 1; i >= 0 ; --i){
-      if (lhs_concrete.getVal().extractBits(1,i).getBoolValue()){
-        break;
+    uint64_t cnt = 0;
+    if (op == Op::Ctlz){
+      for (unsigned i = lhs_bitwidth - 1; i >= 0 ; --i){
+        if (lhs_concrete.getVal().extractBits(1,i).getBoolValue()){
+          break;
+        }
+        cnt+=1;
       }
-      cnt+=1;
+    }
+    else{
+      for (unsigned i = 0; i < lhs_bitwidth ; ++i){
+        if (lhs_concrete.getVal().extractBits(1,i).getBoolValue()){
+          break;
+        }
+        cnt+=1;
+      }
     }
     auto int_res = llvm::APInt(lhs_bitwidth, cnt);
     v.setVal(int_res);
