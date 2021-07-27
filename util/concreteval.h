@@ -23,8 +23,8 @@ namespace util {
     std::variant<llvm::APInt, llvm::APFloat> val;
   public:
     ConcreteVal(): flags(Flags::None), val() {}
-    ConcreteVal(bool poison, llvm::APInt val);//: poison(poison), val(val) {}
-    ConcreteVal(bool poison, llvm::APFloat val);//: poison(poison), val(val) {}
+    ConcreteVal(bool poison, llvm::APInt val);
+    ConcreteVal(bool poison, llvm::APFloat val);
     ConcreteVal(ConcreteVal& l) = default;
     ConcreteVal& operator=(ConcreteVal& l) = default;
     ConcreteVal( ConcreteVal&& r) = default;

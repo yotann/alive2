@@ -22,7 +22,6 @@ namespace util{
     else {
       this->flags = Flags::None;
     }
-    //this->poison = poison;
   }
 
   void ConcreteVal::setUndef(){
@@ -31,7 +30,6 @@ namespace util{
 
   bool ConcreteVal::isPoison(){
     return flags & Flags::Poison;
-    //return this->poison;
   }
 
   bool ConcreteVal::isUndef(){
