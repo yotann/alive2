@@ -153,8 +153,8 @@ void sym_exec(State &s) {
 
   const BasicBlock *pred_block = nullptr;
   const BasicBlock *cur_block = nullptr;
-  // TODO rename to clearly distinguish between undef and UB
-  bool undef_state = false;
+  
+  bool UB_flag = false;
   // TODO add stack for alloca
 
   // TODO add support for noninteger types
@@ -170,8 +170,8 @@ void sym_exec(State &s) {
     // bb is the first basicblock
     cur_block = bb;
     while (cur_block) {
-      if (undef_state) {
-        cout << "interpreter reached undef state. Aborting!" << '\n';
+      if (UB_flag) {
+        cout << "interpreter reached UB state. Aborting!" << '\n';
         exit(EXIT_SUCCESS);
       }
       for (auto &i : cur_block->instrs()) {
@@ -183,7 +183,7 @@ void sym_exec(State &s) {
           // i.print(cout);
           // cout << '\n';
           auto ptr = dynamic_cast<const BinOp *>(&i);
-          util::ConcreteVal res_val = ptr->concreteEval(concrete_vals);
+          util::ConcreteVal res_val = ptr->concreteEval(concrete_vals, UB_flag);
           auto I = concrete_vals.find(ptr);
           if (I == concrete_vals.end()) {
             concrete_vals.emplace(ptr, res_val);
@@ -271,8 +271,8 @@ void sym_exec(State &s) {
                          .end()); // condition must be evaluated at this point
               auto concrete_cond_val = I->second;
               if (concrete_cond_val.isPoison()) {
-                undef_state = true;
-                cout << "branch condition val is poison." << '\n';
+                UB_flag = true;
+                cout << "branch condition val is poison. This results in UB" << '\n';
                 break;
               } else {
                 pred_block = cur_block;

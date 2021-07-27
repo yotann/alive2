@@ -839,7 +839,7 @@ bool BinOp::isDivOrRem() const {
   }
 }
 
-util::ConcreteVal BinOp::concreteEval(std::map<const Value *, util::ConcreteVal> &concrete_vals) const{
+util::ConcreteVal BinOp::concreteEval(std::map<const Value *, util::ConcreteVal> &concrete_vals, bool &UB_flag) const{
   auto v_op = operands();
   for (auto operand: v_op){
       auto I = concrete_vals.find(operand);
@@ -877,6 +877,40 @@ util::ConcreteVal BinOp::concreteEval(std::map<const Value *, util::ConcreteVal>
         return v;
       }
     }
+  }
+  else if (op == Op::SAdd_Sat || 
+           op == Op::UAdd_Sat ||
+           op == Op::SSub_Sat ||
+           op == Op::USub_Sat){
+    auto lhs_concrete = concrete_vals.find(lhs)->second;
+    auto rhs_concrete = concrete_vals.find(rhs)->second;
+    auto lhs_bitwidth = lhs_concrete.getVal().getBitWidth();
+    util::ConcreteVal v(false,llvm::APInt(lhs_bitwidth, 0));
+    if (lhs_concrete.isPoison() || rhs_concrete.isPoison()) {
+      v.setPoison(true);
+      return v;
+    }
+    if (op == Op::SAdd_Sat){
+      auto sadd_res = lhs_concrete.getVal().sadd_sat(rhs_concrete.getVal());
+      v.setVal(sadd_res);
+    }
+    else if(op == Op::UAdd_Sat){
+      auto sadd_res = lhs_concrete.getVal().uadd_sat(rhs_concrete.getVal());
+      v.setVal(sadd_res);
+    }
+    if (op == Op::SSub_Sat){
+      auto sadd_res = lhs_concrete.getVal().ssub_sat(rhs_concrete.getVal());
+      v.setVal(sadd_res);
+    }
+    else if(op == Op::USub_Sat){
+      auto sadd_res = lhs_concrete.getVal().usub_sat(rhs_concrete.getVal());
+      v.setVal(sadd_res);
+    }
+    else{
+      UNREACHABLE();
+    }
+    return v;
+
   }
   else if (op == Op::FAdd ||
            op == Op::FSub || 
@@ -1078,6 +1112,67 @@ util::ConcreteVal BinOp::concreteEval(std::map<const Value *, util::ConcreteVal>
         return v;
       }
     }
+  }
+  else if (op == Op::UDiv || op == Op::URem){
+    auto lhs_concrete = concrete_vals.find(lhs)->second;
+    auto rhs_concrete = concrete_vals.find(rhs)->second;
+    auto lhs_bitwidth = lhs_concrete.getVal().getBitWidth();
+    util::ConcreteVal v(false,llvm::APInt(lhs_bitwidth, 0));
+
+    if (!rhs_concrete.getVal().getBoolValue()){
+      UB_flag = true;
+    }
+    if (lhs_concrete.isPoison() || rhs_concrete.isPoison()){
+      v.setPoison(true);
+      return v;
+    }
+    if (op == Op::UDiv) {
+      auto remainder = llvm::APInt();
+      auto quotient = llvm::APInt();
+      llvm::APInt::udivrem(lhs_concrete.getVal(), rhs_concrete.getVal(), quotient, remainder);
+      if (exact_flag && (remainder.getBoolValue() != false)){
+        v.setPoison(true);
+        return v;
+      }
+      v.setVal(quotient);
+    }
+    else{
+      auto remainder = lhs_concrete.getVal().urem(rhs_concrete.getVal());
+      v.setVal(remainder);
+    }
+    return v;
+  }
+  else if (op == Op::SDiv || op == Op::SRem){
+    auto lhs_concrete = concrete_vals.find(lhs)->second;
+    auto rhs_concrete = concrete_vals.find(rhs)->second;
+    auto lhs_bitwidth = lhs_concrete.getVal().getBitWidth();
+    util::ConcreteVal v(false,llvm::APInt(lhs_bitwidth, 0));
+
+    if (!rhs_concrete.getVal().getBoolValue()){
+      UB_flag = true;
+    }
+
+    if (lhs_concrete.isPoison() || rhs_concrete.isPoison()){
+      v.setPoison(true);
+      return v;
+    }
+    bool sdiv_ov = false;
+    auto quotient = lhs_concrete.getVal().sdiv_ov(rhs_concrete.getVal(), sdiv_ov);
+    auto remainder = lhs_concrete.getVal().srem(rhs_concrete.getVal());
+    if (sdiv_ov){
+      UB_flag = true;
+    }
+    if (op == Op::SDiv){
+      if (exact_flag && (remainder.getBoolValue() != false)){
+        v.setPoison(true);
+        return v;
+      }
+      v.setVal(quotient);
+    }
+    else{
+      v.setVal(remainder);
+    }
+    return v;
   }
   else if (op == Op::And){
     for (auto operand: v_op){
