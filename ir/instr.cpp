@@ -1888,6 +1888,32 @@ unique_ptr<Instr> TernaryOp::dup(const string &suffix) const {
   return make_unique<TernaryOp>(getType(), getName() + suffix, *a, *b, *c, op);
 }
 
+util::ConcreteVal TernaryOp::concreteEval(std::map<const Value *, util::ConcreteVal> &concrete_vals) const{
+  auto v_op = operands();
+  for (auto operand: v_op){
+      auto I = concrete_vals.find(operand);
+      if (I == concrete_vals.end()){
+        cout << "[AliveInterpreterError][TernaryOp::concreteEval] concrete values for operand not found. Aborting!" << '\n';
+        exit(EXIT_FAILURE);
+      }
+      if (I->second.isPoison()){
+        util::ConcreteVal v(I->second);
+        return v;
+      }
+  }
+  
+  auto op_a_concrete = concrete_vals.find(a)->second;
+  auto op_b_concrete = concrete_vals.find(b)->second;
+  auto op_c_concrete = concrete_vals.find(c)->second;
+
+  if (op == Op::FMA){
+    util::ConcreteVal v(op_a_concrete);
+    // Should we check the opStatus from the fusedMultipyAdd
+    v.getValFloat().fusedMultiplyAdd(op_b_concrete.getValFloat(), op_c_concrete.getValFloat(),llvm::APFloatBase::rmNearestTiesToEven);
+    return v;
+  }
+  UNREACHABLE();
+}
 
 vector<Value*> ConversionOp::operands() const {
   return { val };
