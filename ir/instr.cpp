@@ -1659,9 +1659,9 @@ util::ConcreteVal UnaryOp::concreteEval(std::map<const Value *, util::ConcreteVa
       // Does the output of a unary operation need to be checked again for fmath flags?
       return v;
   }
-  
-  util::ConcreteVal v(false, llvm::APInt(tgt_bitwidth,0));
+
   if (I->second.isPoison()){
+    util::ConcreteVal v(false, llvm::APInt(tgt_bitwidth,0));
     v.setPoison(true);
     return v;
   }
@@ -1677,11 +1677,21 @@ util::ConcreteVal UnaryOp::concreteEval(std::map<const Value *, util::ConcreteVa
     util::ConcreteVal v(false, llvm::APInt(tgt_bitwidth,cnt));  
     return v;
   }
+  else if (op == Op::BitReverse){
+    util::ConcreteVal v(false, op_apint.reverseBits());
+    return v;
+  }
+  else if (op == Op::BSwap){
+    // the assertion in APInt's byteSwap does not match llvm's semantics
+    assert(tgt_bitwidth >= 16 && tgt_bitwidth % 16 == 0);
+    util::ConcreteVal v(false, op_apint.byteSwap());
+    return v;
+  }
   else{
     cout << "[UnaryOp::concreteEval] not supported on this instruction yet" << '\n';
   }
-  return v;
-
+  UNREACHABLE();
+  
 }
 
 vector<Value*> UnaryReductionOp::operands() const {
