@@ -898,7 +898,7 @@ util::ConcreteVal BinOp::concreteEval(std::map<const Value *, util::ConcreteVal>
       auto sadd_res = lhs_concrete.getVal().uadd_sat(rhs_concrete.getVal());
       v.setVal(sadd_res);
     }
-    if (op == Op::SSub_Sat){
+    else if (op == Op::SSub_Sat){
       auto sadd_res = lhs_concrete.getVal().ssub_sat(rhs_concrete.getVal());
       v.setVal(sadd_res);
     }
@@ -910,7 +910,38 @@ util::ConcreteVal BinOp::concreteEval(std::map<const Value *, util::ConcreteVal>
       UNREACHABLE();
     }
     return v;
-
+  }
+  else if (op == Op::SShl_Sat || 
+           op == Op::UShl_Sat){
+    auto lhs_concrete = concrete_vals.find(lhs)->second;
+    auto rhs_concrete = concrete_vals.find(rhs)->second;
+    auto lhs_bitwidth = lhs_concrete.getVal().getBitWidth();
+    util::ConcreteVal v(false,llvm::APInt(lhs_bitwidth, 0));
+    if (lhs_concrete.isPoison() || rhs_concrete.isPoison()) {
+      v.setPoison(true);
+      return v;
+    }
+    // This is llvm's 13 maximum bitwidth + 1 for integer types
+    uint64_t max_shift = (1<<23);
+    auto shift_amt_u_limit = rhs_concrete.getVal().getLimitedValue(max_shift);
+    if ((shift_amt_u_limit == max_shift) ||
+        (shift_amt_u_limit >= lhs_bitwidth)){
+      v.setPoison(true);
+      return v;
+    }
+    
+    if (op == Op::SShl_Sat){
+      auto sshl_res = lhs_concrete.getVal().sshl_sat(rhs_concrete.getVal());
+      v.setVal(sshl_res);
+    }
+    else if(op == Op::UShl_Sat){
+      auto ushl_res = lhs_concrete.getVal().ushl_sat(rhs_concrete.getVal());
+      v.setVal(ushl_res);
+    }
+    else{
+      UNREACHABLE();
+    }
+    return v;
   }
   else if (op == Op::FAdd ||
            op == Op::FSub || 
@@ -1263,13 +1294,13 @@ util::ConcreteVal BinOp::concreteEval(std::map<const Value *, util::ConcreteVal>
       v.setPoison(true);
       return v;
     }
-    //need to handle this special case to safely subtract 1 from num_concrete 
-    //when handling exact flag
+    // Need to handle this special case to safely subtract 1 from num_concrete 
+    // when handling exact flag
     if (shift_amt_u_limit == 0){
       v.setVal(num_concrete.getVal());
       return v;
     }
-    //if any of the shifted bits is non-zero, we should return poison
+    // If any of the shifted bits is non-zero, we should return poison
     if (exact_flag){
       bool ov_flag_s = false;
       auto ap_1{llvm::APInt(num_concrete.getVal().getBitWidth(),1)};
