@@ -235,6 +235,14 @@ Value* make_intconst(uint64_t val, int bits) {
     return val_cpy;                                 \
   } while (0)
 
+#if LLVM_VERSION_MAJOR <= 12
+static std::string toString(const llvm::APInt &I, unsigned Radix, bool Signed,
+                            bool formatAsCLiteral = false) {
+  llvm::SmallString<40> S;
+  I.toString(S, Radix, Signed, formatAsCLiteral);
+  return std::string(S.str());
+}
+#endif
 
 Value* get_operand(llvm::Value *v,
                    function<Value*(llvm::ConstantExpr*)> constexpr_conv,

@@ -520,9 +520,13 @@ llvmGetPassPluginInfo() {
       // ClangTVFinalizePass internally checks whether we're running clang tv
       // and finalizes resources then.
       PB.registerOptimizerLastEPCallback(
-          [](llvm::ModulePassManager &MPM, llvm::OptimizationLevel) {
-            MPM.addPass(ClangTVFinalizePass());
-          });
+          [](llvm::ModulePassManager &MPM,
+#if LLVM_VERSION_MAJOR >= 13
+             llvm::OptimizationLevel
+#else
+             llvm::PassBuilder::OptimizationLevel
+#endif
+          ) { MPM.addPass(ClangTVFinalizePass()); });
       auto clang_tv = [](llvm::StringRef P, llvm::Any IR,
                   const llvm::PreservedAnalyses &PA) {
         TVPass::pass_name = P.str();

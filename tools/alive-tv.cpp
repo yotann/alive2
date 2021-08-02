@@ -251,7 +251,12 @@ void optimizeModule(llvm::Module *M) {
   PB.crossRegisterProxies(LAM, FAM, CGAM, MAM);
 
   llvm::FunctionPassManager FPM = PB.buildFunctionSimplificationPipeline(
-      llvm::OptimizationLevel::O2, llvm::ThinOrFullLTOPhase::None);
+#if LLVM_VERSION_MAJOR >= 13
+      llvm::OptimizationLevel::O2,
+#else
+      llvm::PassBuilder::OptimizationLevel::O2,
+#endif
+      llvm::ThinOrFullLTOPhase::None);
   llvm::ModulePassManager MPM;
   MPM.addPass(createModuleToFunctionPassAdaptor(std::move(FPM)));
   MPM.run(*M, MAM);
