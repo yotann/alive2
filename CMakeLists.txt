@@ -89,6 +89,9 @@ add_custom_command(OUTPUT "${PROJECT_BINARY_DIR}/tools/alive_lexer.cpp"
 include_directories(${PROJECT_SOURCE_DIR})
 include_directories(${PROJECT_BINARY_DIR})
 
+include_directories(${PROJECT_SOURCE_DIR}/third_party/cpp-httplib)
+include_directories(${PROJECT_SOURCE_DIR}/third_party/jsoncons/include)
+
 set(IR_SRCS
   ir/attrs.cpp
   ir/constant.cpp
