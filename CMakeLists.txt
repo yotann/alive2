@@ -187,6 +187,10 @@ if (BUILD_LLVM_UTILS OR BUILD_TV)
     "tools/alive-exec.cpp"
   )
 
+  add_llvm_executable(alive-worker
+    "tools/alive-worker.cpp"
+  )
+
 else()
   set(LLVM_UTIL_SRCS "")
 endif()
@@ -232,6 +236,7 @@ if (BUILD_LLVM_UTILS OR BUILD_TV)
 #  target_link_libraries(alive2 PRIVATE ${llvm_libs})
   target_link_libraries(alive-tv PRIVATE ${ALIVE_LIBS_LLVM} ${llvm_libs})
   target_link_libraries(alive-exec PRIVATE ${ALIVE_LIBS_LLVM} ${llvm_libs})
+  target_link_libraries(alive-worker PRIVATE ${ALIVE_LIBS_LLVM} ${llvm_libs})
 endif()
 
 if (CYGWIN)
@@ -246,6 +251,7 @@ else()
   if (BUILD_LLVM_UTILS OR BUILD_TV)
     target_link_libraries(alive-tv PRIVATE ${Z3_LIBRARIES})
     target_link_libraries(alive-exec PRIVATE ${Z3_LIBRARIES})
+    target_link_libraries(alive-worker PRIVATE ${Z3_LIBRARIES})
   endif()
 endif()
 
