@@ -5,6 +5,7 @@
 #include "ir/state.h"
 #include "util/config.h"
 #include "util/symexec.h"
+#include "util/concreteval.h"
 #include "util/random.h"
 #include <iostream>
 
@@ -33,10 +34,12 @@ void sym_exec(State &s) {
   // TODO need to check for Value subclasses for inputs and constants
   // i.e. PoisonValue, UndefValue, and etc.
   // initialize inputs with concrete values
-  std::map<const Value *, util::ConcreteVal> concrete_vals;
+  std::map<const Value *, ConcreteVal > concrete_vals;
   for (auto &i : f.getInputs()) {
     // TODO for now we support IntType and FloatType
-    assert(i.getType().isIntType() || i.getType().isFloatType());
+    assert((i.getType().isIntType() 
+          || i.getType().isFloatType() 
+          || i.getType().isVectorType()) && "AliveExec-Error: input type not supported");
     auto I = concrete_vals.find(&i);
     assert(I == concrete_vals.end());
     if (i.getType().isIntType()) {
@@ -55,7 +58,7 @@ void sym_exec(State &s) {
         util::ConcreteVal new_val(false, llvm::APFloat(3.0));
         concrete_vals.emplace(&i, new_val);
       } else if (i.bits() == 16) {
-        util::ConcreteVal new_val(
+        ConcreteVal new_val(
             false, llvm::APFloat(llvm::APFloatBase::IEEEhalf(), "3.0"));
         concrete_vals.emplace(&i, new_val);
       } else {
@@ -63,8 +66,12 @@ void sym_exec(State &s) {
              << '\n';
         exit(EXIT_FAILURE);
       }
+    } else if (i.getType().isVectorType()){
+      auto vect_elems = ConcreteValVect::make_elements(&i);
+      //ConcreteValVect new_val(false, move(vect_elems));
+      //concrete_vals.emplace(&i, new_val);
     } else {
-      cout << "Alive Interpreter. Unsupported input type. Aborting!" << '\n';
+      cout << "AliveExec-Error: input type not supported" << '\n';
       exit(EXIT_FAILURE);
     }
   }

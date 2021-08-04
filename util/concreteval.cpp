@@ -3,7 +3,14 @@
 
 #include "util/concreteval.h"
 
+using namespace std;
+using namespace IR;
+
 namespace util{
+
+  ConcreteVal::ConcreteVal(bool poison) {
+    setPoison(poison);
+  }
 
   ConcreteVal::ConcreteVal(bool poison, llvm::APInt val) 
   : val(val) {
@@ -14,6 +21,8 @@ namespace util{
   : val(val) {
     setPoison(poison);
   }
+
+  ConcreteVal::~ConcreteVal() {}
 
   void ConcreteVal::setPoison(bool poison){
     if (poison) {
@@ -74,4 +83,50 @@ namespace util{
     
     return;
   }
+
+  ConcreteValVect::ConcreteValVect(bool poison, std::vector<ConcreteVal*> &&elements)
+  : ConcreteVal(poison), elements(move(elements)) {
+    assert(elements.size() > 0);
+  }
+
+  //ConcreteValVect::ConcreteValVect(bool poison, std::vector<ConcreteVal*> &elements)
+  //: ConcreteVal(poison), elements(elements) {
+  //  assert(elements.size() > 0);
+  //}
+
+  vector<ConcreteVal*> ConcreteValVect::make_elements(const Value* vect_val) {
+    assert(vect_val->getType().isVectorType());
+    
+    auto vect_type_ptr = dynamic_cast<const VectorType *>(&vect_val->getType());
+    // I don't think vector type can have padding
+    assert(vect_type_ptr->numPaddingsConst() == 0);
+    //vect
+    cout << "vect_num_elem: " << vect_type_ptr->numElementsConst() << '\n';
+    //cout << ptr->numElementsConst() << "," << ptr->bits() 
+    //  << "," << ptr->getChild(0).bits() << '\n';
+    vector<ConcreteVal*> res(vect_type_ptr->numElementsConst());
+    auto bitwidth =  vect_type_ptr->getChild(0).bits();
+    auto isIntTy = vect_type_ptr->getChild(0).isIntType();
+    for (unsigned int i=0; i < res.size(); ++i) {
+      if (isIntTy){
+        res[i] = new ConcreteVal(false, llvm::APInt(bitwidth, 3));
+      }
+      else{
+        assert( "Error: vector type not supported yet!" && false );
+      }  
+    }
+    
+    cout << res.size() << '\n';
+    cout << bitwidth << '\n';
+    cout << isIntTy << '\n';
+    return res;
+  }
+
+  unique_ptr<vector<ConcreteVal*>> ConcreteValVect::make_elements_unique(Value* vect_val){
+    auto res = make_unique<vector<ConcreteVal*>>();
+    return res;
+  }
+
+
+
 }
