@@ -430,9 +430,12 @@ PRINT(llvm::Value)
 
 void init_llvm_utils(ostream &os, const llvm::DataLayout &dataLayout) {
   out = &os;
+  type_cache.clear();
   type_id_counter = 0;
+  int_types.clear();
   int_types.resize(65);
   int_types[1] = make_unique<IntType>("i1", 1);
+  ptr_types.clear();
   ptr_types.emplace_back(make_unique<PtrType>(0));
   DL = &dataLayout;
 }
