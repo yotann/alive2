@@ -43,18 +43,25 @@ namespace util {
     void setVal(llvm::APFloat& v);
     llvm::APInt& getVal();
     llvm::APFloat& getValFloat();
-    void print();
+    virtual void print();
   };
   
   class ConcreteValVect : public ConcreteVal {
   private:
-    std::vector<ConcreteVal*> elements;
+    
   public:
+    std::vector<ConcreteVal*> elements;
     ConcreteValVect(bool poison, std::vector<ConcreteVal*> &&elements);
+    ConcreteValVect(bool poison, const IR::Value* vect_val);
+    ConcreteValVect(ConcreteValVect &l);
+    ConcreteValVect& operator=(ConcreteValVect &l);
+    ConcreteValVect( ConcreteValVect &&r);
+    ConcreteValVect& operator=(ConcreteValVect &&r);
     //ConcreteValVect(bool poison, std::vector<ConcreteVal*> &elements);
+    virtual ~ConcreteValVect();
     static std::vector<ConcreteVal*> make_elements(const IR::Value* vect_val);
     static std::unique_ptr<std::vector<ConcreteVal*>> make_elements_unique(IR::Value* vect_val);
-
+    void print() override;
   };
   
 }

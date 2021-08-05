@@ -86,7 +86,53 @@ namespace util{
 
   ConcreteValVect::ConcreteValVect(bool poison, std::vector<ConcreteVal*> &&elements)
   : ConcreteVal(poison), elements(move(elements)) {
-    assert(elements.size() > 0);
+    assert(this->elements.size() > 0);
+  }
+
+  ConcreteValVect::ConcreteValVect(bool poison, const IR::Value* vect_val)
+  : ConcreteVal(poison) {
+    assert(vect_val->getType().isVectorType());
+    auto vect_type_ptr = dynamic_cast<const VectorType *>(&vect_val->getType());
+    // I don't think vector type can have padding
+    assert(vect_type_ptr->numPaddingsConst() == 0);
+    auto bitwidth =  vect_type_ptr->getChild(0).bits();
+    auto isIntTy = vect_type_ptr->getChild(0).isIntType();
+    
+    for (unsigned int i=0; i < vect_type_ptr->numElementsConst(); ++i) {
+      if (isIntTy){
+        auto *v = new ConcreteVal(false, llvm::APInt(bitwidth, 3));
+        elements.push_back(v);
+      }
+      else{
+        assert( "Error: vector type not supported yet!" && false );
+      }  
+    }
+
+  }
+
+  ConcreteValVect::ConcreteValVect(ConcreteValVect &l){
+    cout << "copy ctor concreteValVect" << '\n';
+  }
+
+  ConcreteValVect& ConcreteValVect::operator=(ConcreteValVect &l) {
+    cout << "assign op concreteValVect" << '\n';
+    return *this;
+  }
+
+  ConcreteValVect::ConcreteValVect(ConcreteValVect &&l){
+    cout << "move ctor concreteValVect" << '\n';
+  }
+
+  ConcreteValVect& ConcreteValVect::operator=(ConcreteValVect &&l) {
+    cout << "move assign op concreteValVect" << '\n';
+    return *this;
+  }
+
+  ConcreteValVect::~ConcreteValVect(){
+    for (auto elem : elements) {
+      delete elem;
+    }
+    elements.clear();
   }
 
   //ConcreteValVect::ConcreteValVect(bool poison, std::vector<ConcreteVal*> &elements)
@@ -115,10 +161,7 @@ namespace util{
         assert( "Error: vector type not supported yet!" && false );
       }  
     }
-    
-    cout << res.size() << '\n';
-    cout << bitwidth << '\n';
-    cout << isIntTy << '\n';
+  
     return res;
   }
 
@@ -127,6 +170,11 @@ namespace util{
     return res;
   }
 
-
+  void ConcreteValVect::print() {
+    cout << "vector elems: " << '\n';
+    for (auto elem : elements) {
+      elem->print();
+    }
+  }
 
 }
