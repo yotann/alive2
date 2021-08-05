@@ -46,7 +46,7 @@ namespace util {
     void print();
   };
   
-  class ConcreteValVect : ConcreteVal {
+  class ConcreteValVect : public ConcreteVal {
   private:
     std::vector<ConcreteVal*> elements;
   public:
