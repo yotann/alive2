@@ -41,7 +41,7 @@ stdenv.mkDerivation {
 
   installPhase = ''
     mkdir -p $out/bin $out/lib/alive2
-    cp alive alive-exec alive-jobserver alive-tv $out/bin/
+    cp alive alive-exec alive-jobserver alive-tv alive-worker $out/bin/
     cp tv/tv.so $out/lib/alive2/
 
     # libtools.a, etc.
