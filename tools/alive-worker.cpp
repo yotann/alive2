@@ -170,6 +170,7 @@ static void sendResult(const ojson &node) {
   auto result = session->Put(result_uri.c_str(), cbor_headers, buffer,
                              "application/cbor");
   checkResult(result);
+  result_uri.clear();
 }
 
 // Must be signal-safe.
@@ -498,6 +499,7 @@ calls that are submitted to the server by other programs.
     for (const ojson &arg : job["args"].array_range())
       call_uri += binaryCIDToText(arg) + ",";
     call_uri.pop_back(); // remove last comma
+    llvm::errs() << "evaluating " << call_uri << "\n";
 
     std::unique_lock lock(result_mutex);
     result_uri = call_uri;
