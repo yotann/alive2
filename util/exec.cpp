@@ -68,7 +68,8 @@ void sym_exec(State &s) {
       }
     } else if (i.getType().isVectorType()) {
       auto *new_val = new ConcreteValVect(false, &i);
-      concrete_vals.insert({&i, new_val});
+      //auto new_val = new ConcreteVal(false, &i);
+      concrete_vals.emplace(&i, new_val);
       //concrete_vals.emplace(&i, new_val);
     } else {
       cout << "AliveExec-Error : input type not supported" << '\n';
@@ -325,10 +326,10 @@ void sym_exec(State &s) {
 
   cout << "---Interpreter done---" << '\n';
 
-  for (auto [val, c_val]:concrete_vals){
-    delete c_val;
-  }
-  concrete_vals.clear();
+  //for (auto [val, c_val]:concrete_vals){
+  //  delete c_val;
+  //}
+  //concrete_vals.clear();
 
   for (auto &bb : f.getBBs()) {
     if (!s.startBB(*bb))

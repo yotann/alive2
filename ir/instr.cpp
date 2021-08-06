@@ -855,16 +855,15 @@ util::ConcreteVal * BinOp::concreteEval(std::map<const Value *, util::ConcreteVa
   bool exact_flag = flags & Exact;
 
   if (op == Op::Add) {
-    //auto lhs_concrete = concrete_vals.find(lhs)->second;
+    auto lhs_concrete = concrete_vals.find(lhs)->second;
     ////auto rhs_concrete = concrete_vals.find(rhs)->second;
-    //auto lhs_vect = dynamic_cast<ConcreteValVect *>(lhs_concrete);
-    //if (lhs_vect) {
-    //  cout << "bin op encountered vector operand" << '\n';
-    //  auto res_elems = ConcreteValVect::make_elements(lhs);
-    //  auto v = new ConcreteValVect(false, move(res_elems));
-    //  return v;
-    //  
-    //}
+    auto lhs_vect = dynamic_cast<ConcreteValVect *>(lhs_concrete);
+    if (lhs_vect) {
+      cout << "bin op encountered vector operand" << '\n';
+      auto res_elems = ConcreteValVect::make_elements(lhs);
+      auto v = new ConcreteValVect(false, move(res_elems));
+      return v;
+    }
     auto v = new ConcreteVal();
     for (auto operand: v_op) {
       auto I = concrete_vals.find(operand);
