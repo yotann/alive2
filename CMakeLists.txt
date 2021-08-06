@@ -212,6 +212,10 @@ if (BUILD_LLVM_UTILS OR BUILD_TV)
     "tools/alive-exec-concrete.cpp"
   )
 
+  add_llvm_executable(alive-interp
+    "tools/alive-interp.cpp"
+  )
+
 else()
   set(LLVM_UTIL_SRCS "")
 endif()
@@ -259,6 +263,7 @@ if (BUILD_LLVM_UTILS OR BUILD_TV)
   target_link_libraries(alive-tv PRIVATE ${ALIVE_LIBS_LLVM} ${llvm_libs})
   target_link_libraries(alive-exec PRIVATE ${ALIVE_LIBS_LLVM} ${llvm_libs})
   target_link_libraries(alive-exec-concrete PRIVATE ${ALIVE_EXEC_LIBS_LLVM} ${llvm_libs})
+  target_link_libraries(alive-interp PRIVATE ${ALIVE_EXEC_LIBS_LLVM} ${llvm_libs})
 endif()
 
 if (CYGWIN)
@@ -274,6 +279,7 @@ else()
     target_link_libraries(alive-tv PRIVATE ${Z3_LIBRARIES})
     target_link_libraries(alive-exec PRIVATE ${Z3_LIBRARIES})
     target_link_libraries(alive-exec-concrete PRIVATE ${Z3_LIBRARIES})
+    target_link_libraries(alive-interp PRIVATE ${Z3_LIBRARIES})
   endif()
 endif()
 

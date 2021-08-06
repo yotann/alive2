@@ -30,6 +30,10 @@ void sym_exec(State &s) {
     }
   }
 
+  // Hacky solution but should be fine for now
+  // This is needed since alive-exec doens't work with vector types
+  bool alive_abort = false;
+
   cout << "running exec.cpp" << '\n';
   // TODO need to check for Value subclasses for inputs and constants
   // i.e. PoisonValue, UndefValue, and etc.
@@ -43,7 +47,7 @@ void sym_exec(State &s) {
     auto I = concrete_vals.find(&i);
     assert(I == concrete_vals.end());
     if (i.getType().isIntType()) {
-      // comment this to avoid random int function arguments 
+      // Comment this to avoid random int function arguments 
       //auto rand_int64 = get_random_int64();
       //cout << "input param random value = " << rand_int64 << "\n"; 
       auto new_val = new ConcreteVal(false, llvm::APInt(i.getType().bits(), 3));
@@ -67,6 +71,7 @@ void sym_exec(State &s) {
         exit(EXIT_FAILURE);
       }
     } else if (i.getType().isVectorType()) {
+      alive_abort = true;
       auto *new_val = new ConcreteValVect(false, &i);
       //auto new_val = new ConcreteVal(false, &i);
       concrete_vals.emplace(&i, new_val);
@@ -326,10 +331,13 @@ void sym_exec(State &s) {
 
   cout << "---Interpreter done---" << '\n';
 
-  //for (auto [val, c_val]:concrete_vals){
-  //  delete c_val;
-  //}
-  //concrete_vals.clear();
+  for (auto [val, c_val]:concrete_vals){
+    delete c_val;
+  }
+  concrete_vals.clear();
+  if (alive_abort) {
+    return;
+  }
 
   for (auto &bb : f.getBBs()) {
     if (!s.startBB(*bb))
