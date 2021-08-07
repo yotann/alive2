@@ -7,6 +7,7 @@ from .base import TestFormat
 import os, re, signal, string, subprocess
 
 ok_string = 'Transformation seems to be correct!'
+ok_interp = 'functions interpreted successfully'
 
 def executeCommand(command):
   p = subprocess.Popen(command,
@@ -96,14 +97,23 @@ class Alive2Test(TestFormat):
       if not os.path.isfile(execpath):
         return lit.Test.UNSUPPORTED, ''
 
-    alive_exec= test.endswith('exec.ll')
+    alive_exec = test.endswith('exec.ll')
     if alive_exec:
+      cmd = ['./alive-interp']
+      if not os.path.isfile('alive-interp'):
+        return lit.Test.UNSUPPORTED, ''
+    
+    # TODO hacky way of using interpreter with .ll files
+    llvm_exec = test.endswith('.ll')
+    if llvm_exec and not alive_tv_1 and not alive_tv_2 and \
+       not alive_tv_3:
       cmd = ['./alive-exec-concrete']
       if not os.path.isfile('alive-exec-concrete'):
         return lit.Test.UNSUPPORTED, ''
 
     if not alive_tv_1 and not alive_tv_2 and not alive_tv_3 and \
        not clang_tv and not opt_tv and not alive_exec:
+       #not clang_tv and not opt_tv and not alive_exec and not llvm_exec:
       cmd = ['./alive', '-smt-to:20000']
 
     input = readFile(test)
@@ -167,6 +177,9 @@ class Alive2Test(TestFormat):
       # If there's no other test, correctness of the transformation should be
       # checked.
       if exitCode == 0 and output.find(ok_string) != -1 and \
+          self.regex_errs_out.search(output) is None:
+        return lit.Test.PASS, ''
+      if exitCode == 0 and output.find(ok_interp) != -1 and \
           self.regex_errs_out.search(output) is None:
         return lit.Test.PASS, ''
       return lit.Test.FAIL, output
