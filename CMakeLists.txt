@@ -158,6 +158,7 @@ set(UTIL_EXEC_SRCS
   util/exec.cpp
   util/unionfind.cpp
   util/concreteval.cpp
+  util/interp.cpp
 )
 
 add_library(util STATIC ${UTIL_SRCS})

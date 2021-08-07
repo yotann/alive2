@@ -9,6 +9,8 @@
 #include "tools/transform.h"
 #include "util/config.h"
 #include "util/version.h"
+#include "util/symexec.h"
+#include "util/interp.h"
 #include "util/concreteval.h"
 
 #include "llvm/ADT/StringExtras.h"
@@ -76,6 +78,22 @@ std::unique_ptr<llvm::Module> openInputFile(llvm::LLVMContext &Context,
 
 optional<smt::smt_initializer> smt_init;
 
+void interpFunction(llvm::Function &F, llvm::TargetLibraryInfoWrapperPass &TLI,
+                  unsigned &successCount, unsigned &errorCount) {
+  auto Func = llvm2alive(F, TLI.getTLI(F));
+  if (!Func) {
+    cerr << "ERROR: Could not translate '" << F.getName().str()
+         << "' to Alive IR\n";
+    ++errorCount;
+    return;
+  }
+  if (opt_print_dot) {
+    Func->writeDot("");
+  }
+  interp(*Func);
+}
+
+/*
 void execFunction(llvm::Function &F, llvm::TargetLibraryInfoWrapperPass &TLI,
                   unsigned &successCount, unsigned &errorCount) {
   auto Func = llvm2alive(F, TLI.getTLI(F));
@@ -172,6 +190,7 @@ void execFunction(llvm::Function &F, llvm::TargetLibraryInfoWrapperPass &TLI,
     return;
   }
 }
+*/
 }
 
 int main(int argc, char **argv) {
@@ -247,7 +266,7 @@ will attempt to execute every function in the bitcode file.
       continue;
     if (!func_names.empty() && !func_names.count(F.getName().str()))
       continue;
-    execFunction(F, TLI, successCount, errorCount);
+    interpFunction(F, TLI, successCount, errorCount);
   }
 
   if (!opt_file2.empty()) {
@@ -256,7 +275,7 @@ will attempt to execute every function in the bitcode file.
         continue;
       if (!func_names.empty() && !func_names.count(F.getName().str()))
         continue;
-      execFunction(F, TLI, successCount, errorCount);
+      interpFunction(F, TLI, successCount, errorCount);
     }
   }
 
