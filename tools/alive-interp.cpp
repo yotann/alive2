@@ -90,6 +90,8 @@ void interpFunction(llvm::Function &F, llvm::TargetLibraryInfoWrapperPass &TLI,
   if (opt_print_dot) {
     Func->writeDot("");
   }
+  if (!opt_quiet)
+    Func->print(cout << "\n----------------------------------------\n");
   interp(*Func);
 }
 
@@ -202,7 +204,16 @@ int main(int argc, char **argv) {
 
   
   cout << "Alive-interpreter\n";
-  
+
+  //auto n1 = make_unique<llvm::APInt>(32, 12);
+  // auto cn1 = ConcreteValInt(false, move(llvm::APInt(32,12)));
+  // cn1.print();
+  // cout << "isPoison = " << cn1.isPoison() << '\n';
+  // auto n1 = cn1.getVal();
+  // cout << "bitwidth = " << n1.getBitWidth() << '\n';
+  // cn1.setPoison(true);
+  // cout << "isPoison = " << cn1.isPoison() << '\n';
+
   
   
   std::string Usage =

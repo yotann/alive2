@@ -41,11 +41,34 @@ namespace util {
     virtual bool isUndef();
     void setVal(llvm::APInt& v);
     void setVal(llvm::APFloat& v);
-    llvm::APInt& getVal();
-    llvm::APFloat& getValFloat();
+    virtual llvm::APInt& getVal();// = 0;
+    virtual llvm::APFloat& getValFloat();// = 0;
     virtual void print();
   };
-  
+
+  class ConcreteValInt : public ConcreteVal {
+    private:
+    llvm::APInt intVal;
+    public:
+    //ConcreteValInt(bool poison, llvm::APInt val);
+    ConcreteValInt(bool poison, llvm::APInt &&val);
+    llvm::APInt& getVal() override;
+    void print() override;
+    ConcreteValInt add(ConcreteValInt rhs);
+
+  }; 
+
+  class ConcreteValFloat : public ConcreteVal {
+    private:
+    llvm::APFloat floatVal;
+    public:
+    //ConcreteValInt(bool poison, llvm::APInt val);
+    ConcreteValFloat(bool poison, llvm::APFloat &&val);
+    llvm::APFloat& getValFloat() override;
+    void print() override;
+    ConcreteValFloat add(ConcreteValFloat rhs);
+  };
+
   class ConcreteValVect : public ConcreteVal {
   private:
     

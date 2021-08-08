@@ -17,7 +17,7 @@ namespace util {
 
 void interp(Function &f) {
   
-  cout << "running exec.cpp" << '\n';
+  cout << "running interp.cpp" << '\n';
   // TODO need to check for Value subclasses for inputs and constants
   // i.e. PoisonValue, UndefValue, and etc.
   // initialize inputs with concrete values
@@ -33,19 +33,21 @@ void interp(Function &f) {
       // Comment this to avoid random int function arguments 
       //auto rand_int64 = get_random_int64();
       //cout << "input param random value = " << rand_int64 << "\n"; 
-      auto new_val = new ConcreteVal(false, llvm::APInt(i.getType().bits(), 3));
+      //auto new_val = new ConcreteVal(false, llvm::APInt(i.getType().bits(), 3));
+      auto new_val = new ConcreteValInt(false, llvm::APInt(i.getType().bits(), 3));
       concrete_vals.emplace(&i, new_val);
     } else if (i.getType().isFloatType()) {
       cout << "float input encountered " << '\n';
 
       if (i.bits() == 32) {
-        auto new_val = new ConcreteVal(false, llvm::APFloat(3.0f));
+        //auto new_val = new ConcreteVal(false, llvm::APFloat(3.0f));
+        auto new_val = new ConcreteValFloat(false, llvm::APFloat(3.0f));
         concrete_vals.emplace(&i, new_val);
       } else if (i.bits() == 64) {
-        auto new_val = new ConcreteVal(false, llvm::APFloat(3.0));
+        auto new_val = new ConcreteValFloat(false, llvm::APFloat(3.0));
         concrete_vals.emplace(&i, new_val);
       } else if (i.bits() == 16) {
-        auto new_val = new ConcreteVal(
+        auto new_val = new ConcreteValFloat(
             false, llvm::APFloat(llvm::APFloatBase::IEEEhalf(), "3.0"));
         concrete_vals.emplace(&i, new_val);
       } else {

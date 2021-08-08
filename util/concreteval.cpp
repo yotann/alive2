@@ -84,6 +84,41 @@ namespace util{
     return;
   }
 
+  ConcreteValInt::ConcreteValInt(bool poison, llvm::APInt &&val)
+  : ConcreteVal(poison), intVal(move(val)) {
+  }
+
+  llvm::APInt& ConcreteValInt::getVal(){
+    return intVal;
+  }
+
+  void ConcreteValInt::print() {
+    llvm::SmallString<40> S, U;
+    intVal.toStringUnsigned(U);
+    intVal.toStringSigned(S);
+    std::cout << "ConcreteVal1( poison=" << isPoison() << ", " << intVal.getBitWidth() << "b, "
+              << U.c_str() << "u " << S.c_str() << "s)\n";
+  }
+
+
+  ConcreteValFloat::ConcreteValFloat(bool poison, llvm::APFloat &&val)
+  : ConcreteVal(poison), floatVal(move(val)) {
+
+  }
+
+  llvm::APFloat& ConcreteValFloat::getValFloat(){
+    return floatVal;
+  }
+
+  void ConcreteValFloat::print() { 
+    llvm::SmallVector<char, 16> Buffer;
+    floatVal.toString(Buffer);
+    auto bits = floatVal.getSizeInBits(floatVal.getSemantics());
+    std::string F(Buffer.begin(),Buffer.end());
+    std::cout << "ConcreteVal( poison=" << isPoison() << ", " 
+              << bits << "b, " << F << "F)\n";
+  }
+
   ConcreteValVect::ConcreteValVect(bool poison, std::vector<ConcreteVal*> &&elements)
   : ConcreteVal(poison), elements(move(elements)) {
     assert(this->elements.size() > 0);
@@ -171,10 +206,11 @@ namespace util{
   }
 
   void ConcreteValVect::print() {
-    cout << "vector elems: " << '\n';
+    cout << "<" << '\n';
     for (auto elem : elements) {
       elem->print();
     }
+    cout << ">" << '\n';
   }
 
 }
