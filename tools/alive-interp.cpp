@@ -93,6 +93,8 @@ void interpFunction(llvm::Function &F, llvm::TargetLibraryInfoWrapperPass &TLI,
   if (!opt_quiet)
     Func->print(cout << "\n----------------------------------------\n");
   interp(*Func);
+  // TODO interp should return result values to correctly update successCount 
+  successCount++;
 }
 
 /*

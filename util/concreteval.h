@@ -10,11 +10,16 @@
 #include "util/compiler.h"
 #include "ir/value.h"
 #include "ir/type.h"
+#include "ir/instr.h"
 #include <memory>
 #include <variant>
 #include <iostream>
 #include <vector>
 #include <utility>
+
+namespace IR {
+  struct FastMathFlags;
+}
 
 namespace util {
   class ConcreteVal{
@@ -24,12 +29,12 @@ namespace util {
     };
     unsigned flags = Flags::None;
     //bool poison;
-    std::variant<llvm::APInt, llvm::APFloat> val;
+    //std::variant<llvm::APInt, llvm::APFloat> val;
   public:
-    ConcreteVal(): flags(Flags::None), val() {}
+    //ConcreteVal(): flags(Flags::None), val() {}
     ConcreteVal(bool poison);
-    ConcreteVal(bool poison, llvm::APInt val);
-    ConcreteVal(bool poison, llvm::APFloat val);
+    //ConcreteVal(bool poison, llvm::APInt val);
+    //ConcreteVal(bool poison, llvm::APFloat val);
     ConcreteVal(ConcreteVal& l) = default;
     ConcreteVal& operator=(ConcreteVal& l) = default;
     ConcreteVal( ConcreteVal&& r) = default;
@@ -39,48 +44,63 @@ namespace util {
     virtual void setUndef();
     virtual bool isPoison();
     virtual bool isUndef();
-    void setVal(llvm::APInt& v);
-    void setVal(llvm::APFloat& v);
-    virtual llvm::APInt& getVal();// = 0;
-    virtual llvm::APFloat& getValFloat();// = 0;
+    void setVal(ConcreteVal& v);
+    //void setVal(llvm::APInt& v);
+    //void setVal(llvm::APFloat& v);
+    virtual ConcreteVal& getVal();
+    //virtual llvm::APFloat& getValFloat() = 0;
     virtual void print();
   };
 
   class ConcreteValInt : public ConcreteVal {
     private:
-    llvm::APInt intVal;
+    llvm::APInt val;
     public:
     //ConcreteValInt(bool poison, llvm::APInt val);
     ConcreteValInt(bool poison, llvm::APInt &&val);
-    llvm::APInt& getVal() override;
+    ConcreteVal& getVal() override;
+    bool getBoolVal();
     void print() override;
-    ConcreteValInt add(ConcreteValInt rhs);
 
+    static ConcreteVal* evalPoison(ConcreteVal* lhs, ConcreteVal* rhs);
+    static ConcreteVal* add(ConcreteVal* lhs, ConcreteVal* rhs, unsigned flags);
+    static ConcreteVal* sAddSat(ConcreteVal* lhs, ConcreteVal* rhs, unsigned flags);
+    static ConcreteVal* uAddSat(ConcreteVal* lhs, ConcreteVal* rhs, unsigned flags);
+    static ConcreteVal* sSubSat(ConcreteVal* lhs, ConcreteVal* rhs, unsigned flags);
+    static ConcreteVal* uSubSat(ConcreteVal* lhs, ConcreteVal* rhs, unsigned flags);
+    static ConcreteVal* sShlSat(ConcreteVal* lhs, ConcreteVal* rhs, unsigned flags);
+    static ConcreteVal* uShlSat(ConcreteVal* lhs, ConcreteVal* rhs, unsigned flags);
   }; 
 
   class ConcreteValFloat : public ConcreteVal {
     private:
-    llvm::APFloat floatVal;
+    llvm::APFloat val;
+    static ConcreteVal* evalPoison(ConcreteVal* lhs, ConcreteVal* rhs);
+    static ConcreteVal* binOPEvalFmath(ConcreteVal* lhs, ConcreteVal* rhs, IR::FastMathFlags fmath);
+    static void unOPEvalFmath(ConcreteVal* n, IR::FastMathFlags fmath);
     public:
     //ConcreteValInt(bool poison, llvm::APInt val);
     ConcreteValFloat(bool poison, llvm::APFloat &&val);
-    llvm::APFloat& getValFloat() override;
+    ConcreteValFloat& getVal() override;
     void print() override;
-    ConcreteValFloat add(ConcreteValFloat rhs);
+
+    
+    static ConcreteVal* fadd(ConcreteVal* lhs, ConcreteVal* rhs, IR::FastMathFlags fmath);
   };
 
   class ConcreteValVect : public ConcreteVal {
   private:
-    
+  std::vector<ConcreteVal*> elements;
   public:
-    std::vector<ConcreteVal*> elements;
+    
     ConcreteValVect(bool poison, std::vector<ConcreteVal*> &&elements);
     ConcreteValVect(bool poison, const IR::Value* vect_val);
-    ConcreteValVect(ConcreteValVect &l);
-    ConcreteValVect& operator=(ConcreteValVect &l);
-    ConcreteValVect( ConcreteValVect &&r);
-    ConcreteValVect& operator=(ConcreteValVect &&r);
+    //ConcreteValVect(ConcreteValVect &l);
+    //ConcreteValVect& operator=(ConcreteValVect &l);
+    //ConcreteValVect( ConcreteValVect &&r);
+    //ConcreteValVect& operator=(ConcreteValVect &&r);
     //ConcreteValVect(bool poison, std::vector<ConcreteVal*> &elements);
+    ConcreteValVect& getVal() override;
     virtual ~ConcreteValVect();
     static std::vector<ConcreteVal*> make_elements(const IR::Value* vect_val);
     static std::unique_ptr<std::vector<ConcreteVal*>> make_elements_unique(IR::Value* vect_val);

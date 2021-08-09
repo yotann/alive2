@@ -70,7 +70,8 @@ void interp(Function &f) {
     assert(I == concrete_vals.end());
     // read poison consts
     if (dynamic_cast<const PoisonValue *>(&i)) {
-      auto new_val = new ConcreteVal(true, llvm::APInt(i.getType().bits(), 0));
+      // TODO add a concreteValPoison sublcass maybe 
+      auto new_val = new ConcreteValInt(true, llvm::APInt(i.getType().bits(), 0));
       concrete_vals.emplace(&i, new_val);
     } else if (auto const_ptr = dynamic_cast<const IntConst *>(&i)) {
       // auto const_ptr = dynamic_cast<const IntConst *>(&i);
@@ -81,34 +82,34 @@ void interp(Function &f) {
       if (const_ptr->getString()) {
         // cout << "encountered const stored as string: " <<
         // *(const_ptr->getString())<< '\n';
-        auto new_val = new ConcreteVal(
+        auto new_val = new ConcreteValInt(
             false,
             llvm::APInt(i.getType().bits(), *(const_ptr->getString()), 10));
         concrete_vals.emplace(&i, new_val);
       } else if (const_ptr->getInt()) {
         // cout << "encountered const stored as int: " <<
         // *(const_ptr->getInt())<< '\n';
-        auto new_val = new ConcreteVal(
+        auto new_val = new ConcreteValInt(
             false, llvm::APInt(i.getType().bits(), *(const_ptr->getInt())));
         concrete_vals.emplace(&i, new_val);
       }
     } else if (auto const_ptr = dynamic_cast<const FloatConst *>(&i)) {
       assert((const_ptr->bits() == 32) || (const_ptr->bits() == 64) ||
              (const_ptr->bits() == 16)); // TODO: add support for other FP types
-      cout << "float constant: " << const_ptr->getName()
-           << " type: " << i.getType().toString()
-           << " bitwidth: " << i.getType().bits() << '\n';
+      //cout << "float constant: " << const_ptr->getName()
+      //     << " type: " << i.getType().toString()
+      //     << " bitwidth: " << i.getType().bits() << '\n';
       if (auto double_float = const_ptr->getDouble()) {
-        cout << "double repr of float constant : " << *double_float << '\n';
+        //cout << "double repr of float constant : " << *double_float << '\n';
         if (const_ptr->bits() == 32) {
           // Since the original ir was representable using float, casting the
           // double back to float should be safe I think but this looks pretty
           // bad and should think of a better solution
-          auto new_val = new ConcreteVal(
+          auto new_val = new ConcreteValFloat(
               false, llvm::APFloat(static_cast<float>(*double_float)));
           concrete_vals.emplace(&i, new_val);
         } else if (const_ptr->bits() == 64) {
-          auto new_val = new ConcreteVal(false, llvm::APFloat(*double_float));
+          auto new_val = new ConcreteValFloat(false, llvm::APFloat(*double_float));
           concrete_vals.emplace(&i, new_val);
         } else {
           UNREACHABLE();
@@ -118,7 +119,7 @@ void interp(Function &f) {
         cout << "string repr of float constant : " << *string_float << '\n';
       } else if (auto int_float = const_ptr->getInt()) {
 
-        auto new_val = new ConcreteVal(false,
+        auto new_val = new ConcreteValFloat(false,
                                   llvm::APFloat(llvm::APFloatBase::IEEEhalf(),
                                                 llvm::APInt(16, *int_float)));
         concrete_vals.emplace(&i, new_val);
@@ -255,7 +256,10 @@ void interp(Function &f) {
                 break;
               } else {
                 pred_block = cur_block;
-                if (concrete_cond_val->getVal().getBoolValue()) {
+                auto condVar = dynamic_cast<ConcreteValInt *>(&concrete_cond_val->getVal());
+                assert(condVar);
+                //if (concrete_cond_val->getVal().getBoolValue()) {
+                if (condVar->getBoolVal()) {
                   cur_block = br_ptr->getTruePtr();
                 } else {
                   cur_block = br_ptr->getFalsePtr();
