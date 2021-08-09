@@ -3,5 +3,4 @@ define double @foo(double %0) #0 {
   ret double %2
 }
 
-; CHECK: ConcreteVal( poison=0, 64b, 1F)
-; CHECK: ConcreteVal( poison=0, 64b, 1F)
+; CHECK: ConcreteVal(poison=0, 64b, 1F)

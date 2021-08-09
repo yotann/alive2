@@ -883,141 +883,43 @@ util::ConcreteVal * BinOp::concreteEval(std::map<const Value *, util::ConcreteVa
     auto v = ConcreteValInt::uSubSat(lhs_concrete, rhs_concrete, flags);
     return v;
   }
-  /*else if (op == Op::SShl_Sat || 
-           op == Op::UShl_Sat){
-    auto lhs_concrete = concrete_vals.find(lhs)->second;
-    auto rhs_concrete = concrete_vals.find(rhs)->second;
-    auto lhs_bitwidth = lhs_concrete->getVal().getBitWidth();
-    auto v = new ConcreteVal(false,llvm::APInt(lhs_bitwidth, 0));
-    if (lhs_concrete->isPoison() || rhs_concrete->isPoison()) {
-      v->setPoison(true);
-      return v;
-    }
-    // This is llvm's 13 maximum bitwidth + 1 for integer types
-    uint64_t max_shift = (1<<23);
-    auto shift_amt_u_limit = rhs_concrete->getVal().getLimitedValue(max_shift);
-    if ((shift_amt_u_limit == max_shift) ||
-        (shift_amt_u_limit >= lhs_bitwidth)){
-      v->setPoison(true);
-      return v;
-    }
-    
-    if (op == Op::SShl_Sat){
-      auto sshl_res = lhs_concrete->getVal().sshl_sat(rhs_concrete->getVal());
-      v->setVal(sshl_res);
-    }
-    else if(op == Op::UShl_Sat){
-      auto ushl_res = lhs_concrete->getVal().ushl_sat(rhs_concrete->getVal());
-      v->setVal(ushl_res);
-    }
-    else{
-      UNREACHABLE();
-    }
+  else if (op == Op::SShl_Sat) {
+    auto v = ConcreteValInt::sShlSat(lhs_concrete, rhs_concrete, flags);
     return v;
   }
-  else if (op == Op::FAdd ||
-           op == Op::FSub || 
-           op == Op::FMul ||
-           op == Op::FDiv ||
-           op == Op::FRem) {
-    auto v = new ConcreteVal();
-    for (auto operand: v_op) {
-      auto I = concrete_vals.find(operand);
-      if (I->second->isPoison()) {
-        v->setPoison(true);
-        return v;
-      }
-      auto op_apfloat = I->second->getValFloat(); 
-      if (firstOp){
-        v->setVal(op_apfloat);
-        firstOp = false;
-        continue;
-      }
-      if (fmath.isNNan()){
-        if (op_apfloat.isNaN()){
-          v->setPoison(true);
-            return v;
-        }
-      }
-      if (fmath.isNInf()){ 
-        if (op_apfloat.isInfinity()){
-            v->setPoison(true);
-            return v;
-        }
-      }
-      if (op == Op::FAdd){// Assuming default floating-point environment
-        auto status = v->getValFloat().add(op_apfloat,llvm::APFloatBase::rmNearestTiesToEven);
-        assert(status == llvm::APFloatBase::opOK);
-      }
-      else if (op == Op::FSub) {
-        auto status = v->getValFloat().subtract(op_apfloat,llvm::APFloatBase::rmNearestTiesToEven);
-        assert(status == llvm::APFloatBase::opOK);
-      }
-      else if (op == Op::FMul) {
-        auto status = v->getValFloat().multiply(op_apfloat,llvm::APFloatBase::rmNearestTiesToEven);
-        assert(status == llvm::APFloatBase::opOK);
-      }
-      else if (op == Op::FDiv) {
-        auto status = v->getValFloat().divide(op_apfloat,llvm::APFloatBase::rmNearestTiesToEven);
-        assert(status == llvm::APFloatBase::opOK);
-      }
-      else if (op == Op::FRem) {
-        // APFloat::remainder does not match the semantics
-        auto status = v->getValFloat().mod(op_apfloat);
-        assert(status == llvm::APFloatBase::opOK);
-      }
-      else{
-        UNREACHABLE();
-      }
-      if (fmath.isNNan() && v->getValFloat().isNaN()){
-          v->setPoison(true);
-      }
-      if (fmath.isNInf() && v->getValFloat().isInfinity()){
-          v->setPoison(true);
-      }
-      return v;
-    }
-  }
-  else if (op == Op::FMax || op == Op::FMin){
-    auto v = new ConcreteVal();
-    auto lhs_concrete = concrete_vals.find(lhs)->second;
-    auto rhs_concrete = concrete_vals.find(rhs)->second;
-    if (lhs_concrete->isPoison() || rhs_concrete->isPoison()) {
-      v->setPoison(true);
-      return v;
-    }
-    if (lhs_concrete->getValFloat().isNaN() && rhs_concrete->getValFloat().isNaN()) {
-      auto qnan = llvm::APFloat::getQNaN(lhs_concrete->getValFloat().getSemantics());
-      v->setVal(qnan);
-    }
-    else if (lhs_concrete->getValFloat().isNaN()) {
-      v->setVal(rhs_concrete->getValFloat());
-    }
-    else if (rhs_concrete->getValFloat().isNaN()) {
-      v->setVal(lhs_concrete->getValFloat());
-    }
-    else {
-      auto compare_res = lhs_concrete->getValFloat().compare(rhs_concrete->getValFloat());
-      if (compare_res == llvm::APFloatBase::cmpGreaterThan) {
-        if (op == Op::FMax){
-          v->setVal(lhs_concrete->getValFloat());
-        }
-        else{
-          v->setVal(rhs_concrete->getValFloat());
-        }
-      }
-      else {
-        if (op == Op::FMax){
-          v->setVal(rhs_concrete->getValFloat());
-        }
-        else{
-          v->setVal(lhs_concrete->getValFloat());
-        }
-      }
-    }
+  else if (op == Op::UShl_Sat) { 
+    auto v = ConcreteValInt::uShlSat(lhs_concrete, rhs_concrete, flags);
     return v;
   }
-  else if (op == Op::FMaximum || op == Op::FMinimum){
+  else if (op == Op::FAdd) {
+    auto v = ConcreteValFloat::fadd(lhs_concrete, rhs_concrete, fmath);
+    return v;
+  }
+  else if (op == Op::FSub) {
+    auto v = ConcreteValFloat::fsub(lhs_concrete, rhs_concrete, fmath);
+    return v;
+  }
+  else if (op == Op::FMul) {
+    auto v = ConcreteValFloat::fmul(lhs_concrete, rhs_concrete, fmath);
+    return v;
+  }
+  else if (op == Op::FDiv) {
+    auto v = ConcreteValFloat::fdiv(lhs_concrete, rhs_concrete, fmath);
+    return v;
+  }
+  else if (op == Op::FRem) {
+    auto v = ConcreteValFloat::frem(lhs_concrete, rhs_concrete, fmath);
+    return v;
+  }
+  else if (op == Op::FMax){
+    auto v = ConcreteValFloat::fmax(lhs_concrete, rhs_concrete, fmath);
+    return v;
+  }
+  else if (op == Op::FMin){
+    auto v = ConcreteValFloat::fmin(lhs_concrete, rhs_concrete, fmath);
+    return v;
+  }
+  /*else if (op == Op::FMaximum || op == Op::FMinimum){
     auto v = new ConcreteVal();
     auto lhs_concrete = concrete_vals.find(lhs)->second;
     auto rhs_concrete = concrete_vals.find(rhs)->second;

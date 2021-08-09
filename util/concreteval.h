@@ -84,8 +84,15 @@ namespace util {
     ConcreteValFloat& getVal() override;
     void print() override;
 
-    
     static ConcreteVal* fadd(ConcreteVal* lhs, ConcreteVal* rhs, IR::FastMathFlags fmath);
+    static ConcreteVal* fsub(ConcreteVal* lhs, ConcreteVal* rhs, IR::FastMathFlags fmath);
+    static ConcreteVal* fmul(ConcreteVal* lhs, ConcreteVal* rhs, IR::FastMathFlags fmath);
+    static ConcreteVal* fdiv(ConcreteVal* lhs, ConcreteVal* rhs, IR::FastMathFlags fmath);
+    static ConcreteVal* frem(ConcreteVal* lhs, ConcreteVal* rhs, IR::FastMathFlags fmath);
+    static ConcreteVal* fmax(ConcreteVal* lhs, ConcreteVal* rhs, IR::FastMathFlags fmath);
+    static ConcreteVal* fmin(ConcreteVal* lhs, ConcreteVal* rhs, IR::FastMathFlags fmath);
+    static ConcreteVal* fmaximum(ConcreteVal* lhs, ConcreteVal* rhs, IR::FastMathFlags fmath);
+    static ConcreteVal* fminimum(ConcreteVal* lhs, ConcreteVal* rhs, IR::FastMathFlags fmath);
   };
 
   class ConcreteValVect : public ConcreteVal {

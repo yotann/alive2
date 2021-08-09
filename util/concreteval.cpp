@@ -315,6 +315,160 @@ namespace util{
     
   }
 
+  ConcreteVal* ConcreteValFloat::fsub(ConcreteVal* lhs, ConcreteVal* rhs, IR::FastMathFlags fmath) {
+    auto lhs_float = dynamic_cast<ConcreteValFloat *>(lhs);
+    auto rhs_float = dynamic_cast<ConcreteValFloat *>(rhs);
+    assert(lhs_float && rhs_float);
+    auto poison_res = evalPoison(lhs, rhs);
+    if (poison_res) 
+      return poison_res;
+
+    auto fmath_input_res = binOPEvalFmath(lhs, rhs, fmath);
+
+    if (fmath_input_res)
+      return fmath_input_res;
+
+    auto v = new ConcreteValFloat(false, llvm::APFloat(lhs_float->val));
+    auto status = v->val.subtract(rhs_float->val, llvm::APFloatBase::rmNearestTiesToEven);
+    assert(status == llvm::APFloatBase::opOK);
+    unOPEvalFmath(v, fmath);
+    return v;
+    
+  }
+
+  ConcreteVal* ConcreteValFloat::fmul(ConcreteVal* lhs, ConcreteVal* rhs, IR::FastMathFlags fmath) {
+    auto lhs_float = dynamic_cast<ConcreteValFloat *>(lhs);
+    auto rhs_float = dynamic_cast<ConcreteValFloat *>(rhs);
+    assert(lhs_float && rhs_float);
+    auto poison_res = evalPoison(lhs, rhs);
+    if (poison_res) 
+      return poison_res;
+
+    auto fmath_input_res = binOPEvalFmath(lhs, rhs, fmath);
+
+    if (fmath_input_res)
+      return fmath_input_res;
+
+    auto v = new ConcreteValFloat(false, llvm::APFloat(lhs_float->val));
+    auto status = v->val.multiply(rhs_float->val, llvm::APFloatBase::rmNearestTiesToEven);
+    assert(status == llvm::APFloatBase::opOK);
+    unOPEvalFmath(v, fmath);
+    return v;
+    
+  }
+
+  ConcreteVal* ConcreteValFloat::fdiv(ConcreteVal* lhs, ConcreteVal* rhs, IR::FastMathFlags fmath) {
+    auto lhs_float = dynamic_cast<ConcreteValFloat *>(lhs);
+    auto rhs_float = dynamic_cast<ConcreteValFloat *>(rhs);
+    assert(lhs_float && rhs_float);
+    auto poison_res = evalPoison(lhs, rhs);
+    if (poison_res) 
+      return poison_res;
+
+    auto fmath_input_res = binOPEvalFmath(lhs, rhs, fmath);
+
+    if (fmath_input_res)
+      return fmath_input_res;
+
+    auto v = new ConcreteValFloat(false, llvm::APFloat(lhs_float->val));
+    auto status = v->val.divide(rhs_float->val, llvm::APFloatBase::rmNearestTiesToEven);
+    assert(status == llvm::APFloatBase::opOK);
+    unOPEvalFmath(v, fmath);
+    return v;
+    
+  }
+
+  ConcreteVal* ConcreteValFloat::frem(ConcreteVal* lhs, ConcreteVal* rhs, IR::FastMathFlags fmath) {
+    auto lhs_float = dynamic_cast<ConcreteValFloat *>(lhs);
+    auto rhs_float = dynamic_cast<ConcreteValFloat *>(rhs);
+    assert(lhs_float && rhs_float);
+    auto poison_res = evalPoison(lhs, rhs);
+    if (poison_res) 
+      return poison_res;
+
+    auto fmath_input_res = binOPEvalFmath(lhs, rhs, fmath);
+
+    if (fmath_input_res)
+      return fmath_input_res;
+
+    auto v = new ConcreteValFloat(false, llvm::APFloat(lhs_float->val));
+    auto status = v->val.mod(rhs_float->val);
+    assert(status == llvm::APFloatBase::opOK);
+    unOPEvalFmath(v, fmath);
+    return v;
+    
+  }
+
+  ConcreteVal* ConcreteValFloat::fmax(ConcreteVal* lhs, ConcreteVal* rhs, IR::FastMathFlags fmath) {
+    auto lhs_float = dynamic_cast<ConcreteValFloat *>(lhs);
+    auto rhs_float = dynamic_cast<ConcreteValFloat *>(rhs);
+    assert(lhs_float && rhs_float);
+    auto poison_res = evalPoison(lhs, rhs);
+    if (poison_res) 
+      return poison_res;
+
+    if (lhs_float->val.isNaN() && rhs_float->val.isNaN()) {
+      auto qnan = llvm::APFloat::getQNaN(lhs_float->val.getSemantics());
+      auto v = new ConcreteValFloat(false, move(qnan));
+      return v;
+    }
+    else if (lhs_float->val.isNaN()) {
+      auto v = new ConcreteValFloat(false, llvm::APFloat(rhs_float->val));
+      return v;
+    }
+    else if (rhs_float->val.isNaN()) {
+      auto v = new ConcreteValFloat(false, llvm::APFloat(lhs_float->val));
+      return v;
+    }
+    else{ // neither operand is nan
+      auto compare_res = lhs_float->val.compare(rhs_float->val);
+      if (compare_res == llvm::APFloatBase::cmpGreaterThan) {
+        auto v = new ConcreteValFloat(*lhs_float);
+        return v;
+      }
+      else {
+        auto v = new ConcreteValFloat(*rhs_float);
+        return v;
+      }
+    }
+    UNREACHABLE();
+  }
+
+  ConcreteVal* ConcreteValFloat::fmin(ConcreteVal* lhs, ConcreteVal* rhs, IR::FastMathFlags fmath) {
+    auto lhs_float = dynamic_cast<ConcreteValFloat *>(lhs);
+    auto rhs_float = dynamic_cast<ConcreteValFloat *>(rhs);
+    assert(lhs_float && rhs_float);
+    auto poison_res = evalPoison(lhs, rhs);
+    if (poison_res) 
+      return poison_res;
+
+    if (lhs_float->val.isNaN() && rhs_float->val.isNaN()) {
+      auto qnan = llvm::APFloat::getQNaN(lhs_float->val.getSemantics());
+      auto v = new ConcreteValFloat(false, move(qnan));
+      return v;
+    }
+    else if (lhs_float->val.isNaN()) {
+      auto v = new ConcreteValFloat(false, llvm::APFloat(rhs_float->val));
+      return v;
+    }
+    else if (rhs_float->val.isNaN()) {
+      auto v = new ConcreteValFloat(false, llvm::APFloat(lhs_float->val));
+      return v;
+    }
+    else{ // neither operand is nan
+      auto compare_res = lhs_float->val.compare(rhs_float->val);
+      if (compare_res == llvm::APFloatBase::cmpGreaterThan) {
+        auto v = new ConcreteValFloat(*rhs_float);
+        return v;
+      }
+      else {
+        auto v = new ConcreteValFloat(*lhs_float);
+        return v;
+      }
+    }
+    UNREACHABLE();
+  }
+
   void ConcreteValFloat::print() { 
     llvm::SmallVector<char, 16> Buffer;
     val.toString(Buffer);
