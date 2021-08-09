@@ -10,6 +10,10 @@
 #include <utility>
 #include <vector>
 
+namespace util {
+  class ConcreteVal;
+}
+
 namespace IR {
 
 class Function;

@@ -155,7 +155,7 @@ set(UTIL_EXEC_SRCS
   util/random.cpp
   util/sort.cpp
   util/stopwatch.cpp
-  util/exec.cpp
+  #util/exec.cpp
   util/unionfind.cpp
   util/concreteval.cpp
   util/interp.cpp
@@ -209,9 +209,9 @@ if (BUILD_LLVM_UTILS OR BUILD_TV)
     "tools/alive-exec.cpp"
   )
 
-  add_llvm_executable(alive-exec-concrete
-    "tools/alive-exec-concrete.cpp"
-  )
+  #add_llvm_executable(alive-exec-concrete
+  #  "tools/alive-exec-concrete.cpp"
+  #)
 
   add_llvm_executable(alive-interp
     "tools/alive-interp.cpp"
@@ -263,7 +263,7 @@ if (BUILD_LLVM_UTILS OR BUILD_TV)
   #target_link_libraries(alive2 PRIVATE ${llvm_libs})
   target_link_libraries(alive-tv PRIVATE ${ALIVE_LIBS_LLVM} ${llvm_libs})
   target_link_libraries(alive-exec PRIVATE ${ALIVE_LIBS_LLVM} ${llvm_libs})
-  target_link_libraries(alive-exec-concrete PRIVATE ${ALIVE_EXEC_LIBS_LLVM} ${llvm_libs})
+  #target_link_libraries(alive-exec-concrete PRIVATE ${ALIVE_EXEC_LIBS_LLVM} ${llvm_libs})
   target_link_libraries(alive-interp PRIVATE ${ALIVE_EXEC_LIBS_LLVM} ${llvm_libs})
 endif()
 
@@ -279,7 +279,7 @@ else()
   if (BUILD_LLVM_UTILS OR BUILD_TV)
     target_link_libraries(alive-tv PRIVATE ${Z3_LIBRARIES})
     target_link_libraries(alive-exec PRIVATE ${Z3_LIBRARIES})
-    target_link_libraries(alive-exec-concrete PRIVATE ${Z3_LIBRARIES})
+    #target_link_libraries(alive-exec-concrete PRIVATE ${Z3_LIBRARIES})
     target_link_libraries(alive-interp PRIVATE ${Z3_LIBRARIES})
   endif()
 endif()

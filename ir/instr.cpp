@@ -849,14 +849,14 @@ util::ConcreteVal * BinOp::concreteEval(std::map<const Value *, util::ConcreteVa
       }
   }  
   
-  bool firstOp = true;
-  bool nsw_flag = flags & NSW;
-  bool nuw_flag = flags & NUW;
-  bool exact_flag = flags & Exact;
-
+  // bool firstOp = true;
+  // bool nsw_flag = flags & NSW;
+  // bool nuw_flag = flags & NUW;
+  // bool exact_flag = flags & Exact;
+  auto lhs_concrete = concrete_vals.find(lhs)->second;
+  auto rhs_concrete = concrete_vals.find(rhs)->second;
   if (op == Op::Add) {
-    auto lhs_concrete = concrete_vals.find(lhs)->second;
-    ////auto rhs_concrete = concrete_vals.find(rhs)->second;
+    
     auto lhs_vect = dynamic_cast<ConcreteValVect *>(lhs_concrete);
     if (lhs_vect) {
       cout << "bin op encountered vector operand" << '\n';
@@ -864,65 +864,26 @@ util::ConcreteVal * BinOp::concreteEval(std::map<const Value *, util::ConcreteVa
       auto v = new ConcreteValVect(false, move(res_elems));
       return v;
     }
-    auto v = new ConcreteVal();
-    for (auto operand: v_op) {
-      auto I = concrete_vals.find(operand);
-      if (I->second->isPoison()){//is the way we treat poison for all binops the same? is so refactor
-        v->setPoison(true);
-        return v;
-      }
-      auto op_apint = I->second->getVal(); 
-      if (firstOp){
-        v->setVal(op_apint);
-        firstOp = false;
-        continue;
-      }
-      bool ov_flag_s = false;
-      bool ov_flag_u = false;
-      auto ap_sum_s = v->getVal().sadd_ov(op_apint,ov_flag_s);
-      auto ap_sum_u = v->getVal().uadd_ov(op_apint,ov_flag_u);
-      v->setVal(ap_sum_s);
-      if ((nsw_flag & ov_flag_s) || (nuw_flag & ov_flag_u)){
-        v->setPoison(true);
-        return v;
-      }
-    }
+    auto v = ConcreteValInt::add(lhs_concrete, rhs_concrete, flags);
     return v;
   }
-  else if (op == Op::SAdd_Sat || 
-           op == Op::UAdd_Sat ||
-           op == Op::SSub_Sat ||
-           op == Op::USub_Sat) {
-    auto lhs_concrete = concrete_vals.find(lhs)->second;
-    auto rhs_concrete = concrete_vals.find(rhs)->second;
-    auto lhs_bitwidth = lhs_concrete->getVal().getBitWidth();
-    auto v = new ConcreteVal(false,llvm::APInt(lhs_bitwidth, 0));
-    if (lhs_concrete->isPoison() || rhs_concrete->isPoison()) {
-      v->setPoison(true);
-      return v;
-    }
-    if (op == Op::SAdd_Sat) {
-      auto sadd_res = lhs_concrete->getVal().sadd_sat(rhs_concrete->getVal());
-      v->setVal(sadd_res);
-    }
-    else if(op == Op::UAdd_Sat) {
-      auto sadd_res = lhs_concrete->getVal().uadd_sat(rhs_concrete->getVal());
-      v->setVal(sadd_res);
-    }
-    else if (op == Op::SSub_Sat) {
-      auto sadd_res = lhs_concrete->getVal().ssub_sat(rhs_concrete->getVal());
-      v->setVal(sadd_res);
-    }
-    else if(op == Op::USub_Sat) {
-      auto sadd_res = lhs_concrete->getVal().usub_sat(rhs_concrete->getVal());
-      v->setVal(sadd_res);
-    }
-    else {
-      UNREACHABLE();
-    }
+  else if (op == Op::SAdd_Sat) {
+    auto v = ConcreteValInt::sAddSat(lhs_concrete, rhs_concrete, flags);
     return v;
   }
-  else if (op == Op::SShl_Sat || 
+  else if (op == Op::UAdd_Sat) {
+    auto v = ConcreteValInt::uAddSat(lhs_concrete, rhs_concrete, flags);
+    return v;
+  }
+  else if (op == Op::SSub_Sat) {
+    auto v = ConcreteValInt::sSubSat(lhs_concrete, rhs_concrete, flags);
+    return v;
+  }
+  else if (op == Op::USub_Sat) {
+    auto v = ConcreteValInt::uSubSat(lhs_concrete, rhs_concrete, flags);
+    return v;
+  }
+  /*else if (op == Op::SShl_Sat || 
            op == Op::UShl_Sat){
     auto lhs_concrete = concrete_vals.find(lhs)->second;
     auto rhs_concrete = concrete_vals.find(rhs)->second;
@@ -1438,6 +1399,7 @@ util::ConcreteVal * BinOp::concreteEval(std::map<const Value *, util::ConcreteVa
     v->setVal(int_res);
     return v;
   }
+  */
   else{
     cout << "[BinOP:concreteEval] not supported on this instruction yet" << '\n';
   }
@@ -1635,10 +1597,13 @@ util::ConcreteVal * UnaryOp::concreteEval(std::map<const Value *, util::Concrete
     cout << "[Unary::concreteEval] concrete value for operand not found. Aborting" << '\n';
     assert(false);
   }
+  auto v = new ConcreteValFloat(false, llvm::APFloat(0.0));
+  return v;
+  /*
   auto tgt_bitwidth = getType().bits();
   if (isFPInstr()){
     cout << "unary fp instr bitwidth = " << tgt_bitwidth << '\n';
-      auto v = new ConcreteVal(I->second->isPoison(), I->second->getValFloat());
+      auto v = new ConcreteValFloat(I->second->isPoison(), I->second->getValFloat());
       auto op_apfloat = I->second->getValFloat();
       if (v->isPoison()){
         return v;
@@ -1716,7 +1681,7 @@ util::ConcreteVal * UnaryOp::concreteEval(std::map<const Value *, util::Concrete
     cout << "[UnaryOp::concreteEval] not supported on this instruction yet" << '\n';
   }
   UNREACHABLE();
-  
+  */
 }
 
 vector<Value*> UnaryReductionOp::operands() const {
@@ -1914,7 +1879,10 @@ unique_ptr<Instr> TernaryOp::dup(const string &suffix) const {
 }
 
 util::ConcreteVal * TernaryOp::concreteEval(std::map<const Value *, util::ConcreteVal *> &concrete_vals) const{
-  auto v_op = operands();
+  auto v = new ConcreteValFloat(false, llvm::APFloat(0.0));
+  return v;
+  /*
+  auto v_op = operands();  
   for (auto operand: v_op){
       auto I = concrete_vals.find(operand);
       if (I == concrete_vals.end()){
@@ -1938,6 +1906,7 @@ util::ConcreteVal * TernaryOp::concreteEval(std::map<const Value *, util::Concre
     return v;
   }
   UNREACHABLE();
+  */
 }
 
 vector<Value*> ConversionOp::operands() const {
@@ -2142,6 +2111,9 @@ unique_ptr<Instr> ConversionOp::dup(const string &suffix) const {
 
 util::ConcreteVal * ConversionOp::concreteEval(std::map<const Value *, util::ConcreteVal *> &concrete_vals) const{
   
+  auto v = new ConcreteValFloat(false, llvm::APFloat(0.0));
+  return v;
+  /*
   auto I = concrete_vals.find(val);
   if (I == concrete_vals.end()){
     cout << "[ConversionOp::concreteEval] concrete value for operand not found. Aborting" << '\n';
@@ -2174,6 +2146,7 @@ util::ConcreteVal * ConversionOp::concreteEval(std::map<const Value *, util::Con
     cout << "AliveExec-Error : [ConversionOp::concreteEval] not supported on this instruction yet" << '\n';
   }
   return v;
+  */
 }
 
 vector<Value*> Select::operands() const {
@@ -2233,6 +2206,9 @@ unique_ptr<Instr> Select::dup(const string &suffix) const {
 
 util::ConcreteVal * Select::concreteEval(std::map<const Value *, util::ConcreteVal *> &concrete_vals) const{
 
+  auto v = new ConcreteValFloat(false, llvm::APFloat(0.0));
+  return v;
+  /*
   auto v = new ConcreteVal();
   auto a_I = concrete_vals.find(a);
   assert(a_I != concrete_vals.end());
@@ -2269,6 +2245,7 @@ util::ConcreteVal * Select::concreteEval(std::map<const Value *, util::ConcreteV
   }
     
   return v;
+  */
 }
 
 
@@ -2812,7 +2789,10 @@ unique_ptr<Instr> ICmp::dup(const string &suffix) const {
 }
 
 util::ConcreteVal * ICmp::concreteEval(std::map<const Value *, util::ConcreteVal *> &concrete_vals) const{
+  auto v = new ConcreteValFloat(false, llvm::APFloat(0.0));
+  return v;
   //TODO support icmp with vector operands
+  /*
   auto v = new ConcreteVal();
   auto a_I = concrete_vals.find(a);
   assert(a_I != concrete_vals.end());
@@ -2869,6 +2849,7 @@ util::ConcreteVal * ICmp::concreteEval(std::map<const Value *, util::ConcreteVal
   }
     
   return v;
+  */
 }
 
 
@@ -2955,7 +2936,10 @@ unique_ptr<Instr> FCmp::dup(const string &suffix) const {
 }
 
 util::ConcreteVal * FCmp::concreteEval(std::map<const Value *, util::ConcreteVal *> &concrete_vals) const{
+  auto v = new ConcreteValFloat(false, llvm::APFloat(0.0));
+  return v;
   //TODO support fcmp with vector operands
+  /*
   auto v = new ConcreteVal();
   auto a_I = concrete_vals.find(a);
   assert(a_I != concrete_vals.end());
@@ -3079,6 +3063,7 @@ util::ConcreteVal * FCmp::concreteEval(std::map<const Value *, util::ConcreteVal
   }
     
   return v;
+  */
 }
 
 
