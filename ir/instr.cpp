@@ -919,59 +919,15 @@ util::ConcreteVal * BinOp::concreteEval(std::map<const Value *, util::ConcreteVa
     auto v = ConcreteValFloat::fmin(lhs_concrete, rhs_concrete, fmath);
     return v;
   }
-  /*else if (op == Op::FMaximum || op == Op::FMinimum){
-    auto v = new ConcreteVal();
-    auto lhs_concrete = concrete_vals.find(lhs)->second;
-    auto rhs_concrete = concrete_vals.find(rhs)->second;
-    if (lhs_concrete->isPoison() || rhs_concrete->isPoison()) {
-      v->setPoison(true);
-      return v;
-    }
-    if (lhs_concrete->getValFloat().isNaN() || rhs_concrete->getValFloat().isNaN()) {
-      auto qnan = llvm::APFloat::getQNaN(lhs_concrete->getValFloat().getSemantics());
-      v->setVal(qnan);
-    }
-    else if (lhs_concrete->getValFloat().isZero() && rhs_concrete->getValFloat().isZero()){
-      if (op == Op::FMaximum) {
-        if (lhs_concrete->getValFloat().isNegZero() && rhs_concrete->getValFloat().isNegZero()) {
-          v->setVal(lhs_concrete->getValFloat());
-        }
-        else {
-          auto poszero = llvm::APFloat::getZero(lhs_concrete->getValFloat().getSemantics(), false);
-          v->setVal(poszero);
-        }
-      }
-      else {
-        if (lhs_concrete->getValFloat().isPosZero() && rhs_concrete->getValFloat().isPosZero()) {
-          v->setVal(lhs_concrete->getValFloat());
-        }
-        else {
-          auto negzero = llvm::APFloat::getZero(lhs_concrete->getValFloat().getSemantics(), true);
-          v->setVal(negzero);
-        }
-      }
-    }
-    else {
-      auto compare_res = lhs_concrete->getValFloat().compare(rhs_concrete->getValFloat());
-      if (compare_res == llvm::APFloatBase::cmpGreaterThan) {
-        if (op == Op::FMaximum){
-          v->setVal(lhs_concrete->getValFloat());
-        }
-        else{
-          v->setVal(rhs_concrete->getValFloat());
-        }
-      }
-      else {
-        if (op == Op::FMaximum){
-          v->setVal(rhs_concrete->getValFloat());
-        }
-        else{
-          v->setVal(lhs_concrete->getValFloat());
-        }
-      }
-    }
+  else if (op == Op::FMaximum){
+    auto v = ConcreteValFloat::fmaximum(lhs_concrete, rhs_concrete, fmath);
     return v;
   }
+  else if (op == Op::FMinimum){
+    auto v = ConcreteValFloat::fminimum(lhs_concrete, rhs_concrete, fmath);
+    return v;
+  }
+  /*
   else if (op == Op::Sub){
     auto v = new ConcreteVal();
     for (auto operand: v_op){

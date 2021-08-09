@@ -469,6 +469,72 @@ namespace util{
     UNREACHABLE();
   }
 
+  ConcreteVal* ConcreteValFloat::fmaximum(ConcreteVal* lhs, ConcreteVal* rhs, IR::FastMathFlags fmath) {
+    auto lhs_float = dynamic_cast<ConcreteValFloat *>(lhs);
+    auto rhs_float = dynamic_cast<ConcreteValFloat *>(rhs);
+    assert(lhs_float && rhs_float);
+    auto poison_res = evalPoison(lhs, rhs);
+    if (poison_res) 
+      return poison_res;
+    
+    ConcreteVal* v = nullptr;
+    if (lhs_float->val.isNaN() || rhs_float->val.isNaN()) {
+      auto qnan = llvm::APFloat::getQNaN(lhs_float->val.getSemantics());
+      v = new ConcreteValFloat(false, move(qnan));
+    }
+    else if (lhs_float->val.isZero() && rhs_float->val.isZero()) {
+      if (lhs_float->val.isNegZero() && rhs_float->val.isNegZero()) 
+        v = new ConcreteValFloat(*lhs_float);
+      else 
+        v = new ConcreteValFloat(false, llvm::APFloat::getZero(lhs_float->val.getSemantics(), false));
+    }
+    else{ 
+      auto compare_res = lhs_float->val.compare(rhs_float->val);
+      if (compare_res == llvm::APFloatBase::cmpGreaterThan) {
+        auto v = new ConcreteValFloat(*lhs_float);
+        return v;
+      }
+      else {
+        auto v = new ConcreteValFloat(*rhs_float);
+        return v;
+      }
+    }
+    return v;
+  }
+
+  ConcreteVal* ConcreteValFloat::fminimum(ConcreteVal* lhs, ConcreteVal* rhs, IR::FastMathFlags fmath) {
+    auto lhs_float = dynamic_cast<ConcreteValFloat *>(lhs);
+    auto rhs_float = dynamic_cast<ConcreteValFloat *>(rhs);
+    assert(lhs_float && rhs_float);
+    auto poison_res = evalPoison(lhs, rhs);
+    if (poison_res) 
+      return poison_res;
+    
+    ConcreteVal* v = nullptr;
+    if (lhs_float->val.isNaN() || rhs_float->val.isNaN()) {
+      auto qnan = llvm::APFloat::getQNaN(lhs_float->val.getSemantics());
+      v = new ConcreteValFloat(false, move(qnan));
+    }
+    else if (lhs_float->val.isZero() && rhs_float->val.isZero()) {
+      if (lhs_float->val.isPosZero() && rhs_float->val.isPosZero()) 
+        v = new ConcreteValFloat(*lhs_float);
+      else 
+        v = new ConcreteValFloat(false, llvm::APFloat::getZero(lhs_float->val.getSemantics(), true));
+    }
+    else{ 
+      auto compare_res = lhs_float->val.compare(rhs_float->val);
+      if (compare_res == llvm::APFloatBase::cmpGreaterThan) {
+        auto v = new ConcreteValFloat(*rhs_float);
+        return v;
+      }
+      else {
+        auto v = new ConcreteValFloat(*lhs_float);
+        return v;
+      }
+    }
+    return v;
+  }
+
   void ConcreteValFloat::print() { 
     llvm::SmallVector<char, 16> Buffer;
     val.toString(Buffer);
