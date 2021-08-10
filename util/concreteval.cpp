@@ -584,7 +584,7 @@ namespace util{
       auto v = new ConcreteValInt(false, move(res));
       return v;
     }
-    auto v = new ConcreteValInt(false, llvm::APInt(lhs_int->val.getBitWidth(),0));
+    auto v = new ConcreteValInt(false, llvm::APInt(lhs_int->val.getBitWidth(), 0));
     if (nuw_flag){
       auto lhs_copy {lhs_int->val};
       for (unsigned i=0; i < shift_amt_u_limit; ++i){
@@ -607,6 +607,60 @@ namespace util{
       }
     }
     v->val = move(res);
+    return v;
+  }
+
+  ConcreteVal* ConcreteValInt::cttz(ConcreteVal* lhs, ConcreteVal* rhs, unsigned flags) {
+    auto lhs_int = dynamic_cast<ConcreteValInt *>(lhs);// num
+    auto rhs_int = dynamic_cast<ConcreteValInt *>(rhs);// is zero undef
+    assert(lhs_int && rhs_int);
+    auto poison_res = evalPoison(lhs, rhs);
+    if (poison_res) 
+      return poison_res;
+
+    auto lhs_bitwidth = lhs_int->val.getBitWidth();
+    auto v = new ConcreteValInt(false,llvm::APInt(lhs_bitwidth, 0));
+    if (rhs_int->getBoolVal() && (lhs_int->getBoolVal() == false) ){
+      v->setUndef();
+      return v;
+    }
+
+    uint64_t cnt = 0;
+    for (unsigned i = 0; i < lhs_bitwidth ; ++i){
+        if (lhs_int->val.extractBits(1,i).getBoolValue()){
+          break;
+        }
+        cnt+=1;
+    }
+    auto int_res = llvm::APInt(lhs_bitwidth, cnt);
+    v->val = move(int_res);
+    return v;
+  }
+
+  ConcreteVal* ConcreteValInt::ctlz(ConcreteVal* lhs, ConcreteVal* rhs, unsigned flags) {
+    auto lhs_int = dynamic_cast<ConcreteValInt *>(lhs);// num
+    auto rhs_int = dynamic_cast<ConcreteValInt *>(rhs);// is zero undef
+    assert(lhs_int && rhs_int);
+    auto poison_res = evalPoison(lhs, rhs);
+    if (poison_res) 
+      return poison_res;
+
+    auto lhs_bitwidth = lhs_int->val.getBitWidth();
+    auto v = new ConcreteValInt(false,llvm::APInt(lhs_bitwidth, 0));
+    if (rhs_int->getBoolVal() && (lhs_int->getBoolVal() == false) ){
+      v->setUndef();
+      return v;
+    }
+
+    uint64_t cnt = 0;
+    for (int i = lhs_bitwidth - 1; i >= 0 ; --i){
+        if (lhs_int->val.extractBits(1,i).getBoolValue()){
+          break;
+        }
+        cnt+=1;
+    }
+    auto int_res = llvm::APInt(lhs_bitwidth, cnt);
+    v->val = move(int_res);
     return v;
   }
 

@@ -949,46 +949,18 @@ util::ConcreteVal * BinOp::concreteEval(std::map<const Value *, util::ConcreteVa
     auto v = ConcreteValInt::ashr(lhs_concrete, rhs_concrete, flags);
     return v;
   }
-  else if (op == Op::Shl){
+  else if (op == Op::Shl) {
     auto v = ConcreteValInt::shl(lhs_concrete, rhs_concrete, flags);
     return v;
   }
-  /*
-  else if (op == Op::Cttz || op == Op::Ctlz){
-    auto lhs_concrete = concrete_vals.find(lhs)->second;
-    auto is_zero_undef_concrete = concrete_vals.find(rhs)->second;
-    auto lhs_bitwidth = lhs_concrete->getVal().getBitWidth();
-    auto v = new ConcreteVal(false,llvm::APInt(lhs_bitwidth, 0));
-    if (lhs_concrete->isPoison() || is_zero_undef_concrete->isPoison()){
-      v->setPoison(true);
-      return v;
-    }
-    if (is_zero_undef_concrete->getVal().getBoolValue() && (lhs_concrete->getVal().getBoolValue() == false) ){
-      v->setUndef();
-      return v;
-    }
-    uint64_t cnt = 0;
-    if (op == Op::Ctlz){
-      for (unsigned i = lhs_bitwidth - 1; i >= 0 ; --i){
-        if (lhs_concrete->getVal().extractBits(1,i).getBoolValue()){
-          break;
-        }
-        cnt+=1;
-      }
-    }
-    else{
-      for (unsigned i = 0; i < lhs_bitwidth ; ++i){
-        if (lhs_concrete->getVal().extractBits(1,i).getBoolValue()){
-          break;
-        }
-        cnt+=1;
-      }
-    }
-    auto int_res = llvm::APInt(lhs_bitwidth, cnt);
-    v->setVal(int_res);
+  else if (op == Op::Cttz) {
+    auto v = ConcreteValInt::cttz(lhs_concrete, rhs_concrete, flags);
     return v;
   }
-  */
+  else if (op == Op::Ctlz) {
+    auto v = ConcreteValInt::ctlz(lhs_concrete, rhs_concrete, flags);
+    return v;
+  }
   else{
     cout << "[BinOP:concreteEval] not supported on this instruction yet" << '\n';
   }

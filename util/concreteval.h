@@ -83,6 +83,8 @@ namespace util {
     static ConcreteVal* lshr(ConcreteVal* lhs, ConcreteVal* rhs, unsigned flags);
     static ConcreteVal* ashr(ConcreteVal* lhs, ConcreteVal* rhs, unsigned flags);
     static ConcreteVal* shl(ConcreteVal* lhs, ConcreteVal* rhs, unsigned flags);
+    static ConcreteVal* cttz(ConcreteVal* lhs, ConcreteVal* rhs, unsigned flags);
+    static ConcreteVal* ctlz(ConcreteVal* lhs, ConcreteVal* rhs, unsigned flags);
   }; 
 
   class ConcreteValFloat : public ConcreteVal {
