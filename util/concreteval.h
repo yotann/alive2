@@ -64,12 +64,25 @@ namespace util {
 
     static ConcreteVal* evalPoison(ConcreteVal* lhs, ConcreteVal* rhs);
     static ConcreteVal* add(ConcreteVal* lhs, ConcreteVal* rhs, unsigned flags);
+    static ConcreteVal* sub(ConcreteVal* lhs, ConcreteVal* rhs, unsigned flags);
+    static ConcreteVal* mul(ConcreteVal* lhs, ConcreteVal* rhs, unsigned flags);
+    static ConcreteVal* sdiv(ConcreteVal* lhs, ConcreteVal* rhs, unsigned flags, bool& UB_flag);
+    static ConcreteVal* udiv(ConcreteVal* lhs, ConcreteVal* rhs, unsigned flags, bool& UB_flag);
+    static ConcreteVal* srem(ConcreteVal* lhs, ConcreteVal* rhs, unsigned flags, bool& UB_flag);
+    static ConcreteVal* urem(ConcreteVal* lhs, ConcreteVal* rhs, unsigned flags, bool& UB_flag);
     static ConcreteVal* sAddSat(ConcreteVal* lhs, ConcreteVal* rhs, unsigned flags);
     static ConcreteVal* uAddSat(ConcreteVal* lhs, ConcreteVal* rhs, unsigned flags);
     static ConcreteVal* sSubSat(ConcreteVal* lhs, ConcreteVal* rhs, unsigned flags);
     static ConcreteVal* uSubSat(ConcreteVal* lhs, ConcreteVal* rhs, unsigned flags);
     static ConcreteVal* sShlSat(ConcreteVal* lhs, ConcreteVal* rhs, unsigned flags);
     static ConcreteVal* uShlSat(ConcreteVal* lhs, ConcreteVal* rhs, unsigned flags);
+    static ConcreteVal* andOp(ConcreteVal* lhs, ConcreteVal* rhs);
+    static ConcreteVal* orOp(ConcreteVal* lhs, ConcreteVal* rhs);
+    static ConcreteVal* xorOp(ConcreteVal* lhs, ConcreteVal* rhs);
+    static ConcreteVal* abs(ConcreteVal* lhs, ConcreteVal* rhs);
+    static ConcreteVal* lshr(ConcreteVal* lhs, ConcreteVal* rhs, unsigned flags);
+    static ConcreteVal* ashr(ConcreteVal* lhs, ConcreteVal* rhs, unsigned flags);
+    static ConcreteVal* shl(ConcreteVal* lhs, ConcreteVal* rhs, unsigned flags);
   }; 
 
   class ConcreteValFloat : public ConcreteVal {
@@ -113,5 +126,7 @@ namespace util {
     static std::unique_ptr<std::vector<ConcreteVal*>> make_elements_unique(IR::Value* vect_val);
     void print() override;
   };
+
+  
   
 }

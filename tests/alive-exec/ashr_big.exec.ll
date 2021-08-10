@@ -3,5 +3,4 @@ define i256 @foo() {
   ret i256 %r1
 }
 
-; CHECK: ConcreteVal( poison=1
-; CHECK: ConcreteVal( poison=1
+; CHECK: ConcreteVal(poison=1, 256b

@@ -831,7 +831,6 @@ util::ConcreteVal * BinOp::concreteEval(std::map<const Value *, util::ConcreteVa
   auto lhs_concrete = concrete_vals.find(lhs)->second;
   auto rhs_concrete = concrete_vals.find(rhs)->second;
   if (op == Op::Add) {
-    
     auto lhs_vect = dynamic_cast<ConcreteValVect *>(lhs_concrete);
     if (lhs_vect) {
       cout << "bin op encountered vector operand" << '\n';
@@ -840,6 +839,30 @@ util::ConcreteVal * BinOp::concreteEval(std::map<const Value *, util::ConcreteVa
       return v;
     }
     auto v = ConcreteValInt::add(lhs_concrete, rhs_concrete, flags);
+    return v;
+  }
+  else if (op == Op::Sub) {
+    auto v = ConcreteValInt::sub(lhs_concrete, rhs_concrete, flags);
+    return v;
+  }
+  else if (op == Op::Mul) {
+    auto v = ConcreteValInt::mul(lhs_concrete, rhs_concrete, flags);
+    return v;
+  }
+  else if (op == Op::SDiv) {
+    auto v = ConcreteValInt::sdiv(lhs_concrete, rhs_concrete, flags, UB_flag);
+    return v;
+  }
+  else if (op == Op::UDiv) {
+    auto v = ConcreteValInt::udiv(lhs_concrete, rhs_concrete, flags, UB_flag);
+    return v;
+  }
+  else if (op == Op::SRem) {
+    auto v = ConcreteValInt::srem(lhs_concrete, rhs_concrete, flags, UB_flag);
+    return v;
+  }
+  else if (op == Op::URem) {
+    auto v = ConcreteValInt::urem(lhs_concrete, rhs_concrete, flags, UB_flag);
     return v;
   }
   else if (op == Op::SAdd_Sat) {
@@ -902,302 +925,35 @@ util::ConcreteVal * BinOp::concreteEval(std::map<const Value *, util::ConcreteVa
     auto v = ConcreteValFloat::fminimum(lhs_concrete, rhs_concrete, fmath);
     return v;
   }
-  /*
-  else if (op == Op::Sub){
-    auto v = new ConcreteVal();
-    for (auto operand: v_op){
-      auto I = concrete_vals.find(operand);
-      if (I->second->isPoison()){//is the way we treat poison for all binops the same? is so refactor
-        v->setPoison(true);
-        return v;
-      }
-      auto op_apint = I->second->getVal(); 
-      if (firstOp){
-        v->setVal(op_apint);
-        firstOp = false;
-        continue;
-      }
-      bool ov_flag_s = false;
-      bool ov_flag_u = false;
-      auto ap_sub_s = v->getVal().ssub_ov(op_apint,ov_flag_s);
-      auto ap_sub_u = v->getVal().usub_ov(op_apint,ov_flag_u);
-      v->setVal(ap_sub_s);
-      if ((nsw_flag & ov_flag_s) || (nuw_flag & ov_flag_u)){
-        v->setPoison(true);
-        return v;
-      }
-    }
-    return v;
-  }
-  else if (op == Op::Mul){
-    auto v = new ConcreteVal();
-    for (auto operand: v_op) {
-      auto I = concrete_vals.find(operand);
-      if (I->second->isPoison()) {//is the way we treat poison for all binops the same? is so refactor
-        v->setPoison(true);
-        return v;
-      }
-      auto op_apint = I->second->getVal(); 
-      if (firstOp){
-        v->setVal(op_apint);
-        firstOp = false;
-        continue;
-      }
-      bool ov_flag_s = false;
-      bool ov_flag_u = false;
-      auto ap_mul_s = v->getVal().smul_ov(op_apint,ov_flag_s);
-      auto ap_mul_u = v->getVal().umul_ov(op_apint,ov_flag_u);
-      v->setVal(ap_mul_s);
-      if ((nsw_flag & ov_flag_s) || (nuw_flag & ov_flag_u)){
-        v->setPoison(true);
-        return v;
-      }
-    }
-    return v;
-  }
-  else if (op == Op::UDiv || op == Op::URem){
-    auto lhs_concrete = concrete_vals.find(lhs)->second;
-    auto rhs_concrete = concrete_vals.find(rhs)->second;
-    auto lhs_bitwidth = lhs_concrete->getVal().getBitWidth();
-    auto v = new ConcreteVal(false,llvm::APInt(lhs_bitwidth, 0));
-
-    if (!rhs_concrete->getVal().getBoolValue()){
-      UB_flag = true;
-    }
-    if (lhs_concrete->isPoison() || rhs_concrete->isPoison()){
-      v->setPoison(true);
-      return v;
-    }
-    if (op == Op::UDiv) {
-      auto remainder = llvm::APInt();
-      auto quotient = llvm::APInt();
-      llvm::APInt::udivrem(lhs_concrete->getVal(), rhs_concrete->getVal(), quotient, remainder);
-      if (exact_flag && (remainder.getBoolValue() != false)){
-        v->setPoison(true);
-        return v;
-      }
-      v->setVal(quotient);
-    }
-    else{
-      auto remainder = lhs_concrete->getVal().urem(rhs_concrete->getVal());
-      v->setVal(remainder);
-    }
-    return v;
-  }
-  else if (op == Op::SDiv || op == Op::SRem){
-    auto lhs_concrete = concrete_vals.find(lhs)->second;
-    auto rhs_concrete = concrete_vals.find(rhs)->second;
-    auto lhs_bitwidth = lhs_concrete->getVal().getBitWidth();
-    auto v = new ConcreteVal(false,llvm::APInt(lhs_bitwidth, 0));
-
-    if (!rhs_concrete->getVal().getBoolValue()){
-      UB_flag = true;
-    }
-
-    if (lhs_concrete->isPoison() || rhs_concrete->isPoison()){
-      v->setPoison(true);
-      return v;
-    }
-    bool sdiv_ov = false;
-    auto quotient = lhs_concrete->getVal().sdiv_ov(rhs_concrete->getVal(), sdiv_ov);
-    auto remainder = lhs_concrete->getVal().srem(rhs_concrete->getVal());
-    if (sdiv_ov){
-      UB_flag = true;
-    }
-    if (op == Op::SDiv){
-      if (exact_flag && (remainder.getBoolValue() != false)){
-        v->setPoison(true);
-        return v;
-      }
-      v->setVal(quotient);
-    }
-    else{
-      v->setVal(remainder);
-    }
-    return v;
-  }
   else if (op == Op::And){
-    auto v = new ConcreteVal();
-    for (auto operand: v_op){
-      auto I = concrete_vals.find(operand);
-      if (I->second->isPoison()){
-        v->setPoison(true);
-        return v;
-      }
-      auto op_apint = I->second->getVal(); 
-      if (firstOp){
-        v->setVal(op_apint);
-        firstOp = false;
-        continue;
-      }
-      v->getVal()&=op_apint;
-    }
+    auto v = ConcreteValInt::andOp(lhs_concrete, rhs_concrete);
     return v;
   }
-  else if (op == Op::Or) {
-    auto v = new ConcreteVal();
-    for (auto operand: v_op){
-      auto I = concrete_vals.find(operand);
-      if (I->second->isPoison()){
-        v->setPoison(true);
-        return v;
-      }
-      auto op_apint = I->second->getVal(); 
-      if (firstOp){
-        v->setVal(op_apint);
-        firstOp = false;
-        continue;
-      }
-      v->getVal()|=op_apint;
-    }
+  else if (op == Op::Or){
+    auto v = ConcreteValInt::orOp(lhs_concrete, rhs_concrete);
     return v;
   }
   else if (op == Op::Xor){
-    auto v = new ConcreteVal();
-    for (auto operand: v_op){
-      auto I = concrete_vals.find(operand);
-      if (I->second->isPoison()){
-        v->setPoison(true);
-        return v;
-      }
-      auto op_apint = I->second->getVal(); 
-      if (firstOp){
-        v->setVal(op_apint);
-        firstOp = false;
-        continue;
-      }
-      v->getVal()^=op_apint;
-    }
-  }
-  else if (op == Op::Abs){
-    auto v = new ConcreteVal();
-    auto num_op = v_op[0];
-    auto min_flag_op = v_op[1];
-    auto num_concrete_I = concrete_vals.find(num_op);
-    auto num_concrete = num_concrete_I->second;
-    //abs result is poison if first argument is poison and flag is dc in this case
-    if (num_concrete->isPoison()){
-      v->setPoison(true);
-      return v;
-    }
-    auto& flag_concrete = concrete_vals.find(min_flag_op)->second;
-    if (num_concrete->getVal().isMinSignedValue()){
-      if (flag_concrete->getVal().getBoolValue() == true){
-        v->setPoison(true);
-        return v;
-      }
-      else{
-        v->setVal(num_concrete->getVal());
-        return v;
-      }
-    }
-    auto abs_num = num_concrete->getVal().abs();
-    v->setVal(abs_num);
+    auto v = ConcreteValInt::xorOp(lhs_concrete, rhs_concrete);
     return v;
   }
-  else if ((op == Op::LShr) || (op == Op::AShr)) {
-    auto v = new ConcreteVal();
-    auto num_concrete = concrete_vals.find(lhs)->second;
-    auto shift_amt_concrete = concrete_vals.find(rhs)->second;
-    //first check if the shift amount is larger than the number's bitwidth -> return poison
-    //the maximum bitwidth for an integer type is 2^23-1 so the rhs cannot have a bitwidth larger than 2^23
-    if (num_concrete->isPoison()){
-      v->setPoison(true);
-      return v;
-    }
-    uint64_t max_shift = (1<<23);
-    auto shift_amt_u_limit = shift_amt_concrete->getVal().getLimitedValue((1<<23));
-    if ((shift_amt_u_limit == max_shift) ||
-        (shift_amt_u_limit >= num_concrete->getVal().getBitWidth())){
-      v->setPoison(true);
-      return v;
-    }
-    // Need to handle this special case to safely subtract 1 from num_concrete 
-    // when handling exact flag
-    if (shift_amt_u_limit == 0){
-      v->setVal(num_concrete->getVal());
-      return v;
-    }
-    // If any of the shifted bits is non-zero, we should return poison
-    if (exact_flag){
-      bool ov_flag_s = false;
-      auto ap_1{llvm::APInt(num_concrete->getVal().getBitWidth(),1)};
-      auto ap_mask{llvm::APInt(num_concrete->getVal().getBitWidth(),1)};
-      ap_mask = ap_mask.shl(shift_amt_u_limit);
-      ap_mask = ap_mask.ssub_ov(ap_1,ov_flag_s);
-      ap_mask &= num_concrete->getVal();
-      if (ap_mask.getBoolValue()){//exact shift returns poison
-        v->setPoison(true);
-        return v;
-      }
-    }
-    auto res{llvm::APInt()};
-    //at this point we can safely right shift our num by the amount
-    if (op== Op::LShr){
-      res = num_concrete->getVal().lshr(shift_amt_u_limit);
-    }
-    else{
-      res = num_concrete->getVal().ashr(shift_amt_u_limit);
-    }
-    v->setVal(res);
+  else if (op == Op::Abs){
+    auto v = ConcreteValInt::abs(lhs_concrete, rhs_concrete);
+    return v;
+  }
+  else if (op == Op::LShr) {
+    auto v = ConcreteValInt::lshr(lhs_concrete, rhs_concrete, flags);
+    return v;
+  }
+  else if (op == Op::AShr) {
+    auto v = ConcreteValInt::ashr(lhs_concrete, rhs_concrete, flags);
     return v;
   }
   else if (op == Op::Shl){
-    auto lhs_concrete = concrete_vals.find(lhs)->second;
-    auto shift_amt_concrete = concrete_vals.find(rhs)->second;
-    auto lhs_bitwidth = lhs_concrete->getVal().getBitWidth();
-    auto v = new ConcreteVal(false,llvm::APInt(lhs_bitwidth, 0));
-    
-    if (lhs_concrete->isPoison()){
-      v->setPoison(true);
-      return v;
-    }
-    //first check if the shift amount is larger than the number's bitwidth -> return poison
-    //the maximum bitwidth for an integer type is 2^23-1 so the rhs cannot have a bitwidth larger than 2^23
-    uint64_t max_shift = (1<<23);
-    auto shift_amt_u_limit = shift_amt_concrete->getVal().getLimitedValue((1<<23));
-    if ((shift_amt_u_limit == max_shift) ||
-        (shift_amt_u_limit >= lhs_concrete->getVal().getBitWidth())){
-      v->setPoison(true);
-      return v;
-    }
-    //need to handle this special case to safely subtract 1 from num_concrete 
-    //when handling exact flag
-    if (shift_amt_u_limit == 0){
-      v->setVal(lhs_concrete->getVal());
-      return v;
-    }
-
-    auto res{llvm::APInt()};
-    res = lhs_concrete->getVal().shl(shift_amt_u_limit);
-    if (!nuw_flag && !nsw_flag){
-      v->setVal(res);
-      return v;
-    }
-    if (nuw_flag){
-      auto lhs_copy {lhs_concrete->getVal()};
-      for (unsigned i=0; i < shift_amt_u_limit; ++i){
-        if (lhs_copy.isSignBitSet()){
-          v->setPoison(true);
-          return v;
-        }
-        lhs_copy<<=1;
-      }
-    }
-    if (nsw_flag){
-      bool res_sign_bit = res.isSignBitSet();
-      auto lhs_copy {lhs_concrete->getVal()};
-      for (unsigned i=0; i < shift_amt_u_limit; ++i){
-        if (lhs_copy.isSignBitSet() != res_sign_bit){
-          v->setPoison(true);
-          return v;
-        }
-        lhs_copy<<=1;
-      }
-    }
-    v->setVal(res);
+    auto v = ConcreteValInt::shl(lhs_concrete, rhs_concrete, flags);
     return v;
   }
+  /*
   else if (op == Op::Cttz || op == Op::Ctlz){
     auto lhs_concrete = concrete_vals.find(lhs)->second;
     auto is_zero_undef_concrete = concrete_vals.find(rhs)->second;

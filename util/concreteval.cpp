@@ -143,6 +143,162 @@ namespace util{
     return v;
   }
 
+  ConcreteVal* ConcreteValInt::mul(ConcreteVal* lhs, ConcreteVal* rhs, unsigned flags) {
+    auto lhs_int = dynamic_cast<ConcreteValInt *>(lhs);
+    auto rhs_int = dynamic_cast<ConcreteValInt *>(rhs);
+    assert(lhs_int && rhs_int);
+    auto poison_res = evalPoison(lhs, rhs);
+    if (poison_res) 
+      return poison_res;
+
+    bool nsw_flag = flags & BinOp::Flags::NSW;
+    bool nuw_flag = flags & BinOp::Flags::NUW;
+  
+    auto v = new ConcreteValInt(false, llvm::APInt(lhs_int->val));
+    bool ov_flag_s = false;
+    bool ov_flag_u = false;
+    auto ap_mul_s = v->val.smul_ov(rhs_int->val, ov_flag_s);
+    auto ap_mul_u = v->val.umul_ov(rhs_int->val, ov_flag_u);
+    v->val = ap_mul_s;
+    if ((nsw_flag & ov_flag_s) || (nuw_flag & ov_flag_u)){
+      v->setPoison(true);
+    }
+    return v;
+  }
+
+  ConcreteVal* ConcreteValInt::sub(ConcreteVal* lhs, ConcreteVal* rhs, unsigned flags) {
+    auto lhs_int = dynamic_cast<ConcreteValInt *>(lhs);
+    auto rhs_int = dynamic_cast<ConcreteValInt *>(rhs);
+    assert(lhs_int && rhs_int);
+    auto poison_res = evalPoison(lhs, rhs);
+    if (poison_res) 
+      return poison_res;
+
+    bool nsw_flag = flags & BinOp::Flags::NSW;
+    bool nuw_flag = flags & BinOp::Flags::NUW;
+  
+    auto v = new ConcreteValInt(false, llvm::APInt(lhs_int->val));
+    bool ov_flag_s = false;
+    bool ov_flag_u = false;
+    auto ap_sub_s = v->val.ssub_ov(rhs_int->val, ov_flag_s);
+    auto ap_sub_u = v->val.usub_ov(rhs_int->val, ov_flag_u);
+    v->val = ap_sub_s;
+    if ((nsw_flag & ov_flag_s) || (nuw_flag & ov_flag_u)){
+      v->setPoison(true);
+    }
+    return v;   
+  }
+
+  ConcreteVal* ConcreteValInt::sdiv(ConcreteVal* lhs, ConcreteVal* rhs, unsigned flags, bool& UB_flag) {
+    auto lhs_int = dynamic_cast<ConcreteValInt *>(lhs);
+    auto rhs_int = dynamic_cast<ConcreteValInt *>(rhs);
+    assert(lhs_int && rhs_int);
+
+    if (!rhs_int->getBoolVal()) {
+      UB_flag = true;
+      auto v = new ConcreteValInt(true, llvm::APInt(lhs_int->val.getBitWidth(),0));
+      return v;
+    }
+
+    auto poison_res = evalPoison(lhs, rhs);
+    if (poison_res) 
+      return poison_res;
+
+    bool exact_flag = flags & BinOp::Flags::Exact;
+    bool sdiv_ov = false;
+    auto quotient = lhs_int->val.sdiv_ov(rhs_int->val, sdiv_ov);
+    auto remainder = lhs_int->val.srem(rhs_int->val);
+    if (sdiv_ov){
+      UB_flag = true;
+      auto v = new ConcreteValInt(true, llvm::APInt(lhs_int->val.getBitWidth(),0));
+      return v;
+    }
+    if (exact_flag && (remainder.getBoolValue() != false)){
+      auto v = new ConcreteValInt(true, llvm::APInt(lhs_int->val.getBitWidth(),0));
+      v->setPoison(true);
+      return v;
+    }
+    
+    auto v = new ConcreteValInt(false, move(quotient));  
+    return v;
+  }
+
+  ConcreteVal* ConcreteValInt::udiv(ConcreteVal* lhs, ConcreteVal* rhs, unsigned flags, bool& UB_flag) {
+    auto lhs_int = dynamic_cast<ConcreteValInt *>(lhs);
+    auto rhs_int = dynamic_cast<ConcreteValInt *>(rhs);
+    assert(lhs_int && rhs_int);
+
+    if (!rhs_int->getBoolVal()) {
+      UB_flag = true;
+      auto v = new ConcreteValInt(true, llvm::APInt(lhs_int->val.getBitWidth(),0));
+      return v;
+    }
+
+    auto poison_res = evalPoison(lhs, rhs);
+    if (poison_res) 
+      return poison_res;
+
+    auto v = new ConcreteValInt(true, llvm::APInt(lhs_int->val.getBitWidth(),0));
+    bool exact_flag = flags & BinOp::Flags::Exact;
+    auto remainder = llvm::APInt();
+    auto quotient = llvm::APInt();
+    llvm::APInt::udivrem(lhs_int->val, rhs_int->val, quotient, remainder);
+    if (exact_flag && (remainder.getBoolValue() != false)){
+      v->setPoison(true);
+      return v;
+    }
+    v->val = quotient;
+    return v;
+  }
+
+  ConcreteVal* ConcreteValInt::srem(ConcreteVal* lhs, ConcreteVal* rhs, unsigned flags, bool& UB_flag) {
+    auto lhs_int = dynamic_cast<ConcreteValInt *>(lhs);
+    auto rhs_int = dynamic_cast<ConcreteValInt *>(rhs);
+    assert(lhs_int && rhs_int);
+
+    if (!rhs_int->getBoolVal()) {
+      UB_flag = true;
+      auto v = new ConcreteValInt(true, llvm::APInt(lhs_int->val.getBitWidth(),0));
+      return v;
+    }
+
+    auto poison_res = evalPoison(lhs, rhs);
+    if (poison_res) 
+      return poison_res;
+
+    bool sdiv_ov = false;
+    auto quotient = lhs_int->val.sdiv_ov(rhs_int->val, sdiv_ov);
+    auto remainder = lhs_int->val.srem(rhs_int->val);
+    if (sdiv_ov){
+      UB_flag = true;
+      auto v = new ConcreteValInt(true, llvm::APInt(lhs_int->val.getBitWidth(),0));
+      return v;
+    }
+
+    auto v = new ConcreteValInt(false, move(remainder));  
+    return v;
+  }
+
+  ConcreteVal* ConcreteValInt::urem(ConcreteVal* lhs, ConcreteVal* rhs, unsigned flags, bool& UB_flag) {
+    auto lhs_int = dynamic_cast<ConcreteValInt *>(lhs);
+    auto rhs_int = dynamic_cast<ConcreteValInt *>(rhs);
+    assert(lhs_int && rhs_int);
+
+    if (!rhs_int->getBoolVal()) {
+      UB_flag = true;
+      auto v = new ConcreteValInt(true, llvm::APInt(lhs_int->val.getBitWidth(),0));
+      return v;
+    }
+
+    auto poison_res = evalPoison(lhs, rhs);
+    if (poison_res) 
+      return poison_res;
+
+    auto remainder = lhs_int->val.urem(rhs_int->val);
+    auto v = new ConcreteValInt(false, move(remainder));
+    return v;
+  }
+
   ConcreteVal* ConcreteValInt::sAddSat(ConcreteVal* lhs, ConcreteVal* rhs, unsigned flags) {
     auto lhs_int = dynamic_cast<ConcreteValInt *>(lhs);
     auto rhs_int = dynamic_cast<ConcreteValInt *>(rhs);
@@ -240,7 +396,219 @@ namespace util{
     auto v = new ConcreteValInt(false, move(sshl_res));
     return v;
   }
-  //uShlSat
+  
+  ConcreteVal* ConcreteValInt::andOp(ConcreteVal* lhs, ConcreteVal* rhs) {
+    auto lhs_int = dynamic_cast<ConcreteValInt *>(lhs);
+    auto rhs_int = dynamic_cast<ConcreteValInt *>(rhs);
+    assert(lhs_int && rhs_int);
+    auto poison_res = evalPoison(lhs, rhs);
+    if (poison_res) 
+      return poison_res;
+
+    auto v = new ConcreteValInt(false, llvm::APInt(lhs_int->val));
+    v->val&=rhs_int->val;
+    return v;
+  }
+
+  ConcreteVal* ConcreteValInt::orOp(ConcreteVal* lhs, ConcreteVal* rhs) {
+    auto lhs_int = dynamic_cast<ConcreteValInt *>(lhs);
+    auto rhs_int = dynamic_cast<ConcreteValInt *>(rhs);
+    assert(lhs_int && rhs_int);
+    auto poison_res = evalPoison(lhs, rhs);
+    if (poison_res) 
+      return poison_res;
+
+    auto v = new ConcreteValInt(false, llvm::APInt(lhs_int->val));
+    v->val|=rhs_int->val;
+    return v;
+  }
+
+  ConcreteVal* ConcreteValInt::xorOp(ConcreteVal* lhs, ConcreteVal* rhs) {
+    auto lhs_int = dynamic_cast<ConcreteValInt *>(lhs);
+    auto rhs_int = dynamic_cast<ConcreteValInt *>(rhs);
+    assert(lhs_int && rhs_int);
+    auto poison_res = evalPoison(lhs, rhs);
+    if (poison_res) 
+      return poison_res;
+
+    auto v = new ConcreteValInt(false, llvm::APInt(lhs_int->val));
+    v->val^=rhs_int->val;
+    return v;
+  }
+
+  ConcreteVal* ConcreteValInt::abs(ConcreteVal* lhs, ConcreteVal* rhs) {
+    auto lhs_int = dynamic_cast<ConcreteValInt *>(lhs);
+    auto rhs_int = dynamic_cast<ConcreteValInt *>(rhs); //i1 is_int_min poison
+    assert(lhs_int && rhs_int);
+    auto poison_res = evalPoison(lhs, rhs);
+    if (poison_res) 
+      return poison_res;
+
+    if (lhs_int->val.isMinSignedValue()) {
+      if (rhs_int->getBoolVal()) {
+        auto v = new ConcreteValInt(true, llvm::APInt(lhs_int->val.getBitWidth(),0));
+        return v;
+      }
+      else {
+        auto v = new ConcreteValInt(*lhs_int);
+        return v;
+      }
+    }
+    auto abs_res = lhs_int->val.abs();
+    auto v = new ConcreteValInt(false, move(abs_res));
+    return v;
+  }
+
+  ConcreteVal* ConcreteValInt::lshr(ConcreteVal* lhs, ConcreteVal* rhs, unsigned flags) {
+    auto lhs_int = dynamic_cast<ConcreteValInt *>(lhs);// num
+    auto rhs_int = dynamic_cast<ConcreteValInt *>(rhs);// shift amount
+    assert(lhs_int && rhs_int);
+    auto poison_res = evalPoison(lhs, rhs);
+    if (poison_res) 
+      return poison_res;
+    
+    // first check if the shift amount is larger than the number's bitwidth -> return poison
+    // the maximum bitwidth for an integer type is 2^23-1, so rhs cannot have a bitwidth larger than 2^23
+    uint64_t max_shift = (1<<23);
+    auto shift_amt_u_limit = rhs_int->val.getLimitedValue((1<<23));
+    if ((shift_amt_u_limit == max_shift) ||
+        (shift_amt_u_limit >= lhs_int->val.getBitWidth())){
+      auto v = new ConcreteValInt(true, llvm::APInt(lhs_int->val.getBitWidth(),0));
+      return v;
+    }
+
+    // Need to handle this special case to safely subtract 1 from num_concrete 
+    // when handling exact flag
+    if (shift_amt_u_limit == 0){
+      auto v = new ConcreteValInt(*lhs_int);
+      return v;
+    }
+
+    bool exact_flag = flags & BinOp::Flags::Exact;
+    // If any of the shifted bits is non-zero, we should return poison
+    if (exact_flag){
+      bool ov_flag_s = false;
+      auto ap_1{llvm::APInt(lhs_int->val.getBitWidth(),1)};
+      auto ap_mask{llvm::APInt(lhs_int->val.getBitWidth(),1)};
+      ap_mask = ap_mask.shl(shift_amt_u_limit);
+      ap_mask = ap_mask.ssub_ov(ap_1,ov_flag_s);
+      ap_mask &= lhs_int->val;
+      if (ap_mask.getBoolValue()){// exact shift returns poison
+        auto v = new ConcreteValInt(true, llvm::APInt(lhs_int->val.getBitWidth(),0));
+        return v;
+      }
+    }
+    
+    // at this point we can safely right shift our num by the amount 
+    auto res = lhs_int->val.lshr(shift_amt_u_limit);
+    auto v = new ConcreteValInt(false, move(res));
+    return v;
+  }
+
+  ConcreteVal* ConcreteValInt::ashr(ConcreteVal* lhs, ConcreteVal* rhs, unsigned flags) {
+    auto lhs_int = dynamic_cast<ConcreteValInt *>(lhs);// num
+    auto rhs_int = dynamic_cast<ConcreteValInt *>(rhs);// shift amount
+    assert(lhs_int && rhs_int);
+    auto poison_res = evalPoison(lhs, rhs);
+    if (poison_res) 
+      return poison_res;
+    
+    // first check if the shift amount is larger than the number's bitwidth -> return poison
+    // the maximum bitwidth for an integer type is 2^23-1, so rhs cannot have a bitwidth larger than 2^23
+    uint64_t max_shift = (1<<23);
+    auto shift_amt_u_limit = rhs_int->val.getLimitedValue((1<<23));
+    if ((shift_amt_u_limit == max_shift) ||
+        (shift_amt_u_limit >= lhs_int->val.getBitWidth())){
+      auto v = new ConcreteValInt(true, llvm::APInt(lhs_int->val.getBitWidth(),0));
+      return v;
+    }
+
+    // Need to handle this special case to safely subtract 1 from num_concrete 
+    // when handling exact flag
+    if (shift_amt_u_limit == 0){
+      auto v = new ConcreteValInt(*lhs_int);
+      return v;
+    }
+
+    bool exact_flag = flags & BinOp::Flags::Exact;
+    // If any of the shifted bits is non-zero, we should return poison
+    if (exact_flag){
+      bool ov_flag_s = false;
+      auto ap_1{llvm::APInt(lhs_int->val.getBitWidth(),1)};
+      auto ap_mask{llvm::APInt(lhs_int->val.getBitWidth(),1)};
+      ap_mask = ap_mask.shl(shift_amt_u_limit);
+      ap_mask = ap_mask.ssub_ov(ap_1,ov_flag_s);
+      ap_mask &= lhs_int->val;
+      if (ap_mask.getBoolValue()){// exact shift returns poison
+        auto v = new ConcreteValInt(true, llvm::APInt(lhs_int->val.getBitWidth(),0));
+        return v;
+      }
+    }
+    
+    // at this point we can safely right shift our num by the amount 
+    auto res = lhs_int->val.ashr(shift_amt_u_limit);
+    auto v = new ConcreteValInt(false, move(res));
+    return v;
+  }
+
+  ConcreteVal* ConcreteValInt::shl(ConcreteVal* lhs, ConcreteVal* rhs, unsigned flags) {
+    auto lhs_int = dynamic_cast<ConcreteValInt *>(lhs);// num
+    auto rhs_int = dynamic_cast<ConcreteValInt *>(rhs);// shift amount
+    assert(lhs_int && rhs_int);
+    auto poison_res = evalPoison(lhs, rhs);
+    if (poison_res) 
+      return poison_res;
+    
+    // first check if the shift amount is larger than the number's bitwidth -> return poison
+    // the maximum bitwidth for an integer type is 2^23-1, so rhs cannot have a bitwidth larger than 2^23
+    uint64_t max_shift = (1<<23);
+    auto shift_amt_u_limit = rhs_int->val.getLimitedValue((1<<23));
+    if ((shift_amt_u_limit == max_shift) ||
+        (shift_amt_u_limit >= lhs_int->val.getBitWidth())){
+      auto v = new ConcreteValInt(true, llvm::APInt(lhs_int->val.getBitWidth(),0));
+      return v;
+    }
+
+    // Need to handle this special case to safely subtract 1 from num_concrete 
+    // when handling exact flag
+    if (shift_amt_u_limit == 0){
+      auto v = new ConcreteValInt(*lhs_int);
+      return v;
+    }
+
+    bool nsw_flag = flags & BinOp::Flags::NSW;
+    bool nuw_flag = flags & BinOp::Flags::NUW;
+    auto res = lhs_int->val.shl(shift_amt_u_limit);
+
+    if (!nuw_flag && !nsw_flag){
+      auto v = new ConcreteValInt(false, move(res));
+      return v;
+    }
+    auto v = new ConcreteValInt(false, llvm::APInt(lhs_int->val.getBitWidth(),0));
+    if (nuw_flag){
+      auto lhs_copy {lhs_int->val};
+      for (unsigned i=0; i < shift_amt_u_limit; ++i){
+        if (lhs_copy.isSignBitSet()){
+          v->setPoison(true);
+          return v;
+        }
+        lhs_copy<<=1;
+      }
+    }
+    if (nsw_flag){
+      bool res_sign_bit = res.isSignBitSet();
+      auto lhs_copy {lhs_int->val};
+      for (unsigned i=0; i < shift_amt_u_limit; ++i){
+        if (lhs_copy.isSignBitSet() != res_sign_bit){
+          v->setPoison(true);
+          return v;
+        }
+        lhs_copy<<=1;
+      }
+    }
+    v->val = move(res);
+    return v;
+  }
 
   ConcreteValFloat::ConcreteValFloat(bool poison, llvm::APFloat &&val)
   : ConcreteVal(poison), val(move(val)) {

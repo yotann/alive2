@@ -6,5 +6,4 @@ define i8 @foo(i8 %0) {
   ret i8 %2
 }
 
-; CHECK: ConcreteVal( poison=0, 8b, 3u 3s)
-; CHECK: ConcreteVal( poison=0, 8b, 3u 3s)
+; CHECK: ConcreteVal(poison=0, 8b, 3u, 3s)

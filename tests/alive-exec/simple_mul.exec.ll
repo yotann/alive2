@@ -3,5 +3,4 @@ define dso_local i32 @foo(i32 %0, i32 %1) #0 {
   ret i32 %3
 }
 
-; CHECK: ConcreteVal( poison=0, 32b, 9u 9s)
-; CHECK: ConcreteVal( poison=0, 32b, 9u 9s)
+; CHECK: ConcreteVal(poison=0, 32b, 9u, 9s)
