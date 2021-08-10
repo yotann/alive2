@@ -110,28 +110,6 @@ expr Instr::getTypeConstraints() const {
 }
 
 
-ostream& operator<<(ostream &os, const FastMathFlags &fm) {
-  if (fm.flags == FastMathFlags::FastMath)
-    return os << "fast ";
-
-  if (fm.flags & FastMathFlags::NNaN)
-    os << "nnan ";
-  if (fm.flags & FastMathFlags::NInf)
-    os << "ninf ";
-  if (fm.flags & FastMathFlags::NSZ)
-    os << "nsz ";
-  if (fm.flags & FastMathFlags::ARCP)
-    os << "arcp ";
-  if (fm.flags & FastMathFlags::Contract)
-    os << "contract ";
-  if (fm.flags & FastMathFlags::Reassoc)
-    os << "reassoc ";
-  if (fm.flags & FastMathFlags::AFN)
-    os << "afn ";
-  return os;
-}
-
-
 BinOp::BinOp(Type &type, string &&name, Value &lhs, Value &rhs, Op op,
              unsigned flags, FastMathFlags fmath)
   : Instr(type, move(name)), lhs(&lhs), rhs(&rhs), op(op), flags(flags),
@@ -280,10 +258,7 @@ static expr any_fp_zero(State &s, const expr &v) {
 
   expr var = expr::mkFreshVar("anyzero", true);
   s.addQuantVar(var);
-  return expr::mkIf(is_zero,
-                    expr::mkIf(var, expr::mkNumber("0", v),
-                               expr::mkNumber("-0", v)),
-                    v);
+  return expr::mkIf(var && is_zero, v.fneg(), v);
 }
 
 static StateValue fm_poison(State &s, const expr &a, const expr &ap,
@@ -654,8 +629,8 @@ StateValue BinOp::toSMT(State &s) const {
       auto v = [&](expr &a, expr &b) {
         expr zpos = expr::mkNumber("0", a), zneg = expr::mkNumber("-0", a);
         expr cmp = (op == FMinimum) ? a.fole(b) : a.foge(b);
-        expr neg_cond = (op == FMinimum) ? a.isFPNeg() || b.isFPNeg()
-                                         : a.isFPNeg() && b.isFPNeg();
+        expr neg_cond = op == FMinimum ? (a.isFPNegative() || b.isFPNegative())
+                                       : (a.isFPNegative() && b.isFPNegative());
         expr e = expr::mkIf(a.isFPZero() && b.isFPZero(),
                             expr::mkIf(neg_cond, zneg, zpos),
                             expr::mkIf(cmp, a, b));
@@ -1839,14 +1814,14 @@ StateValue ConversionOp::toSMT(State &s) const {
       expr bv  = val.fp2sint(to_type.bits());
       expr fp2 = bv.sint2fp(val);
       // -0.0 is converted to 0 and then to 0.0, though -0.0 is ok to convert
-      return { move(bv), val.isFPZero() || fp2 == val };
+      return { move(bv), val.isFPZero() || fp2 == val.roundtz() };
     };
     break;
   case FPToUInt:
     fn = [](auto &&val, auto &to_type) -> StateValue {
       expr bv  = val.fp2uint(to_type.bits());
       expr fp2 = bv.uint2fp(val);
-      return { move(bv), fp2 == val };
+      return { move(bv), fp2 == val.roundtz() };
     };
     break;
   case FPExt:

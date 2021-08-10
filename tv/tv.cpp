@@ -195,7 +195,6 @@ struct TVLegacyPass final : public llvm::ModulePass {
     }
 
     if (parallelMgr) {
-      out_file.flush();
       auto [pid, osp, index] = parallelMgr->limitedFork();
 
       if (pid == -1) {
@@ -521,8 +520,7 @@ llvmGetPassPluginInfo() {
       // ClangTVFinalizePass internally checks whether we're running clang tv
       // and finalizes resources then.
       PB.registerOptimizerLastEPCallback(
-          [](llvm::ModulePassManager &MPM,
-             llvm::PassBuilder::OptimizationLevel) {
+          [](llvm::ModulePassManager &MPM, llvm::OptimizationLevel) {
             MPM.addPass(ClangTVFinalizePass());
           });
       auto clang_tv = [](llvm::StringRef P, llvm::Any IR,
