@@ -17,6 +17,7 @@ namespace util {
 
 void interp(Function &f) {
   
+  unsigned instr_limit = 100;
   cout << "running interp.cpp" << '\n';
   // TODO need to check for Value subclasses for inputs and constants
   // i.e. PoisonValue, UndefValue, and etc.
@@ -33,7 +34,6 @@ void interp(Function &f) {
       // Comment this to avoid random int function arguments 
       //auto rand_int64 = get_random_int64();
       //cout << "input param random value = " << rand_int64 << "\n"; 
-      //auto new_val = new ConcreteVal(false, llvm::APInt(i.getType().bits(), 3));
       auto new_val = new ConcreteValInt(false, llvm::APInt(i.getType().bits(), 3));
       concrete_vals.emplace(&i, new_val);
     } else if (i.getType().isFloatType()) {
@@ -145,7 +145,7 @@ void interp(Function &f) {
   // Interpreter returns with a message as soon as it encounters undef
   // Hence we only need to deal with defined and poison vals during
   // interpretation
-
+  unsigned instr_cnt = 0;
   for (auto &bb : f.getBBs()) {
     if (&f.getFirstBB() != bb)
       continue;
@@ -157,6 +157,11 @@ void interp(Function &f) {
         exit(EXIT_SUCCESS);
       }
       for (auto &i : cur_block->instrs()) {
+        if (instr_cnt >= instr_limit) {
+          cout << "ERROR: Interpreter reached instruction limit" << '\n';
+          exit(EXIT_FAILURE);
+        }
+        instr_cnt++; 
         cout << "cur inst: ";
         i.print(cout);
         cout << '\n';
