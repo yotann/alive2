@@ -5,5 +5,4 @@ define i8 @test() {
         ret i8 %res
 }
 
-; CHECK: ConcreteVal( poison=0, 8b, 8u 8s)
-; CHECK: ConcreteVal( poison=0, 8b, 8u 8s)
+; CHECK: ConcreteVal(poison=0, 8b, 8u, 8s)

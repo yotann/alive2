@@ -45,9 +45,9 @@ namespace util{
     return flags & Flags::Undef;
   }
 
-  void ConcreteVal::setVal(ConcreteVal& v){
-     *this = v;
-  }
+  //void ConcreteVal::setVal(ConcreteVal& v){
+  //   *this = v;
+  //}
 
   //void ConcreteVal::setVal(llvm::APInt& v){
   //  val = v;
@@ -57,11 +57,11 @@ namespace util{
   //  val = v;
   //}
 
-  ConcreteVal& ConcreteVal::getVal() {
-    return *this;
+  //ConcreteVal& ConcreteVal::getVal() {
+  //  return *this;
 
   //  return *(std::get_if<llvm::APInt>(&val));
-  }
+  //}
 
   //llvm::APFloat& ConcreteVal::getValFloat(){
   //  return *(std::get_if<llvm::APFloat>(&val));
@@ -95,8 +95,12 @@ namespace util{
   : ConcreteVal(poison), val(move(val)) {
   }
 
-  ConcreteVal& ConcreteValInt::getVal(){
-    return *this;
+  llvm::APInt ConcreteValInt::getVal(){
+    return val;
+  }
+
+  void ConcreteValInt::setVal(llvm::APInt& v) {
+    val = v;
   }
 
   bool ConcreteValInt::getBoolVal() {
@@ -111,10 +115,28 @@ namespace util{
               << U.c_str() << "u, " << S.c_str() << "s)\n";
   }
 
+  ConcreteVal* ConcreteValInt::evalPoison(ConcreteVal* op1, ConcreteVal* op2, ConcreteVal* op3) {
+    auto op_int = dynamic_cast<ConcreteValInt *>(op1);
+    if (op1->isPoison() || op2->isPoison() || op3->isPoison()) {
+      auto v = new ConcreteValInt(true, llvm::APInt(op_int->val.getBitWidth(),0));
+      return v;
+    }
+    return nullptr;
+  }
+
   ConcreteVal* ConcreteValInt::evalPoison(ConcreteVal* lhs, ConcreteVal* rhs) {
     auto lhs_int = dynamic_cast<ConcreteValInt *>(lhs);
     if (lhs->isPoison() || rhs->isPoison()) {
       auto v = new ConcreteValInt(true, llvm::APInt(lhs_int->val.getBitWidth(),0));
+      return v;
+    }
+    return nullptr;
+  }
+
+  ConcreteVal* ConcreteValInt::evalPoison(ConcreteVal* op) {
+    auto op_int = dynamic_cast<ConcreteValInt *>(op);
+    if (op->isPoison()) {
+      auto v = new ConcreteValInt(true, llvm::APInt(op_int->val.getBitWidth(),0));
       return v;
     }
     return nullptr;
@@ -664,13 +686,184 @@ namespace util{
     return v;
   }
 
+  ConcreteVal* ConcreteValInt::ctpop(ConcreteVal* op) {
+    auto op_int = dynamic_cast<ConcreteValInt *>(op);// num
+    assert(op_int);
+    auto poison_res = evalPoison(op);
+    if (poison_res) 
+      return poison_res;
+
+    auto op_bitwidth = op_int->val.getBitWidth();
+    uint64_t cnt = 0;
+    for (unsigned i = 0; i < op_bitwidth; ++i){
+      if (op_int->val.extractBits(1,i).getBoolValue()){
+        cnt +=1;
+      }
+    }
+    auto v = new ConcreteValInt(false, llvm::APInt(op_bitwidth,cnt));  
+    return v;
+    
+  }
+
+  ConcreteVal* ConcreteValInt::bitreverse(ConcreteVal* op) {
+    auto op_int = dynamic_cast<ConcreteValInt *>(op);// num
+    assert(op_int);
+    auto poison_res = evalPoison(op);
+    if (poison_res) 
+      return poison_res;
+
+    auto v = new ConcreteValInt(false, op_int->val.reverseBits());  
+    return v;
+    
+  }
+
+  ConcreteVal* ConcreteValInt::bswap(ConcreteVal* op) {
+    auto op_int = dynamic_cast<ConcreteValInt *>(op);// num
+    assert(op_int);
+    auto poison_res = evalPoison(op);
+    if (poison_res) 
+      return poison_res;
+
+    auto op_bitwidth = op_int->val.getBitWidth();
+    // the assertion in APInt's byteSwap does not match llvm's semantics
+    assert(op_bitwidth >= 16 && op_bitwidth % 16 == 0);
+    auto v = new ConcreteValInt(false, op_int->val.byteSwap());  
+    return v;
+    
+  }
+
+  ConcreteVal* ConcreteValInt::iTrunc(ConcreteVal* op, unsigned tgt_bitwidth) {
+    auto op_int = dynamic_cast<ConcreteValInt *>(op);
+    assert(op_int);
+    auto poison_res = evalPoison(op);
+    if (poison_res) 
+      return poison_res;
+
+    assert(op_int->val.getBitWidth() > tgt_bitwidth);// Already causes an error in APInt::trunc
+    auto res = op_int->val.trunc(tgt_bitwidth);
+    auto v = new ConcreteValInt(false, move(res));
+    return v;
+  }
+
+  ConcreteVal* ConcreteValInt::zext(ConcreteVal* op, unsigned tgt_bitwidth) {
+    auto op_int = dynamic_cast<ConcreteValInt *>(op);
+    assert(op_int);
+    auto poison_res = evalPoison(op);
+    if (poison_res) 
+      return poison_res;
+
+    assert(op_int->val.getBitWidth() < tgt_bitwidth);// Already causes an error in APInt::zext
+    auto res = op_int->val.zext(tgt_bitwidth);
+    auto v = new ConcreteValInt(false, move(res));
+    return v;
+  }
+
+  ConcreteVal* ConcreteValInt::sext(ConcreteVal* op, unsigned tgt_bitwidth) {
+    auto op_int = dynamic_cast<ConcreteValInt *>(op);
+    assert(op_int);
+    auto poison_res = evalPoison(op);
+    if (poison_res) 
+      return poison_res;
+
+    assert(op_int->val.getBitWidth() < tgt_bitwidth);// Already causes an error in APInt::sext
+    auto res = op_int->val.sext(tgt_bitwidth);
+    auto v = new ConcreteValInt(false, move(res));
+    return v;
+  }
+
+  ConcreteVal* ConcreteValInt::select(ConcreteVal* cond, ConcreteVal* a, ConcreteVal* b) {
+    auto cond_int = dynamic_cast<ConcreteValInt *>(cond);
+    auto a_int = dynamic_cast<ConcreteValInt *>(a);
+    auto b_int = dynamic_cast<ConcreteValInt *>(b);
+    assert(cond_int && a_int && b_int);
+    auto poison_res = evalPoison(cond_int, a_int, b_int);
+    if (poison_res) 
+      return poison_res;
+
+    if (cond_int->getBoolVal()) {
+      auto v = new ConcreteValInt(*a_int);
+      return v;
+    }
+    else {
+      auto v = new ConcreteValInt(*b_int);
+      return v;
+    }
+    UNREACHABLE();
+  }
+
+  ConcreteVal* ConcreteValInt::icmp(ConcreteVal* a, ConcreteVal* b, unsigned cond) {
+    auto a_int = dynamic_cast<ConcreteValInt *>(a);
+    auto b_int = dynamic_cast<ConcreteValInt *>(b);
+    assert(a_int && b_int);
+    auto poison_res = evalPoison(a_int, b_int);
+    if (poison_res) 
+      return poison_res;
+
+    bool icmp_res = false;
+    switch (cond) {
+      case ICmp::Cond::EQ:
+        icmp_res = a_int->val.eq(b_int->val);
+        break;
+      case ICmp::Cond::NE:  
+        icmp_res = a_int->val.ne(b_int->val);
+        break;
+      case ICmp::Cond::SLE: 
+        icmp_res = a_int->val.sle(b_int->val);
+        break;
+      case ICmp::Cond::SLT: 
+        icmp_res = a_int->val.slt(b_int->val);
+        break;
+      case ICmp::Cond::SGE: 
+        icmp_res = a_int->val.sge(b_int->val);
+        break;
+      case ICmp::Cond::SGT: 
+        icmp_res = a_int->val.sgt(b_int->val);
+        break;
+      case ICmp::Cond::ULE:
+        icmp_res = a_int->val.ule(b_int->val);
+        break;
+      case ICmp::Cond::ULT: 
+        icmp_res = a_int->val.ult(b_int->val);
+        break;
+      case ICmp::Cond::UGE: 
+        icmp_res = a_int->val.uge(b_int->val);
+        break;
+      case ICmp::Cond::UGT: 
+        icmp_res = a_int->val.ugt(b_int->val);
+        break;
+      case ICmp::Cond::Any:
+          UNREACHABLE();
+    }
+
+    if (icmp_res){
+      auto v = new ConcreteValInt(false, llvm::APInt(1,1));
+      return v;
+    }
+    else{
+      auto v = new ConcreteValInt(false, llvm::APInt(1,0));
+      return v;
+    }
+    
+    UNREACHABLE();
+  }
+
   ConcreteValFloat::ConcreteValFloat(bool poison, llvm::APFloat &&val)
   : ConcreteVal(poison), val(move(val)) {
 
   }
 
-  ConcreteValFloat& ConcreteValFloat::getVal(){
-    return *this;
+  llvm::APFloat ConcreteValFloat::getVal(){
+    return val;
+  }
+
+  ConcreteVal* ConcreteValFloat::evalPoison(ConcreteVal* op1, ConcreteVal* op2, ConcreteVal* op3) {
+    auto op1_float = dynamic_cast<ConcreteValFloat *>(op1);
+
+    if (op1->isPoison() || op2->isPoison() || op3->isPoison()) {
+      auto v = new ConcreteValFloat(true, llvm::APFloat(op1_float->val));
+      return v;
+    }
+    return nullptr;
   }
 
   ConcreteVal* ConcreteValFloat::evalPoison(ConcreteVal* lhs, ConcreteVal* rhs) {
@@ -683,7 +876,17 @@ namespace util{
     return nullptr;
   }
 
-  ConcreteVal* ConcreteValFloat::binOPEvalFmath(ConcreteVal* lhs, ConcreteVal* rhs, IR::FastMathFlags fmath) {
+  ConcreteVal* ConcreteValFloat::evalPoison(ConcreteVal* op) {
+    auto op_float = dynamic_cast<ConcreteValFloat *>(op);
+  
+    if (op->isPoison()) {
+      auto v = new ConcreteValFloat(true, llvm::APFloat(op_float->val));
+      return v;
+    }
+    return nullptr;
+  }
+
+  ConcreteVal* ConcreteValFloat::evalFmath(ConcreteVal* lhs, ConcreteVal* rhs, IR::FastMathFlags fmath) {
     auto lhs_float = dynamic_cast<ConcreteValFloat *>(lhs);
     auto rhs_float = dynamic_cast<ConcreteValFloat *>(rhs);
 
@@ -704,6 +907,26 @@ namespace util{
     return nullptr;
   }
 
+  ConcreteVal* ConcreteValFloat::evalFmath(ConcreteVal* op, IR::FastMathFlags fmath) {
+    auto op_float = dynamic_cast<ConcreteValFloat *>(op);
+  
+    if (fmath.isNNan()){
+      if (op_float->val.isNaN()){
+        auto v = new ConcreteValFloat(true, llvm::APFloat(op_float->val));
+        return v;
+      }
+    }
+
+    if (fmath.isNInf()){ 
+      if (op_float->val.isInfinity()){
+        auto v = new ConcreteValFloat(true, llvm::APFloat(op_float->val));
+        return v;
+      }
+    }
+
+    return nullptr;
+  }
+
   void ConcreteValFloat::unOPEvalFmath(ConcreteVal* n, IR::FastMathFlags fmath) {
     auto n_float = dynamic_cast<ConcreteValFloat *>(n);
 
@@ -716,6 +939,10 @@ namespace util{
     }
   }
 
+  void ConcreteValFloat::setVal(llvm::APFloat& v) {
+    val = v;
+  }
+
   ConcreteVal* ConcreteValFloat::fadd(ConcreteVal* lhs, ConcreteVal* rhs, IR::FastMathFlags fmath) {
     auto lhs_float = dynamic_cast<ConcreteValFloat *>(lhs);
     auto rhs_float = dynamic_cast<ConcreteValFloat *>(rhs);
@@ -724,8 +951,7 @@ namespace util{
     if (poison_res) 
       return poison_res;
 
-    auto fmath_input_res = binOPEvalFmath(lhs, rhs, fmath);
-
+    auto fmath_input_res = evalFmath(lhs, rhs, fmath);
     if (fmath_input_res)
       return fmath_input_res;
 
@@ -737,6 +963,132 @@ namespace util{
     
   }
 
+  ConcreteVal* ConcreteValFloat::fabs(ConcreteVal* op, IR::FastMathFlags fmath) {
+    auto op_float = dynamic_cast<ConcreteValFloat *>(op);
+    assert(op_float);
+    auto poison_res = evalPoison(op);
+    if (poison_res) 
+      return poison_res;
+
+    auto fmath_input_res = evalFmath(op, fmath);
+    if (fmath_input_res)
+      return fmath_input_res;
+    
+    auto v = new ConcreteValFloat(false, llvm::APFloat(op_float->val));
+    v->val.clearSign();
+    // CHECK can this every be true?
+    unOPEvalFmath(v, fmath);
+    return v;
+  }
+
+  ConcreteVal* ConcreteValFloat::fneg(ConcreteVal* op, const IR::FastMathFlags& fmath) {
+    auto op_float = dynamic_cast<ConcreteValFloat *>(op);
+    assert(op_float);
+    auto poison_res = evalPoison(op);
+    if (poison_res) 
+      return poison_res;
+
+    auto fmath_input_res = evalFmath(op, fmath);
+    if (fmath_input_res)
+      return fmath_input_res;
+    
+    auto v = new ConcreteValFloat(false, llvm::APFloat(op_float->val));
+    v->val.changeSign();
+    // CHECK can this every be true?
+    unOPEvalFmath(v, fmath);
+    return v;
+  }
+
+  ConcreteVal* ConcreteValFloat::ceil(ConcreteVal* op, const IR::FastMathFlags& fmath) {
+    auto op_float = dynamic_cast<ConcreteValFloat *>(op);
+    assert(op_float);
+    auto poison_res = evalPoison(op);
+    if (poison_res) 
+      return poison_res;
+
+    auto fmath_input_res = evalFmath(op, fmath);
+    if (fmath_input_res)
+      return fmath_input_res;
+    
+    auto v = new ConcreteValFloat(false, llvm::APFloat(op_float->val));
+    v->val.roundToIntegral(llvm::RoundingMode::TowardPositive);
+    // CHECK can this every be true?
+    unOPEvalFmath(v, fmath);
+    return v;
+  }
+
+  ConcreteVal* ConcreteValFloat::floor(ConcreteVal* op, const IR::FastMathFlags& fmath) {
+    auto op_float = dynamic_cast<ConcreteValFloat *>(op);
+    assert(op_float);
+    auto poison_res = evalPoison(op);
+    if (poison_res) 
+      return poison_res;
+
+    auto fmath_input_res = evalFmath(op, fmath);
+    if (fmath_input_res)
+      return fmath_input_res;
+    
+    auto v = new ConcreteValFloat(false, llvm::APFloat(op_float->val));
+    v->val.roundToIntegral(llvm::RoundingMode::TowardNegative);
+    // CHECK can this every be true?
+    unOPEvalFmath(v, fmath);
+    return v;   
+  }
+
+  ConcreteVal* ConcreteValFloat::round(ConcreteVal* op, const IR::FastMathFlags& fmath) {
+    auto op_float = dynamic_cast<ConcreteValFloat *>(op);
+    assert(op_float);
+    auto poison_res = evalPoison(op);
+    if (poison_res) 
+      return poison_res;
+
+    auto fmath_input_res = evalFmath(op, fmath);
+    if (fmath_input_res)
+      return fmath_input_res;
+    
+    auto v = new ConcreteValFloat(false, llvm::APFloat(op_float->val));
+    v->val.roundToIntegral(llvm::RoundingMode::NearestTiesToAway);
+    // CHECK can this every be true?
+    unOPEvalFmath(v, fmath);
+    return v;   
+  }
+
+    ConcreteVal* ConcreteValFloat::roundEven(ConcreteVal* op, const IR::FastMathFlags& fmath) {
+    auto op_float = dynamic_cast<ConcreteValFloat *>(op);
+    assert(op_float);
+    auto poison_res = evalPoison(op);
+    if (poison_res) 
+      return poison_res;
+
+    auto fmath_input_res = evalFmath(op, fmath);
+    if (fmath_input_res)
+      return fmath_input_res;
+    
+    auto v = new ConcreteValFloat(false, llvm::APFloat(op_float->val));
+    v->val.roundToIntegral(llvm::RoundingMode::NearestTiesToEven);
+    // CHECK can this every be true?
+    unOPEvalFmath(v, fmath);
+    return v;   
+  }
+
+  ConcreteVal* ConcreteValFloat::trunc(ConcreteVal* op, const IR::FastMathFlags& fmath) {
+    auto op_float = dynamic_cast<ConcreteValFloat *>(op);
+    assert(op_float);
+    auto poison_res = evalPoison(op);
+    if (poison_res) 
+      return poison_res;
+
+    auto fmath_input_res = evalFmath(op, fmath);
+    if (fmath_input_res)
+      return fmath_input_res;
+    
+    auto v = new ConcreteValFloat(false, llvm::APFloat(op_float->val));
+    v->val.roundToIntegral(llvm::RoundingMode::TowardZero);
+    // CHECK can this every be true?
+    unOPEvalFmath(v, fmath);
+    return v;   
+  }
+
   ConcreteVal* ConcreteValFloat::fsub(ConcreteVal* lhs, ConcreteVal* rhs, IR::FastMathFlags fmath) {
     auto lhs_float = dynamic_cast<ConcreteValFloat *>(lhs);
     auto rhs_float = dynamic_cast<ConcreteValFloat *>(rhs);
@@ -745,7 +1097,7 @@ namespace util{
     if (poison_res) 
       return poison_res;
 
-    auto fmath_input_res = binOPEvalFmath(lhs, rhs, fmath);
+    auto fmath_input_res = evalFmath(lhs, rhs, fmath);
 
     if (fmath_input_res)
       return fmath_input_res;
@@ -766,7 +1118,7 @@ namespace util{
     if (poison_res) 
       return poison_res;
 
-    auto fmath_input_res = binOPEvalFmath(lhs, rhs, fmath);
+    auto fmath_input_res = evalFmath(lhs, rhs, fmath);
 
     if (fmath_input_res)
       return fmath_input_res;
@@ -787,7 +1139,7 @@ namespace util{
     if (poison_res) 
       return poison_res;
 
-    auto fmath_input_res = binOPEvalFmath(lhs, rhs, fmath);
+    auto fmath_input_res = evalFmath(lhs, rhs, fmath);
 
     if (fmath_input_res)
       return fmath_input_res;
@@ -808,7 +1160,7 @@ namespace util{
     if (poison_res) 
       return poison_res;
 
-    auto fmath_input_res = binOPEvalFmath(lhs, rhs, fmath);
+    auto fmath_input_res = evalFmath(lhs, rhs, fmath);
 
     if (fmath_input_res)
       return fmath_input_res;
@@ -957,6 +1309,42 @@ namespace util{
     return v;
   }
 
+  ConcreteVal* ConcreteValFloat::fma(ConcreteVal* a, ConcreteVal* b, ConcreteVal* c) {
+    auto a_float = dynamic_cast<ConcreteValFloat *>(a);
+    auto b_float = dynamic_cast<ConcreteValFloat *>(b);
+    auto c_float = dynamic_cast<ConcreteValFloat *>(c);
+    assert(a_float && b_float && c_float);
+    auto poison_res = evalPoison(a, b, c);
+
+    if (poison_res) 
+      return poison_res;
+
+    auto v = new ConcreteValFloat(*a_float);
+    // Should we check the opStatus from the fusedMultipyAdd
+    v->val.fusedMultiplyAdd(b_float->val, c_float->val, llvm::APFloatBase::rmNearestTiesToEven);
+    return v; 
+  }
+
+   ConcreteVal* ConcreteValFloat::select(ConcreteVal* cond, ConcreteVal* a, ConcreteVal* b) {
+    auto cond_int = dynamic_cast<ConcreteValInt *>(cond);
+    auto a_float = dynamic_cast<ConcreteValFloat *>(a);
+    auto b_float = dynamic_cast<ConcreteValFloat *>(b);
+    assert(cond_int && a_float && b_float);
+    auto poison_res = evalPoison(cond_int, a_float, b_float);
+    if (poison_res) 
+      return poison_res;
+
+    if (cond_int->getBoolVal()) {
+      auto v = new ConcreteValFloat(*a_float);
+      return v;
+    }
+    else {
+      auto v = new ConcreteValFloat(*b_float);
+      return v;
+    }
+    UNREACHABLE();
+  }
+
   void ConcreteValFloat::print() { 
     llvm::SmallVector<char, 16> Buffer;
     val.toString(Buffer);
@@ -1044,7 +1432,7 @@ namespace util{
         res[i] = new ConcreteValInt(false, llvm::APInt(bitwidth, 3));
       }
       else{
-        assert( "Error: vector type not supported yet!" && false );
+        assert( "ERROR: underlying vector type not supported yet!" && false );
       }  
     }
   

@@ -7,5 +7,4 @@ define i1 @test(i8 %x) {
         ret i1 %c
 }
 
-; CHECK: ConcreteVal( poison=0, 1b, 1u -1s)
-; CHECK: ConcreteVal( poison=0, 1b, 1u -1s)
+; CHECK: ConcreteVal(poison=0, 1b, 1u, -1s)

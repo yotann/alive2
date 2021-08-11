@@ -16,5 +16,4 @@ define dso_local i32 @sum(i32 %0) #0 {
   ret i32 %.01
 }
 
-; CHECK: ConcreteVal( poison=0, 32b, 3u 3s)
-; CHECK: ConcreteVal( poison=0, 32b, 3u 3s)
+; CHECK: ConcreteVal(poison=0, 32b, 3u, 3s)

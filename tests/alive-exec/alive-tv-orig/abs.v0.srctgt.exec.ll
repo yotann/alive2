@@ -7,12 +7,13 @@ define i8 @src(i8 %v) {
   ret i8 %r
 }
 
+; CHECK: ConcreteVal(poison=0, 8b, 3u, 3s)
+
+
+
 define i8 @tgt(i8 %v0) {
   %r = call i8 @llvm.abs.i8(i8 %v0, i1 0)
   ret i8 %r
 }
-; CHECK: ConcreteVal( poison=0, 8b, 3u 3s)
-; CHECK: ConcreteVal( poison=0, 8b, 3u 3s)
 
-; CHECK: ConcreteVal( poison=0, 8b, 3u 3s)
-; CHECK: ConcreteVal( poison=0, 8b, 3u 3s)
+; CHECK: ConcreteVal(poison=0, 8b, 3u, 3s)

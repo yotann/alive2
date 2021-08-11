@@ -3,5 +3,4 @@ define i16 @test() {
         ret i16 %X
 }
 
-; CHECK: ConcreteVal( poison=0, 16b, 65535u -1s)
-; CHECK: ConcreteVal( poison=0, 16b, 65535u -1s)
+; CHECK: ConcreteVal(poison=0, 16b, 65535u, -1s)

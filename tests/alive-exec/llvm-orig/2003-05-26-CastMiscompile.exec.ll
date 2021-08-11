@@ -6,5 +6,4 @@ define i64 @test(i64 %Val) {
         ret i64 %tmp.8
 }
 
-; CHECK: ConcreteVal( poison=0, 64b, 3u 3s)
-; CHECK: ConcreteVal( poison=0, 64b, 3u 3s)
+; CHECK: ConcreteVal(poison=0, 64b, 3u, 3s)

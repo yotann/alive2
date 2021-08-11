@@ -12,8 +12,5 @@ define i8 @tgt(i8 %v0) {
   ret i8 %r
 }
 
-; CHECK: ConcreteVal( poison=0, 8b, 3u 3s)
-; CHECK: ConcreteVal( poison=0, 8b, 3u 3s)
-
-; CHECK: ConcreteVal( poison=0, 8b, 3u 3s)
-; CHECK: ConcreteVal( poison=0, 8b, 3u 3s)
+; CHECK: ConcreteVal(poison=0, 8b, 3u, 3s)
+; CHECK: ConcreteVal(poison=0, 8b, 3u, 3s)

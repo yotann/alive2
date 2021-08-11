@@ -44,10 +44,10 @@ namespace util {
     virtual void setUndef();
     virtual bool isPoison();
     virtual bool isUndef();
-    void setVal(ConcreteVal& v);
+    //void setVal(ConcreteVal& v);
     //void setVal(llvm::APInt& v);
     //void setVal(llvm::APFloat& v);
-    virtual ConcreteVal& getVal();
+    //virtual ConcreteVal& getVal();
     //virtual llvm::APFloat& getValFloat() = 0;
     virtual void print();
   };
@@ -58,11 +58,14 @@ namespace util {
     public:
     //ConcreteValInt(bool poison, llvm::APInt val);
     ConcreteValInt(bool poison, llvm::APInt &&val);
-    ConcreteVal& getVal() override;
+    llvm::APInt getVal();
+    void setVal(llvm::APInt& v);
     bool getBoolVal();
     void print() override;
 
+    static ConcreteVal* evalPoison(ConcreteVal* op1, ConcreteVal* op2, ConcreteVal* op3);
     static ConcreteVal* evalPoison(ConcreteVal* lhs, ConcreteVal* rhs);
+    static ConcreteVal* evalPoison(ConcreteVal* op);
     static ConcreteVal* add(ConcreteVal* lhs, ConcreteVal* rhs, unsigned flags);
     static ConcreteVal* sub(ConcreteVal* lhs, ConcreteVal* rhs, unsigned flags);
     static ConcreteVal* mul(ConcreteVal* lhs, ConcreteVal* rhs, unsigned flags);
@@ -85,21 +88,41 @@ namespace util {
     static ConcreteVal* shl(ConcreteVal* lhs, ConcreteVal* rhs, unsigned flags);
     static ConcreteVal* cttz(ConcreteVal* lhs, ConcreteVal* rhs, unsigned flags);
     static ConcreteVal* ctlz(ConcreteVal* lhs, ConcreteVal* rhs, unsigned flags);
+    static ConcreteVal* ctpop(ConcreteVal* op);
+    static ConcreteVal* bitreverse(ConcreteVal* op);
+    static ConcreteVal* bswap(ConcreteVal* op);
+    static ConcreteVal* iTrunc(ConcreteVal* op, unsigned tgt_bitwidth);
+    static ConcreteVal* zext(ConcreteVal* op, unsigned tgt_bitwidth);
+    static ConcreteVal* sext(ConcreteVal* op, unsigned tgt_bitwidth);
+    static ConcreteVal* select(ConcreteVal* cond, ConcreteVal* a, ConcreteVal* b);
+    static ConcreteVal* icmp(ConcreteVal* a, ConcreteVal* b, unsigned cond);
   }; 
 
   class ConcreteValFloat : public ConcreteVal {
     private:
     llvm::APFloat val;
+
+    static ConcreteVal* evalPoison(ConcreteVal* op1, ConcreteVal* op2, ConcreteVal* op3);
     static ConcreteVal* evalPoison(ConcreteVal* lhs, ConcreteVal* rhs);
-    static ConcreteVal* binOPEvalFmath(ConcreteVal* lhs, ConcreteVal* rhs, IR::FastMathFlags fmath);
+    static ConcreteVal* evalPoison(ConcreteVal* op);
+    static ConcreteVal* evalFmath(ConcreteVal* lhs, ConcreteVal* rhs, IR::FastMathFlags fmath);
+    static ConcreteVal* evalFmath(ConcreteVal* op, IR::FastMathFlags fmath);
     static void unOPEvalFmath(ConcreteVal* n, IR::FastMathFlags fmath);
     public:
+    void setVal(llvm::APFloat& v);
     //ConcreteValInt(bool poison, llvm::APInt val);
     ConcreteValFloat(bool poison, llvm::APFloat &&val);
-    ConcreteValFloat& getVal() override;
+    llvm::APFloat getVal();
     void print() override;
 
     static ConcreteVal* fadd(ConcreteVal* lhs, ConcreteVal* rhs, IR::FastMathFlags fmath);
+    static ConcreteVal* fabs(ConcreteVal* op, IR::FastMathFlags fmath);
+    static ConcreteVal* fneg(ConcreteVal* op, const IR::FastMathFlags& fmath);
+    static ConcreteVal* ceil(ConcreteVal* op, const IR::FastMathFlags& fmath);
+    static ConcreteVal* floor(ConcreteVal* op, const IR::FastMathFlags& fmath);
+    static ConcreteVal* round(ConcreteVal* op, const IR::FastMathFlags& fmath);
+    static ConcreteVal* roundEven(ConcreteVal* op, const IR::FastMathFlags& fmath);
+    static ConcreteVal* trunc(ConcreteVal* op, const IR::FastMathFlags& fmath);
     static ConcreteVal* fsub(ConcreteVal* lhs, ConcreteVal* rhs, IR::FastMathFlags fmath);
     static ConcreteVal* fmul(ConcreteVal* lhs, ConcreteVal* rhs, IR::FastMathFlags fmath);
     static ConcreteVal* fdiv(ConcreteVal* lhs, ConcreteVal* rhs, IR::FastMathFlags fmath);
@@ -108,6 +131,8 @@ namespace util {
     static ConcreteVal* fmin(ConcreteVal* lhs, ConcreteVal* rhs, IR::FastMathFlags fmath);
     static ConcreteVal* fmaximum(ConcreteVal* lhs, ConcreteVal* rhs, IR::FastMathFlags fmath);
     static ConcreteVal* fminimum(ConcreteVal* lhs, ConcreteVal* rhs, IR::FastMathFlags fmath);
+    static ConcreteVal* fma(ConcreteVal* a, ConcreteVal* b, ConcreteVal* c);
+    static ConcreteVal* select(ConcreteVal* cond, ConcreteVal* a, ConcreteVal* b);
   };
 
   class ConcreteValVect : public ConcreteVal {
@@ -122,7 +147,7 @@ namespace util {
     //ConcreteValVect( ConcreteValVect &&r);
     //ConcreteValVect& operator=(ConcreteValVect &&r);
     //ConcreteValVect(bool poison, std::vector<ConcreteVal*> &elements);
-    ConcreteValVect& getVal() override;
+    ConcreteValVect& getVal();
     virtual ~ConcreteValVect();
     static std::vector<ConcreteVal*> make_elements(const IR::Value* vect_val);
     static std::unique_ptr<std::vector<ConcreteVal*>> make_elements_unique(IR::Value* vect_val);

@@ -26,7 +26,7 @@ void interp(Function &f) {
     // TODO for now we support IntType and FloatType
     assert((i.getType().isIntType() 
           || i.getType().isFloatType() 
-          || i.getType().isVectorType()) && "AliveExec-Error : input type not supported");
+          || i.getType().isVectorType()) && "ERROR : input type not supported");
     auto I = concrete_vals.find(&i);
     assert(I == concrete_vals.end());
     if (i.getType().isIntType()) {
@@ -256,7 +256,7 @@ void interp(Function &f) {
                 break;
               } else {
                 pred_block = cur_block;
-                auto condVar = dynamic_cast<ConcreteValInt *>(&concrete_cond_val->getVal());
+                auto condVar = dynamic_cast<ConcreteValInt *>(concrete_cond_val);
                 assert(condVar);
                 //if (concrete_cond_val->getVal().getBoolValue()) {
                 if (condVar->getBoolVal()) {
@@ -268,9 +268,7 @@ void interp(Function &f) {
             }
           }
         } else if (dynamic_cast<const Phi *>(&i)) {
-          // cout << "phi inst: " << i << '\n';
           assert(pred_block);
-          // cout << "pred block: " << pred_block->getName() << '\n';
           auto phi_ptr = dynamic_cast<const Phi *>(&i);
           const auto &phi_vals = phi_ptr->getValues();
           // read pred_block to determine which phi value to choose
@@ -283,13 +281,41 @@ void interp(Function &f) {
             auto phi_val_concrete_I = concrete_vals.find(phi_val_ptr);
             assert(phi_val_concrete_I != concrete_vals.end());
             auto phi_concrete_I = concrete_vals.find(phi_ptr);
+            // CHECK super ugly code. neet to cleanup 
             if (phi_concrete_I == concrete_vals.end()) {
-              auto new_val = new ConcreteVal(*(phi_val_concrete_I->second));
-              concrete_vals.emplace(phi_ptr, new_val);
+              if (dynamic_cast<ConcreteValInt *>(phi_val_concrete_I->second)) {
+                auto ptr = dynamic_cast<ConcreteValInt *>(phi_val_concrete_I->second);
+                auto new_val = new ConcreteValInt(*ptr);
+                concrete_vals.emplace(phi_ptr, new_val);
+              }
+              else if (dynamic_cast<ConcreteValFloat *>(phi_val_concrete_I->second)) {
+                auto ptr = dynamic_cast<ConcreteValFloat *>(phi_val_concrete_I->second);
+                auto new_val = new ConcreteValFloat(*ptr);
+                concrete_vals.emplace(phi_ptr, new_val);
+              }
+              else {
+                cout << "ERROR: alive-interp doesn't support phi instructions with this type yet. Aborting!" << '\n';
+                exit(EXIT_FAILURE);
+              }
             } else {
-              // concrete_vals[phi_ptr].setValPtr(std::make_unique<llvm::APInt>(*(phi_val_concrete_I->second.getValPtr()));
-              auto new_phi_val = phi_val_concrete_I->second->getVal();
-              concrete_vals[phi_ptr]->setVal(new_phi_val);
+              if (dynamic_cast<ConcreteValInt *>(phi_val_concrete_I->second)) {
+                auto res_ptr = dynamic_cast<ConcreteValInt *>(concrete_vals[phi_ptr]);
+                auto ptr = dynamic_cast<ConcreteValInt *>(phi_val_concrete_I->second);
+                auto phi_int = llvm::APInt(ptr->getVal());
+                res_ptr->setVal(phi_int);
+              }
+              else if (dynamic_cast<ConcreteValFloat *>(phi_val_concrete_I->second)) {
+                auto res_ptr = dynamic_cast<ConcreteValFloat *>(concrete_vals[phi_ptr]);
+                auto ptr = dynamic_cast<ConcreteValFloat *>(phi_val_concrete_I->second);
+                auto phi_float = llvm::APFloat(ptr->getVal());
+                res_ptr->setVal(phi_float);
+              }
+              else {
+                cout << "ERROR: alive-interp doesn't support phi instructions with this type yet. Aborting!" << '\n';
+                exit(EXIT_FAILURE);
+              }
+              //auto new_phi_val = phi_val_concrete_I->second->getVal();
+              //concrete_vals[phi_ptr]->setVal(new_phi_val);
             }
             break;
           }

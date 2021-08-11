@@ -1158,91 +1158,54 @@ util::ConcreteVal * UnaryOp::concreteEval(std::map<const Value *, util::Concrete
     cout << "[Unary::concreteEval] concrete value for operand not found. Aborting" << '\n';
     assert(false);
   }
-  auto v = new ConcreteValFloat(false, llvm::APFloat(0.0));
-  return v;
-  /*
-  auto tgt_bitwidth = getType().bits();
-  if (isFPInstr()){
-    cout << "unary fp instr bitwidth = " << tgt_bitwidth << '\n';
-      auto v = new ConcreteValFloat(I->second->isPoison(), I->second->getValFloat());
-      auto op_apfloat = I->second->getValFloat();
-      if (v->isPoison()){
-        return v;
-      }
-
-      if (fmath.isNNan()){
-        if (op_apfloat.isNaN()){
-          v->setPoison(true);
-            return v;
-        }
-      }
-      if (fmath.isNInf()){ 
-        if (op_apfloat.isInfinity()){
-            v->setPoison(true);
-            return v;
-        }
-      }
-
-      if (op == Op::FAbs){
-        v->getValFloat().clearSign();
-      }
-      else if (op == Op::FNeg){
-        v->getValFloat().changeSign();
-      }
-      else if (op == Op::Ceil){//TODO what to do about inexact results?
-        v->getValFloat().roundToIntegral(llvm::RoundingMode::TowardPositive);
-      }
-      else if (op == Op::Floor){
-        v->getValFloat().roundToIntegral(llvm::RoundingMode::TowardNegative);
-      }
-      else if (op == Op::Round){
-        v->getValFloat().roundToIntegral(llvm::RoundingMode::NearestTiesToAway);
-      }
-      else if (op == Op::RoundEven){
-        v->getValFloat().roundToIntegral(llvm::RoundingMode::NearestTiesToEven);
-      }
-      else if (op == Op::Trunc){
-        v->getValFloat().roundToIntegral(llvm::RoundingMode::TowardZero);
-      }
-      else{
-        cout << "[UnaryOp::concreteEval] not supported on this instruction yet" << '\n';
-      }
-      // Does the output of a unary operation need to be checked again for fmath flags?
-      return v;
+  
+  auto operand = I->second;
+  if (op == Op::FAbs) {
+    auto v = ConcreteValFloat::fabs(operand, fmath);
+    return v;
+  }
+  else if (op == Op::FNeg) {
+    auto v = ConcreteValFloat::fneg(operand, fmath);
+    return v;
+  }
+  if (op == Op::Ceil) {
+    auto v = ConcreteValFloat::ceil(operand, fmath);
+    return v;
+  }
+  else if (op == Op::Floor) {
+    auto v = ConcreteValFloat::floor(operand, fmath);
+    return v;
+  }
+  if (op == Op::Round) {
+    auto v = ConcreteValFloat::round(operand, fmath);
+    return v;
+  }
+  else if (op == Op::RoundEven) {
+    auto v = ConcreteValFloat::roundEven(operand, fmath);
+    return v;
+  }
+  else if (op == Op::Trunc) {
+    auto v = ConcreteValFloat::trunc(operand, fmath);
+    return v;
+  }
+  else if (op == Op::Ctpop) {
+    auto v = ConcreteValInt::ctpop(operand);
+    return v;
+  }
+  else if (op == Op::BitReverse) {
+    auto v = ConcreteValInt::bitreverse(operand);
+    return v;
+  }
+  else if (op == Op::BSwap) {
+    auto v = ConcreteValInt::bswap(operand);
+    return v;
+  }
+  else {
+    cout << "Error: ConcreteEval for unary op nut supported yet" << '\n';
+    return nullptr;
   }
 
-  if (I->second->isPoison()){
-    auto v = new ConcreteVal(false, llvm::APInt(tgt_bitwidth,0));
-    v->setPoison(true);
-    return v;
-  }
-  auto op_apint = I->second->getVal();
-  assert(op_apint.getBitWidth() == tgt_bitwidth);
-  if (op == Op::Ctpop){
-    uint64_t cnt = 0;
-    for (unsigned i = 0; i < tgt_bitwidth; ++i){
-      if (op_apint.extractBits(1,i).getBoolValue()){
-        cnt +=1;
-      }
-    }
-    auto v = new ConcreteVal(false, llvm::APInt(tgt_bitwidth,cnt));  
-    return v;
-  }
-  else if (op == Op::BitReverse){
-    auto v = new ConcreteVal(false, op_apint.reverseBits());
-    return v;
-  }
-  else if (op == Op::BSwap){
-    // the assertion in APInt's byteSwap does not match llvm's semantics
-    assert(tgt_bitwidth >= 16 && tgt_bitwidth % 16 == 0);
-    auto v = new ConcreteVal(false, op_apint.byteSwap());
-    return v;
-  }
-  else{
-    cout << "[UnaryOp::concreteEval] not supported on this instruction yet" << '\n';
-  }
-  UNREACHABLE();
-  */
+  UNREACHABLE(); 
 }
 
 vector<Value*> UnaryReductionOp::operands() const {
@@ -1440,19 +1403,13 @@ unique_ptr<Instr> TernaryOp::dup(const string &suffix) const {
 }
 
 util::ConcreteVal * TernaryOp::concreteEval(std::map<const Value *, util::ConcreteVal *> &concrete_vals) const{
-  auto v = new ConcreteValFloat(false, llvm::APFloat(0.0));
-  return v;
-  /*
+  
   auto v_op = operands();  
   for (auto operand: v_op){
       auto I = concrete_vals.find(operand);
       if (I == concrete_vals.end()){
-        cout << "AliveExec-Error : [TernaryOp::concreteEval] concrete values for operand not found. Aborting!" << '\n';
+        cout << "ERROR : [TernaryOp::concreteEval] concrete values for operand not found. Aborting!" << '\n';
         exit(EXIT_FAILURE);
-      }
-      if (I->second->isPoison()){
-        auto v = new ConcreteVal(true, I->second->getValFloat());
-        return v;
       }
   }
   
@@ -1461,13 +1418,16 @@ util::ConcreteVal * TernaryOp::concreteEval(std::map<const Value *, util::Concre
   auto op_c_concrete = concrete_vals.find(c)->second;
 
   if (op == Op::FMA){
-    auto v = new ConcreteVal(false, op_a_concrete->getValFloat());
-    // Should we check the opStatus from the fusedMultipyAdd
-    v->getValFloat().fusedMultiplyAdd(op_b_concrete->getValFloat(), op_c_concrete->getValFloat(), llvm::APFloatBase::rmNearestTiesToEven);
+    auto v = ConcreteValFloat::fma(op_a_concrete, op_b_concrete, op_c_concrete);
+    // CHECK Should we check the opStatus from the fusedMultipyAdd?
     return v;
   }
+  else {
+    cout << "ERROR : [TernaryOp::concreteEval] operation not supported yet. Aborting!" << '\n';
+    exit(EXIT_FAILURE);
+  }
+
   UNREACHABLE();
-  */
 }
 
 vector<Value*> ConversionOp::operands() const {
@@ -1671,43 +1631,31 @@ unique_ptr<Instr> ConversionOp::dup(const string &suffix) const {
 }
 
 util::ConcreteVal * ConversionOp::concreteEval(std::map<const Value *, util::ConcreteVal *> &concrete_vals) const{
-  
-  auto v = new ConcreteValFloat(false, llvm::APFloat(0.0));
-  return v;
-  /*
   auto I = concrete_vals.find(val);
   if (I == concrete_vals.end()){
-    cout << "[ConversionOp::concreteEval] concrete value for operand not found. Aborting" << '\n';
-    assert(false);
+    cout << "ERROR: [ConversionOp::concreteEval] concrete value for operand not found. Aborting" << '\n';
+    exit(EXIT_FAILURE);
   }
-  
+
+  auto op_concrete = I->second;
   auto tgt_bitwidth = getType().bits();
-  auto v = new ConcreteVal(false, llvm::APInt(tgt_bitwidth,0));
-  if (I->second->isPoison()){
-    v->setPoison(true);
+  if (op == Op::Trunc) {
+    auto v = ConcreteValInt::iTrunc(op_concrete, tgt_bitwidth);
     return v;
   }
-  auto op_apint = I->second->getVal();
-  if (op == Op::Trunc){
-    // assert(op_apint.getBitWidth() > tgt_bitwidth);already causes an error in APInt::trunc
-    auto res = op_apint.trunc(tgt_bitwidth); 
-    v->setVal(res);
+  else if (op == Op::ZExt) {
+    auto v = ConcreteValInt::zext(op_concrete, tgt_bitwidth);
+    return v;
   }
-  else if (op == Op::ZExt){
-    // assert(op_apint.getBitWidth() < tgt_bitwidth);already causes an error in APInt::zext
-    auto res = op_apint.zext(tgt_bitwidth); 
-    v->setVal(res);
+  else if (op == Op::SExt) {
+    auto v = ConcreteValInt::sext(op_concrete, tgt_bitwidth);
+    return v;
   }
-  else if (op == Op::SExt){
-    //assert(op_apint.getBitWidth() < tgt_bitwidth);already causes an error in APInt::sext
-    auto res = op_apint.sext(tgt_bitwidth); 
-    v->setVal(res);
+  else {
+    cout << "ERROR : [ConversionOp::concreteEval] operation not supported yet. Aborting!" << '\n';
+    exit(EXIT_FAILURE);
   }
-  else{
-    cout << "AliveExec-Error : [ConversionOp::concreteEval] not supported on this instruction yet" << '\n';
-  }
-  return v;
-  */
+  UNREACHABLE();
 }
 
 vector<Value*> Select::operands() const {
@@ -1765,12 +1713,8 @@ unique_ptr<Instr> Select::dup(const string &suffix) const {
   return make_unique<Select>(getType(), getName() + suffix, *cond, *a, *b);
 }
 
-util::ConcreteVal * Select::concreteEval(std::map<const Value *, util::ConcreteVal *> &concrete_vals) const{
+util::ConcreteVal * Select::concreteEval(std::map<const Value *, util::ConcreteVal *> &concrete_vals) const {
 
-  auto v = new ConcreteValFloat(false, llvm::APFloat(0.0));
-  return v;
-  /*
-  auto v = new ConcreteVal();
   auto a_I = concrete_vals.find(a);
   assert(a_I != concrete_vals.end());
   auto& concrete_a = a_I->second;
@@ -1781,32 +1725,21 @@ util::ConcreteVal * Select::concreteEval(std::map<const Value *, util::ConcreteV
   assert(cond_I != concrete_vals.end());
   auto& concrete_cond = cond_I->second;
   
-  if (concrete_a->isPoison() || concrete_b->isPoison() || concrete_cond->isPoison()){
-    v->setPoison(true);
+  // TODO need to change concreteVal's design to scale
+  if (dynamic_cast<ConcreteValInt *>(concrete_a)) {
+    auto v = ConcreteValInt::select(concrete_cond, concrete_a, concrete_b);
     return v;
   }
-  bool select_res = false;
-  //cout << "select concrete eval: cond bitwidth = " << concrete_cond.getVal().getBitWidth() << '\n';
-  //concrete_cond.print();
-  if (concrete_cond->getVal().getBitWidth()==1){
-    if (concrete_cond->getVal().getBoolValue()){
-      select_res = true;
-    }
+  else if (dynamic_cast<ConcreteValFloat *>(concrete_a)) {
+    auto v = ConcreteValFloat::select(concrete_cond, concrete_a, concrete_b);
+    return v;
   }
-  else{
-    cout << "AliveExec-Error : [Select::concreteEval] non boolean condition not supported yet" << '\n';
-    exit(EXIT_SUCCESS);
-  }
-  
-  if (select_res){
-    v->setVal(concrete_a->getVal());
-  }
-  else{
-    v->setVal(concrete_b->getVal());
+  else {
+    cout << "ERROR : [Select::concreteEval] select instruction on this type not supported yet. Aborting!" << '\n';
+    exit(EXIT_FAILURE);
   }
     
-  return v;
-  */
+  UNREACHABLE();  
 }
 
 
@@ -2350,67 +2283,15 @@ unique_ptr<Instr> ICmp::dup(const string &suffix) const {
 }
 
 util::ConcreteVal * ICmp::concreteEval(std::map<const Value *, util::ConcreteVal *> &concrete_vals) const{
-  auto v = new ConcreteValFloat(false, llvm::APFloat(0.0));
-  return v;
-  //TODO support icmp with vector operands
-  /*
-  auto v = new ConcreteVal();
   auto a_I = concrete_vals.find(a);
   assert(a_I != concrete_vals.end());
   auto& concrete_a = a_I->second;
   auto b_I = concrete_vals.find(b);
   assert(b_I != concrete_vals.end());
   auto& concrete_b = b_I->second;
-  if (concrete_a->isPoison() || concrete_b->isPoison()){
-    v->setPoison(true);
-    return v;
-  }
-  bool icmp_res = false;
-  switch (cond) {
-    case EQ:
-      icmp_res = concrete_a->getVal().eq(concrete_b->getVal());
-      break;
-    case NE:  
-      icmp_res = concrete_a->getVal().ne(concrete_b->getVal());
-      break;
-    case SLE: 
-      icmp_res = concrete_a->getVal().sle(concrete_b->getVal());
-      break;
-    case SLT: 
-      icmp_res = concrete_a->getVal().slt(concrete_b->getVal());
-      break;
-    case SGE: 
-      icmp_res = concrete_a->getVal().sge(concrete_b->getVal());
-      break;
-    case SGT: 
-      icmp_res = concrete_a->getVal().sgt(concrete_b->getVal());
-      break;
-    case ULE:
-      icmp_res = concrete_a->getVal().ule(concrete_b->getVal());
-      break;
-    case ULT: 
-      icmp_res = concrete_a->getVal().ult(concrete_b->getVal());
-      break;
-    case UGE: 
-      icmp_res = concrete_a->getVal().uge(concrete_b->getVal());
-      break;
-    case UGT: 
-      icmp_res = concrete_a->getVal().ugt(concrete_b->getVal());
-      break;
-    case Any:
-        UNREACHABLE();
-  }
-  if (icmp_res){
-    auto ap_true = llvm::APInt(1,1);
-    v->setVal(ap_true);
-  }
-  else{
-    auto ap_false = llvm::APInt(1,0);
-    v->setVal(ap_false);
-  }
-    
+  
+  auto v = ConcreteValInt::icmp(concrete_a, concrete_b, cond);
   return v;
-  */
 }
 
 

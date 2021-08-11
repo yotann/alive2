@@ -8,17 +8,15 @@ define float @foo(float %0) {
   ret float %4
 }
 
-; CHECK: ConcreteVal( poison=0, 32b, -1F)
-; CHECK: ConcreteVal( poison=0, 32b, -1F)
+; CHECK: ConcreteVal(poison=0, 32b, -1F)
+
 
 define float @foo1() {
   %1 = call float @llvm.ceil.f32(float -1.75)
   ret float %1
 }
 
-; CHECK: ConcreteVal( poison=0, 32b, -1F)
-; CHECK: ConcreteVal( poison=0, 32b, -1F)
-
+; CHECK: ConcreteVal(poison=0, 32b, -1F)
 
 define double @bar(double %0) {
   %2 = fneg double %0
@@ -26,5 +24,5 @@ define double @bar(double %0) {
   ret double %3
 }
 
-; CHECK: ConcreteVal( poison=0, 64b, -3F)
-; CHECK: ConcreteVal( poison=0, 64b, -3F)
+; CHECK: ConcreteVal(poison=0, 64b, -3F)
+

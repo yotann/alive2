@@ -7,8 +7,8 @@ define float @foo(float %0) {
   ret float %3
 }
 
-; CHECK: ConcreteVal( poison=0, 32b, 3F)
-; CHECK: ConcreteVal( poison=0, 32b, 3F)
+; CHECK: ConcreteVal(poison=0, 32b, 3F)
+
 
 define double @bar(double %0) {
   %2 = fneg double %0
@@ -16,5 +16,5 @@ define double @bar(double %0) {
   ret double %3
 }
 
-; CHECK: ConcreteVal( poison=0, 64b, 3F)
-; CHECK: ConcreteVal( poison=0, 64b, 3F)
+; CHECK: ConcreteVal(poison=0, 64b, 3F)
+

@@ -3,5 +3,4 @@ define i32 @test() {
         ret i32 %X
 }
 
-; CHECK: ConcreteVal( poison=0, 32b, 4294967295u -1s)
-; CHECK: ConcreteVal( poison=0, 32b, 4294967295u -1s)
+; CHECK: ConcreteVal(poison=0, 32b, 4294967295u, -1s)
