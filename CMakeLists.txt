@@ -142,12 +142,37 @@ set(UTIL_SRCS
   util/stopwatch.cpp
   util/symexec.cpp
   util/unionfind.cpp
+  util/concreteval.cpp
+)
+
+set(UTIL_EXEC_SRCS
+  "${PROJECT_BINARY_DIR}/version_gen.h"
+  util/version.cpp
+  util/compiler.cpp
+  util/config.cpp
+  util/errors.cpp
+  util/file.cpp
+  util/parallel.cpp
+  util/parallel_fifo.cpp
+  util/parallel_null.cpp
+  util/parallel_unrestricted.cpp
+  util/random.cpp
+  util/sort.cpp
+  util/stopwatch.cpp
+  #util/exec.cpp
+  util/unionfind.cpp
+  util/concreteval.cpp
+  util/interp.cpp
 )
 
 add_library(util STATIC ${UTIL_SRCS})
 add_dependencies(util generate_version)
 
+add_library(util_exec STATIC ${UTIL_EXEC_SRCS})
+add_dependencies(util_exec generate_version)
+
 set(ALIVE_LIBS ir smt tools util)
+set(ALIVE_EXEC_LIBS ir smt tools util_exec)
 
 
 if (BUILD_LLVM_UTILS OR BUILD_TV)
@@ -178,6 +203,7 @@ if (BUILD_LLVM_UTILS OR BUILD_TV)
 
   add_library(llvm_util STATIC ${LLVM_UTIL_SRCS})
   set(ALIVE_LIBS_LLVM llvm_util ${ALIVE_LIBS})
+  set(ALIVE_EXEC_LIBS_LLVM llvm_util ${ALIVE_EXEC_LIBS})
 
   add_llvm_executable(alive-tv
     "tools/alive-tv.cpp"
@@ -187,9 +213,21 @@ if (BUILD_LLVM_UTILS OR BUILD_TV)
     "tools/alive-exec.cpp"
   )
 
+  #add_llvm_executable(alive-exec-concrete
+  #  "tools/alive-exec-concrete.cpp"
+  #)
+
+  add_llvm_executable(alive-interp
+    "tools/alive-interp.cpp"
+  )
   add_llvm_executable(alive-worker
     "tools/alive-worker.cpp"
   )
+
+
+
+
+
 
 else()
   set(LLVM_UTIL_SRCS "")
@@ -233,10 +271,13 @@ add_executable(alive-jobserver
 
 if (BUILD_LLVM_UTILS OR BUILD_TV)
   llvm_map_components_to_libnames(llvm_libs support core irreader analysis passes transformutils bitreader)
-#  target_link_libraries(alive2 PRIVATE ${llvm_libs})
+  target_link_libraries(alive PRIVATE ${llvm_libs})
+  #target_link_libraries(alive2 PRIVATE ${llvm_libs})
   target_link_libraries(alive-tv PRIVATE ${ALIVE_LIBS_LLVM} ${llvm_libs})
   target_link_libraries(alive-exec PRIVATE ${ALIVE_LIBS_LLVM} ${llvm_libs})
   target_link_libraries(alive-worker PRIVATE ${ALIVE_LIBS_LLVM} ${llvm_libs})
+  #target_link_libraries(alive-exec-concrete PRIVATE ${ALIVE_EXEC_LIBS_LLVM} ${llvm_libs})
+  target_link_libraries(alive-interp PRIVATE ${ALIVE_EXEC_LIBS_LLVM} ${llvm_libs})
 endif()
 
 if (CYGWIN)
@@ -251,7 +292,10 @@ else()
   if (BUILD_LLVM_UTILS OR BUILD_TV)
     target_link_libraries(alive-tv PRIVATE ${Z3_LIBRARIES})
     target_link_libraries(alive-exec PRIVATE ${Z3_LIBRARIES})
+    #target_link_libraries(alive-exec-concrete PRIVATE ${Z3_LIBRARIES})
+    target_link_libraries(alive-interp PRIVATE ${Z3_LIBRARIES})
     target_link_libraries(alive-worker PRIVATE ${Z3_LIBRARIES})
+
   endif()
 endif()
 
