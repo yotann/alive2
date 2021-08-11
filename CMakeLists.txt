@@ -89,6 +89,9 @@ add_custom_command(OUTPUT "${PROJECT_BINARY_DIR}/tools/alive_lexer.cpp"
 include_directories(${PROJECT_SOURCE_DIR})
 include_directories(${PROJECT_BINARY_DIR})
 
+include_directories(${PROJECT_SOURCE_DIR}/third_party/cpp-httplib)
+include_directories(${PROJECT_SOURCE_DIR}/third_party/jsoncons/include)
+
 set(IR_SRCS
   ir/attrs.cpp
   ir/constant.cpp
@@ -217,6 +220,14 @@ if (BUILD_LLVM_UTILS OR BUILD_TV)
   add_llvm_executable(alive-interp
     "tools/alive-interp.cpp"
   )
+  add_llvm_executable(alive-worker
+    "tools/alive-worker.cpp"
+  )
+
+
+
+
+
 
 else()
   set(LLVM_UTIL_SRCS "")
@@ -259,11 +270,12 @@ add_executable(alive-jobserver
 #add_library(alive2 SHARED ${IR_SRCS} ${SMT_SRCS} ${TOOLS_SRCS} ${UTIL_SRCS} ${LLVM_UTIL_SRCS})
 
 if (BUILD_LLVM_UTILS OR BUILD_TV)
-  llvm_map_components_to_libnames(llvm_libs support core irreader analysis passes transformutils)
+  llvm_map_components_to_libnames(llvm_libs support core irreader analysis passes transformutils bitreader)
   target_link_libraries(alive PRIVATE ${llvm_libs})
   #target_link_libraries(alive2 PRIVATE ${llvm_libs})
   target_link_libraries(alive-tv PRIVATE ${ALIVE_LIBS_LLVM} ${llvm_libs})
   target_link_libraries(alive-exec PRIVATE ${ALIVE_LIBS_LLVM} ${llvm_libs})
+  target_link_libraries(alive-worker PRIVATE ${ALIVE_LIBS_LLVM} ${llvm_libs})
   #target_link_libraries(alive-exec-concrete PRIVATE ${ALIVE_EXEC_LIBS_LLVM} ${llvm_libs})
   target_link_libraries(alive-interp PRIVATE ${ALIVE_EXEC_LIBS_LLVM} ${llvm_libs})
 endif()
@@ -282,6 +294,8 @@ else()
     target_link_libraries(alive-exec PRIVATE ${Z3_LIBRARIES})
     #target_link_libraries(alive-exec-concrete PRIVATE ${Z3_LIBRARIES})
     target_link_libraries(alive-interp PRIVATE ${Z3_LIBRARIES})
+    target_link_libraries(alive-worker PRIVATE ${Z3_LIBRARIES})
+
   endif()
 endif()
 

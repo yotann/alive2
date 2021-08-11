@@ -235,6 +235,14 @@ Value* make_intconst(uint64_t val, int bits) {
     return val_cpy;                                 \
   } while (0)
 
+#if LLVM_VERSION_MAJOR <= 12
+static std::string toString(const llvm::APInt &I, unsigned Radix, bool Signed,
+                            bool formatAsCLiteral = false) {
+  llvm::SmallString<40> S;
+  I.toString(S, Radix, Signed, formatAsCLiteral);
+  return std::string(S.str());
+}
+#endif
 
 Value* get_operand(llvm::Value *v,
                    function<Value*(llvm::ConstantExpr*)> constexpr_conv,
@@ -422,9 +430,12 @@ PRINT(llvm::Value)
 
 void init_llvm_utils(ostream &os, const llvm::DataLayout &dataLayout) {
   out = &os;
+  type_cache.clear();
   type_id_counter = 0;
+  int_types.clear();
   int_types.resize(65);
   int_types[1] = make_unique<IntType>("i1", 1);
+  ptr_types.clear();
   ptr_types.emplace_back(make_unique<PtrType>(0));
   DL = &dataLayout;
 }
