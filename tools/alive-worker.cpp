@@ -25,6 +25,8 @@
 #include "smt/smt.h"
 #include "tools/transform.h"
 #include "util/version.h"
+#include "util/interp.h"
+#include "util/concreteval.h"
 
 #include "llvm/ADT/StringExtras.h"
 #include "llvm/ADT/Triple.h"
@@ -33,9 +35,11 @@
 #include "llvm/IR/Function.h"
 #include "llvm/IR/LLVMContext.h"
 #include "llvm/IR/Module.h"
+#include "llvm/IRReader/IRReader.h"
 #include "llvm/Support/CommandLine.h"
 #include "llvm/Support/PrettyStackTrace.h"
 #include "llvm/Support/Signals.h"
+#include "llvm/Support/Error.h"
 
 #include <condition_variable>
 #include <iostream>
@@ -315,6 +319,23 @@ static VerifyResults verify(llvm::Function &f1, llvm::Function &f2,
   return r;
 }
 
+static ojson interpFunction(llvm::Function &f, llvm::TargetLibraryInfoWrapperPass &tli,
+                  const ojson &test_input) {
+  auto fn = llvm2alive(f, tli.getTLI(f));
+  if (!fn) {
+    cerr << "ERROR: Could not translate '" << f.getName().str()
+         << "' to Alive IR\n";
+    _exit(1);
+  }
+  ojson result(json_object_arg);
+  // TODO remove this after debugging
+  fn->print(cout << "\n----------------------------------------\n");
+  // TODO interp should return result values to correctly update successCount 
+  interp(*fn);
+  
+  return result;
+}
+
 static ojson compareFunctions(llvm::Function &f1, llvm::Function &f2,
                               llvm::TargetLibraryInfoWrapperPass &tli) {
   auto r = verify(f1, f2, tli);
@@ -367,8 +388,46 @@ static ojson compareFunctions(llvm::Function &f1, llvm::Function &f2,
 
 static ojson evaluateAliveInterpret(const ojson &options, const ojson &src,
                                     const ojson &test_input) {
-  std::cerr << "alive.interpret not yet implemented!\n";
-  _exit(2);
+  uint64_t timeout = options.get_with_default<uint64_t>("timeout", 60000);
+  
+  auto to_stringref = [](const ojson &node) {
+    auto bytes = node.as_byte_string_view();
+    return llvm::StringRef(reinterpret_cast<const char *>(bytes.data()),
+                           bytes.size());
+  };
+  llvm::LLVMContext context;
+  auto m1_or_err = llvm::parseBitcodeFile(
+      llvm::MemoryBufferRef(to_stringref(src), "src"), context);
+  if (!m1_or_err) {
+    std::cerr << "could not parse bitcode files";
+    _exit(1);
+  }
+  auto m1 = std::move(*m1_or_err);
+
+  auto &dl = m1->getDataLayout();
+  llvm::Triple target_triple(m1->getTargetTriple());
+  llvm::TargetLibraryInfoWrapperPass tli(target_triple);
+
+  std::ostringstream out;
+  llvm_util::initializer llvm_util_init(out, dl);
+  // TODO: include contents of out.str() in the response.
+
+  auto &f1 = getSoleDefinition(*m1);
+
+  std::unique_lock lock(timeout_mutex);
+  timeout_millis = timeout;
+  timeout_index++;
+  lock.unlock();
+  timeout_cv.notify_one();
+
+  auto result = interpFunction(f1, tli, test_input);
+
+  lock.lock();
+  timeout_millis = 0;
+  lock.unlock();
+  timeout_cv.notify_one();
+
+  return result;
 }
 
 static ojson evaluateAliveTV(const ojson &options, const ojson &src,
