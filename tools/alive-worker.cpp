@@ -550,8 +550,11 @@ calls that are submitted to the server by other programs.
       return 1;
     }
     ojson job = decode_cbor<ojson>(result->body);
-    if (job.is_null())
-      continue; // No jobs available, try again.
+    if (job.is_null()) {
+      // No jobs available, try again.
+      sleep(1); // TODO: exponential backoff
+      continue;
+    }
 
     string func = job["func"].as<string>();
     std::string call_uri = "/call/" + func + "/";
