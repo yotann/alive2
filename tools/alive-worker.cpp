@@ -129,6 +129,7 @@ static std::string binaryCIDToText(const ojson &cid) {
   return text;
 }
 
+// Check http response and exit if there is no response or we receive an error response
 static void checkResult(const httplib::Result &result) {
   if (!result) {
     std::cerr << "HTTP connection error: " << result.error() << '\n';
@@ -331,7 +332,7 @@ static ojson interpFunction(llvm::Function &f, llvm::TargetLibraryInfoWrapperPas
   // TODO remove this after debugging
   fn->print(cout << "\n----------------------------------------\n");
   // TODO interp should return result values to correctly update successCount 
-  interp(*fn);
+  interp_outline(*fn, result, test_input.as<string>());
   
   return result;
 }
@@ -537,6 +538,7 @@ calls that are submitted to the server by other programs.
       {
           {"funcs", ojson(json_array_arg, {"alive.tv", "alive.interpret"})},
       });
+  // std::cout << "pretty print" << jsoncons::pretty_print(worker_info) << '\n';
   auto worker_info_cid = putNode(worker_info);
 
   while (true) {
