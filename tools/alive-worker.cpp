@@ -323,6 +323,8 @@ static VerifyResults verify(llvm::Function &f1, llvm::Function &f2,
 static ojson interpFunction(llvm::Function &f, llvm::TargetLibraryInfoWrapperPass &tli,
                   const ojson &test_input) {
   auto fn = llvm2alive(f, tli.getTLI(f));
+  string input_str = test_input.get_with_default<string>("args", "None");
+
   if (!fn) {
     cerr << "ERROR: Could not translate '" << f.getName().str()
          << "' to Alive IR\n";
@@ -332,8 +334,8 @@ static ojson interpFunction(llvm::Function &f, llvm::TargetLibraryInfoWrapperPas
   // TODO remove this after debugging
   fn->print(cout << "\n----------------------------------------\n");
   // TODO interp should return result values to correctly update successCount 
-  interp_outline(*fn, result, test_input.as<string>());
-  
+  interp_outline(*fn, result, input_str);
+  result["res"] = "foo bar baz";
   return result;
 }
 
