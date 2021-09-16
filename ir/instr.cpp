@@ -12,6 +12,7 @@
 #include "util/interp.h"
 #include <functional>
 #include <iostream>
+#include <memory>
 #include <numeric>
 #include <sstream>
 
@@ -110,7 +111,8 @@ expr Instr::getTypeConstraints() const {
   return {};
 }
 
-ConcreteVal *Instr::concreteEval(Interpreter &interpreter) const {
+std::shared_ptr<util::ConcreteVal>
+Instr::concreteEval(Interpreter &interpreter) const {
   cout << "[Instr::concreteEval] instruction not supported yet, aborting\n";
   return nullptr;
 }
@@ -819,7 +821,8 @@ bool BinOp::isDivOrRem() const {
   }
 }
 
-ConcreteVal *BinOp::concreteEval(Interpreter &interpreter) const {
+std::shared_ptr<util::ConcreteVal>
+BinOp::concreteEval(Interpreter &interpreter) const {
   auto v_op = operands();
   for (auto operand: v_op){
     auto I = interpreter.concrete_vals.find(operand);
@@ -837,141 +840,106 @@ ConcreteVal *BinOp::concreteEval(Interpreter &interpreter) const {
   auto lhs_concrete = interpreter.concrete_vals.find(lhs)->second;
   auto rhs_concrete = interpreter.concrete_vals.find(rhs)->second;
   if (op == Op::Add) {
-    auto lhs_vect = dynamic_cast<ConcreteValVect *>(lhs_concrete);
+    auto lhs_vect = dynamic_cast<ConcreteValVect *>(lhs_concrete.get());
     if (lhs_vect) {
       cout << "bin op encountered vector operand" << '\n';
       auto res_elems = ConcreteValVect::make_elements(lhs);
-      auto v = new ConcreteValVect(false, move(res_elems));
-      return v;
+      return shared_ptr<ConcreteVal>(
+          new ConcreteValVect(false, move(res_elems)));
     }
-    auto v = ConcreteValInt::add(lhs_concrete, rhs_concrete, flags);
-    return v;
-  }
-  else if (op == Op::Sub) {
-    auto v = ConcreteValInt::sub(lhs_concrete, rhs_concrete, flags);
-    return v;
-  }
-  else if (op == Op::Mul) {
-    auto v = ConcreteValInt::mul(lhs_concrete, rhs_concrete, flags);
-    return v;
-  }
-  else if (op == Op::SDiv) {
-    auto v = ConcreteValInt::sdiv(lhs_concrete, rhs_concrete, flags,
-                                  interpreter.UB_flag);
-    return v;
-  }
-  else if (op == Op::UDiv) {
-    auto v = ConcreteValInt::udiv(lhs_concrete, rhs_concrete, flags,
-                                  interpreter.UB_flag);
-    return v;
-  }
-  else if (op == Op::SRem) {
-    auto v = ConcreteValInt::srem(lhs_concrete, rhs_concrete, flags,
-                                  interpreter.UB_flag);
-    return v;
-  }
-  else if (op == Op::URem) {
-    auto v = ConcreteValInt::urem(lhs_concrete, rhs_concrete, flags,
-                                  interpreter.UB_flag);
-    return v;
-  }
-  else if (op == Op::SAdd_Sat) {
-    auto v = ConcreteValInt::sAddSat(lhs_concrete, rhs_concrete, flags);
-    return v;
-  }
-  else if (op == Op::UAdd_Sat) {
-    auto v = ConcreteValInt::uAddSat(lhs_concrete, rhs_concrete, flags);
-    return v;
-  }
-  else if (op == Op::SSub_Sat) {
-    auto v = ConcreteValInt::sSubSat(lhs_concrete, rhs_concrete, flags);
-    return v;
-  }
-  else if (op == Op::USub_Sat) {
-    auto v = ConcreteValInt::uSubSat(lhs_concrete, rhs_concrete, flags);
-    return v;
-  }
-  else if (op == Op::SShl_Sat) {
-    auto v = ConcreteValInt::sShlSat(lhs_concrete, rhs_concrete, flags);
-    return v;
-  }
-  else if (op == Op::UShl_Sat) { 
-    auto v = ConcreteValInt::uShlSat(lhs_concrete, rhs_concrete, flags);
-    return v;
-  }
-  else if (op == Op::FAdd) {
-    auto v = ConcreteValFloat::fadd(lhs_concrete, rhs_concrete, fmath);
-    return v;
-  }
-  else if (op == Op::FSub) {
-    auto v = ConcreteValFloat::fsub(lhs_concrete, rhs_concrete, fmath);
-    return v;
-  }
-  else if (op == Op::FMul) {
-    auto v = ConcreteValFloat::fmul(lhs_concrete, rhs_concrete, fmath);
-    return v;
-  }
-  else if (op == Op::FDiv) {
-    auto v = ConcreteValFloat::fdiv(lhs_concrete, rhs_concrete, fmath);
-    return v;
-  }
-  else if (op == Op::FRem) {
-    auto v = ConcreteValFloat::frem(lhs_concrete, rhs_concrete, fmath);
-    return v;
-  }
-  else if (op == Op::FMax){
-    auto v = ConcreteValFloat::fmax(lhs_concrete, rhs_concrete, fmath);
-    return v;
-  }
-  else if (op == Op::FMin){
-    auto v = ConcreteValFloat::fmin(lhs_concrete, rhs_concrete, fmath);
-    return v;
-  }
-  else if (op == Op::FMaximum){
-    auto v = ConcreteValFloat::fmaximum(lhs_concrete, rhs_concrete, fmath);
-    return v;
-  }
-  else if (op == Op::FMinimum){
-    auto v = ConcreteValFloat::fminimum(lhs_concrete, rhs_concrete, fmath);
-    return v;
-  }
-  else if (op == Op::And){
-    auto v = ConcreteValInt::andOp(lhs_concrete, rhs_concrete);
-    return v;
-  }
-  else if (op == Op::Or){
-    auto v = ConcreteValInt::orOp(lhs_concrete, rhs_concrete);
-    return v;
-  }
-  else if (op == Op::Xor){
-    auto v = ConcreteValInt::xorOp(lhs_concrete, rhs_concrete);
-    return v;
-  }
-  else if (op == Op::Abs){
-    auto v = ConcreteValInt::abs(lhs_concrete, rhs_concrete);
-    return v;
-  }
-  else if (op == Op::LShr) {
-    auto v = ConcreteValInt::lshr(lhs_concrete, rhs_concrete, flags);
-    return v;
-  }
-  else if (op == Op::AShr) {
-    auto v = ConcreteValInt::ashr(lhs_concrete, rhs_concrete, flags);
-    return v;
-  }
-  else if (op == Op::Shl) {
-    auto v = ConcreteValInt::shl(lhs_concrete, rhs_concrete, flags);
-    return v;
-  }
-  else if (op == Op::Cttz) {
-    auto v = ConcreteValInt::cttz(lhs_concrete, rhs_concrete, flags);
-    return v;
-  }
-  else if (op == Op::Ctlz) {
-    auto v = ConcreteValInt::ctlz(lhs_concrete, rhs_concrete, flags);
-    return v;
-  }
-  else{
+    return shared_ptr<ConcreteVal>(
+        ConcreteValInt::add(lhs_concrete.get(), rhs_concrete.get(), flags));
+  } else if (op == Op::Sub) {
+    return shared_ptr<ConcreteVal>(
+        ConcreteValInt::sub(lhs_concrete.get(), rhs_concrete.get(), flags));
+  } else if (op == Op::Mul) {
+    return shared_ptr<ConcreteVal>(
+        ConcreteValInt::mul(lhs_concrete.get(), rhs_concrete.get(), flags));
+  } else if (op == Op::SDiv) {
+    return shared_ptr<ConcreteVal>(ConcreteValInt::sdiv(
+        lhs_concrete.get(), rhs_concrete.get(), flags, interpreter.UB_flag));
+  } else if (op == Op::UDiv) {
+    return shared_ptr<ConcreteVal>(ConcreteValInt::udiv(
+        lhs_concrete.get(), rhs_concrete.get(), flags, interpreter.UB_flag));
+  } else if (op == Op::SRem) {
+    return shared_ptr<ConcreteVal>(ConcreteValInt::srem(
+        lhs_concrete.get(), rhs_concrete.get(), flags, interpreter.UB_flag));
+  } else if (op == Op::URem) {
+    return shared_ptr<ConcreteVal>(ConcreteValInt::urem(
+        lhs_concrete.get(), rhs_concrete.get(), flags, interpreter.UB_flag));
+  } else if (op == Op::SAdd_Sat) {
+    return shared_ptr<ConcreteVal>(
+        ConcreteValInt::sAddSat(lhs_concrete.get(), rhs_concrete.get(), flags));
+  } else if (op == Op::UAdd_Sat) {
+    return shared_ptr<ConcreteVal>(
+        ConcreteValInt::uAddSat(lhs_concrete.get(), rhs_concrete.get(), flags));
+  } else if (op == Op::SSub_Sat) {
+    return shared_ptr<ConcreteVal>(
+        ConcreteValInt::sSubSat(lhs_concrete.get(), rhs_concrete.get(), flags));
+  } else if (op == Op::USub_Sat) {
+    return shared_ptr<ConcreteVal>(
+        ConcreteValInt::uSubSat(lhs_concrete.get(), rhs_concrete.get(), flags));
+  } else if (op == Op::SShl_Sat) {
+    return shared_ptr<ConcreteVal>(
+        ConcreteValInt::sShlSat(lhs_concrete.get(), rhs_concrete.get(), flags));
+  } else if (op == Op::UShl_Sat) {
+    return shared_ptr<ConcreteVal>(
+        ConcreteValInt::uShlSat(lhs_concrete.get(), rhs_concrete.get(), flags));
+  } else if (op == Op::FAdd) {
+    return shared_ptr<ConcreteVal>(
+        ConcreteValFloat::fadd(lhs_concrete.get(), rhs_concrete.get(), fmath));
+  } else if (op == Op::FSub) {
+    return shared_ptr<ConcreteVal>(
+        ConcreteValFloat::fsub(lhs_concrete.get(), rhs_concrete.get(), fmath));
+  } else if (op == Op::FMul) {
+    return shared_ptr<ConcreteVal>(
+        ConcreteValFloat::fmul(lhs_concrete.get(), rhs_concrete.get(), fmath));
+  } else if (op == Op::FDiv) {
+    return shared_ptr<ConcreteVal>(
+        ConcreteValFloat::fdiv(lhs_concrete.get(), rhs_concrete.get(), fmath));
+  } else if (op == Op::FRem) {
+    return shared_ptr<ConcreteVal>(
+        ConcreteValFloat::frem(lhs_concrete.get(), rhs_concrete.get(), fmath));
+  } else if (op == Op::FMax) {
+    return shared_ptr<ConcreteVal>(
+        ConcreteValFloat::fmax(lhs_concrete.get(), rhs_concrete.get(), fmath));
+  } else if (op == Op::FMin) {
+    return shared_ptr<ConcreteVal>(
+        ConcreteValFloat::fmin(lhs_concrete.get(), rhs_concrete.get(), fmath));
+  } else if (op == Op::FMaximum) {
+    return shared_ptr<ConcreteVal>(ConcreteValFloat::fmaximum(
+        lhs_concrete.get(), rhs_concrete.get(), fmath));
+  } else if (op == Op::FMinimum) {
+    return shared_ptr<ConcreteVal>(ConcreteValFloat::fminimum(
+        lhs_concrete.get(), rhs_concrete.get(), fmath));
+  } else if (op == Op::And) {
+    return shared_ptr<ConcreteVal>(
+        ConcreteValInt::andOp(lhs_concrete.get(), rhs_concrete.get()));
+  } else if (op == Op::Or) {
+    return shared_ptr<ConcreteVal>(
+        ConcreteValInt::orOp(lhs_concrete.get(), rhs_concrete.get()));
+  } else if (op == Op::Xor) {
+    return shared_ptr<ConcreteVal>(
+        ConcreteValInt::xorOp(lhs_concrete.get(), rhs_concrete.get()));
+  } else if (op == Op::Abs) {
+    return shared_ptr<ConcreteVal>(
+        ConcreteValInt::abs(lhs_concrete.get(), rhs_concrete.get()));
+  } else if (op == Op::LShr) {
+    return shared_ptr<ConcreteVal>(
+        ConcreteValInt::lshr(lhs_concrete.get(), rhs_concrete.get(), flags));
+  } else if (op == Op::AShr) {
+    return shared_ptr<ConcreteVal>(
+        ConcreteValInt::ashr(lhs_concrete.get(), rhs_concrete.get(), flags));
+  } else if (op == Op::Shl) {
+    return shared_ptr<ConcreteVal>(
+        ConcreteValInt::shl(lhs_concrete.get(), rhs_concrete.get(), flags));
+  } else if (op == Op::Cttz) {
+    return shared_ptr<ConcreteVal>(
+        ConcreteValInt::cttz(lhs_concrete.get(), rhs_concrete.get(), flags));
+  } else if (op == Op::Ctlz) {
+    return shared_ptr<ConcreteVal>(
+        ConcreteValInt::ctlz(lhs_concrete.get(), rhs_concrete.get(), flags));
+  } else {
     cout << "[BinOP:concreteEval] not supported on this instruction yet" << '\n';
     return nullptr;
   }
@@ -1162,56 +1130,37 @@ bool UnaryOp::isFPInstr() const{
   return false;
 }
 
-ConcreteVal *UnaryOp::concreteEval(Interpreter &interpreter) const {
+std::shared_ptr<util::ConcreteVal>
+UnaryOp::concreteEval(Interpreter &interpreter) const {
   auto I = interpreter.concrete_vals.find(val);
   if (I == interpreter.concrete_vals.end()) {
     cout << "[Unary::concreteEval] concrete value for operand not found. Aborting" << '\n';
     assert(false);
   }
 
-  auto operand = I->second;
+  auto operand = I->second.get();
   if (op == Op::FAbs) {
-    auto v = ConcreteValFloat::fabs(operand, fmath);
-    return v;
-  }
-  else if (op == Op::FNeg) {
-    auto v = ConcreteValFloat::fneg(operand, fmath);
-    return v;
-  }
-  if (op == Op::Ceil) {
-    auto v = ConcreteValFloat::ceil(operand, fmath);
-    return v;
-  }
-  else if (op == Op::Floor) {
-    auto v = ConcreteValFloat::floor(operand, fmath);
-    return v;
-  }
-  if (op == Op::Round) {
-    auto v = ConcreteValFloat::round(operand, fmath);
-    return v;
-  }
-  else if (op == Op::RoundEven) {
-    auto v = ConcreteValFloat::roundEven(operand, fmath);
-    return v;
-  }
-  else if (op == Op::Trunc) {
-    auto v = ConcreteValFloat::trunc(operand, fmath);
-    return v;
-  }
-  else if (op == Op::Ctpop) {
-    auto v = ConcreteValInt::ctpop(operand);
-    return v;
-  }
-  else if (op == Op::BitReverse) {
-    auto v = ConcreteValInt::bitreverse(operand);
-    return v;
-  }
-  else if (op == Op::BSwap) {
-    auto v = ConcreteValInt::bswap(operand);
-    return v;
-  }
-  else {
-    cout << "Error: ConcreteEval for unary op nut supported yet" << '\n';
+    return shared_ptr<ConcreteVal>(ConcreteValFloat::fabs(operand, fmath));
+  } else if (op == Op::FNeg) {
+    return shared_ptr<ConcreteVal>(ConcreteValFloat::fneg(operand, fmath));
+  } else if (op == Op::Ceil) {
+    return shared_ptr<ConcreteVal>(ConcreteValFloat::ceil(operand, fmath));
+  } else if (op == Op::Floor) {
+    return shared_ptr<ConcreteVal>(ConcreteValFloat::floor(operand, fmath));
+  } else if (op == Op::Round) {
+    return shared_ptr<ConcreteVal>(ConcreteValFloat::round(operand, fmath));
+  } else if (op == Op::RoundEven) {
+    return shared_ptr<ConcreteVal>(ConcreteValFloat::roundEven(operand, fmath));
+  } else if (op == Op::Trunc) {
+    return shared_ptr<ConcreteVal>(ConcreteValFloat::trunc(operand, fmath));
+  } else if (op == Op::Ctpop) {
+    return shared_ptr<ConcreteVal>(ConcreteValInt::ctpop(operand));
+  } else if (op == Op::BitReverse) {
+    return shared_ptr<ConcreteVal>(ConcreteValInt::bitreverse(operand));
+  } else if (op == Op::BSwap) {
+    return shared_ptr<ConcreteVal>(ConcreteValInt::bswap(operand));
+  } else {
+    cout << "Error: ConcreteEval for unary op not supported yet" << '\n';
     return nullptr;
   }
 
@@ -1412,7 +1361,8 @@ unique_ptr<Instr> TernaryOp::dup(const string &suffix) const {
   return make_unique<TernaryOp>(getType(), getName() + suffix, *a, *b, *c, op);
 }
 
-ConcreteVal *TernaryOp::concreteEval(Interpreter &interpreter) const {
+std::shared_ptr<util::ConcreteVal>
+TernaryOp::concreteEval(Interpreter &interpreter) const {
   auto v_op = operands();  
   for (auto operand: v_op){
     auto I = interpreter.concrete_vals.find(operand);
@@ -1424,16 +1374,15 @@ ConcreteVal *TernaryOp::concreteEval(Interpreter &interpreter) const {
     }
   }
 
-  auto op_a_concrete = interpreter.concrete_vals.find(a)->second;
-  auto op_b_concrete = interpreter.concrete_vals.find(b)->second;
-  auto op_c_concrete = interpreter.concrete_vals.find(c)->second;
+  auto op_a_concrete = interpreter.concrete_vals.find(a)->second.get();
+  auto op_b_concrete = interpreter.concrete_vals.find(b)->second.get();
+  auto op_c_concrete = interpreter.concrete_vals.find(c)->second.get();
 
   if (op == Op::FMA){
-    auto v = ConcreteValFloat::fma(op_a_concrete, op_b_concrete, op_c_concrete);
     // CHECK Should we check the opStatus from the fusedMultipyAdd?
-    return v;
-  }
-  else {
+    return shared_ptr<ConcreteVal>(
+        ConcreteValFloat::fma(op_a_concrete, op_b_concrete, op_c_concrete));
+  } else {
     cout << "ERROR : [TernaryOp::concreteEval] operation not supported yet. Aborting!" << '\n';
     return nullptr;
   }
@@ -1641,28 +1590,26 @@ unique_ptr<Instr> ConversionOp::dup(const string &suffix) const {
   return make_unique<ConversionOp>(getType(), getName() + suffix, *val, op);
 }
 
-ConcreteVal *ConversionOp::concreteEval(Interpreter &interpreter) const {
+std::shared_ptr<util::ConcreteVal>
+ConversionOp::concreteEval(Interpreter &interpreter) const {
   auto I = interpreter.concrete_vals.find(val);
   if (I == interpreter.concrete_vals.end()) {
     cout << "ERROR: [ConversionOp::concreteEval] concrete value for operand not found. Aborting" << '\n';
     assert(false);
   }
 
-  auto op_concrete = I->second;
+  auto op_concrete = I->second.get();
   auto tgt_bitwidth = getType().bits();
   if (op == Op::Trunc) {
-    auto v = ConcreteValInt::iTrunc(op_concrete, tgt_bitwidth);
-    return v;
-  }
-  else if (op == Op::ZExt) {
-    auto v = ConcreteValInt::zext(op_concrete, tgt_bitwidth);
-    return v;
-  }
-  else if (op == Op::SExt) {
-    auto v = ConcreteValInt::sext(op_concrete, tgt_bitwidth);
-    return v;
-  }
-  else {
+    return shared_ptr<ConcreteVal>(
+        ConcreteValInt::iTrunc(op_concrete, tgt_bitwidth));
+  } else if (op == Op::ZExt) {
+    return shared_ptr<ConcreteVal>(
+        ConcreteValInt::zext(op_concrete, tgt_bitwidth));
+  } else if (op == Op::SExt) {
+    return shared_ptr<ConcreteVal>(
+        ConcreteValInt::sext(op_concrete, tgt_bitwidth));
+  } else {
     cout << "ERROR : [ConversionOp::concreteEval] operation not supported yet. Aborting!" << '\n';
     return nullptr;
   }
@@ -1724,33 +1671,18 @@ unique_ptr<Instr> Select::dup(const string &suffix) const {
   return make_unique<Select>(getType(), getName() + suffix, *cond, *a, *b);
 }
 
-ConcreteVal *Select::concreteEval(Interpreter &interpreter) const {
-
+std::shared_ptr<util::ConcreteVal>
+Select::concreteEval(Interpreter &interpreter) const {
   auto a_I = interpreter.concrete_vals.find(a);
   assert(a_I != interpreter.concrete_vals.end());
-  auto& concrete_a = a_I->second;
+  auto &concrete_a = a_I->second;
   auto b_I = interpreter.concrete_vals.find(b);
   assert(b_I != interpreter.concrete_vals.end());
-  auto& concrete_b = b_I->second;
+  auto &concrete_b = b_I->second;
   auto cond_I = interpreter.concrete_vals.find(cond);
   assert(cond_I != interpreter.concrete_vals.end());
-  auto& concrete_cond = cond_I->second;
-  
-  // TODO need to change concreteVal's design to scale
-  if (dynamic_cast<ConcreteValInt *>(concrete_a)) {
-    auto v = ConcreteValInt::select(concrete_cond, concrete_a, concrete_b);
-    return v;
-  }
-  else if (dynamic_cast<ConcreteValFloat *>(concrete_a)) {
-    auto v = ConcreteValFloat::select(concrete_cond, concrete_a, concrete_b);
-    return v;
-  }
-  else {
-    cout << "ERROR : [Select::concreteEval] select instruction on this type not supported yet. Aborting!" << '\n';
-    return nullptr;
-  }
-    
-  UNREACHABLE();
+  auto concrete_cond = cond_I->second.get();
+  return ConcreteValInt::select(concrete_cond, concrete_a, concrete_b);
 }
 
 void ExtractValue::addIdx(unsigned idx) {
@@ -2292,16 +2224,17 @@ unique_ptr<Instr> ICmp::dup(const string &suffix) const {
   return make_unique<ICmp>(getType(), getName() + suffix, cond, *a, *b);
 }
 
-ConcreteVal *ICmp::concreteEval(Interpreter &interpreter) const {
+std::shared_ptr<util::ConcreteVal>
+ICmp::concreteEval(Interpreter &interpreter) const {
   auto a_I = interpreter.concrete_vals.find(a);
   assert(a_I != interpreter.concrete_vals.end());
-  auto& concrete_a = a_I->second;
+  auto concrete_a = a_I->second.get();
   auto b_I = interpreter.concrete_vals.find(b);
   assert(b_I != interpreter.concrete_vals.end());
-  auto& concrete_b = b_I->second;
-  
-  auto v = ConcreteValInt::icmp(concrete_a, concrete_b, cond);
-  return v;
+  auto concrete_b = b_I->second.get();
+
+  return shared_ptr<ConcreteVal>(
+      ConcreteValInt::icmp(concrete_a, concrete_b, cond));
 }
 
 vector<Value*> FCmp::operands() const {
@@ -2386,7 +2319,8 @@ unique_ptr<Instr> FCmp::dup(const string &suffix) const {
   return make_unique<FCmp>(getType(), getName() + suffix, cond, *a, *b, fmath);
 }
 
-ConcreteVal *FCmp::concreteEval(Interpreter &interpreter) const {
+std::shared_ptr<util::ConcreteVal>
+FCmp::concreteEval(Interpreter &interpreter) const {
   return nullptr;
   //TODO support fcmp with vector operands
   /*

@@ -4,8 +4,9 @@
 // Distributed under the MIT license that can be found in the LICENSE file.
 
 #include "ir/value.h"
-#include "llvm/ADT/APInt.h"
 #include "util/concreteval.h"
+#include "llvm/ADT/APInt.h"
+#include <memory>
 #include <string>
 #include <utility>
 #include <vector>
@@ -31,7 +32,8 @@ public:
   smt::expr getTypeConstraints() const override;
   virtual smt::expr getTypeConstraints(const Function &f) const = 0;
   virtual std::unique_ptr<Instr> dup(const std::string &suffix) const = 0;
-  virtual util::ConcreteVal *concreteEval(util::Interpreter &interpreter) const;
+  virtual std::shared_ptr<util::ConcreteVal>
+  concreteEval(util::Interpreter &interpreter) const;
 };
 
 
@@ -63,7 +65,7 @@ public:
   StateValue toSMT(State &s) const override;
   smt::expr getTypeConstraints(const Function &f) const override;
   std::unique_ptr<Instr> dup(const std::string &suffix) const override;
-  util::ConcreteVal *
+  std::shared_ptr<util::ConcreteVal>
   concreteEval(util::Interpreter &interpreter) const override;
 };
 
@@ -95,7 +97,7 @@ public:
   smt::expr getTypeConstraints(const Function &f) const override;
   std::unique_ptr<Instr> dup(const std::string &suffix) const override;
   bool isFPInstr() const;
-  util::ConcreteVal *
+  std::shared_ptr<util::ConcreteVal>
   concreteEval(util::Interpreter &interpreter) const override;
 };
 
@@ -145,7 +147,7 @@ public:
   StateValue toSMT(State &s) const override;
   smt::expr getTypeConstraints(const Function &f) const override;
   std::unique_ptr<Instr> dup(const std::string &suffix) const override;
-  util::ConcreteVal *
+  std::shared_ptr<util::ConcreteVal>
   concreteEval(util::Interpreter &interpreter) const override;
 };
 
@@ -172,7 +174,7 @@ public:
   StateValue toSMT(State &s) const override;
   smt::expr getTypeConstraints(const Function &f) const override;
   std::unique_ptr<Instr> dup(const std::string &suffix) const override;
-  util::ConcreteVal *
+  std::shared_ptr<util::ConcreteVal>
   concreteEval(util::Interpreter &interpreter) const override;
 };
 
@@ -194,7 +196,7 @@ public:
   StateValue toSMT(State &s) const override;
   smt::expr getTypeConstraints(const Function &f) const override;
   std::unique_ptr<Instr> dup(const std::string &suffix) const override;
-  util::ConcreteVal *
+  std::shared_ptr<util::ConcreteVal>
   concreteEval(util::Interpreter &interpreter) const override;
 };
 
@@ -265,7 +267,7 @@ public:
   StateValue toSMT(State &s) const override;
   smt::expr getTypeConstraints(const Function &f) const override;
   std::unique_ptr<Instr> dup(const std::string &suffix) const override;
-  util::ConcreteVal *
+  std::shared_ptr<util::ConcreteVal>
   concreteEval(util::Interpreter &interpreter) const override;
 };
 
@@ -291,7 +293,7 @@ public:
   StateValue toSMT(State &s) const override;
   smt::expr getTypeConstraints(const Function &f) const override;
   std::unique_ptr<Instr> dup(const std::string &suffix) const override;
-  util::ConcreteVal *
+  std::shared_ptr<util::ConcreteVal>
   concreteEval(util::Interpreter &interpreter) const override;
 };
 

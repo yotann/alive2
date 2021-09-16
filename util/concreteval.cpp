@@ -771,24 +771,15 @@ namespace util{
     return v;
   }
 
-  ConcreteVal* ConcreteValInt::select(ConcreteVal* cond, ConcreteVal* a, ConcreteVal* b) {
+  shared_ptr<ConcreteVal> ConcreteValInt::select(ConcreteVal *cond,
+                                                 shared_ptr<ConcreteVal> &a,
+                                                 shared_ptr<ConcreteVal> &b) {
     auto cond_int = dynamic_cast<ConcreteValInt *>(cond);
-    auto a_int = dynamic_cast<ConcreteValInt *>(a);
-    auto b_int = dynamic_cast<ConcreteValInt *>(b);
-    assert(cond_int && a_int && b_int);
-    auto poison_res = evalPoison(cond_int, a_int, b_int);
-    if (poison_res) 
-      return poison_res;
-
-    if (cond_int->getBoolVal()) {
-      auto v = new ConcreteValInt(*a_int);
-      return v;
-    }
-    else {
-      auto v = new ConcreteValInt(*b_int);
-      return v;
-    }
-    UNREACHABLE();
+    assert(cond_int);
+    auto poison_res = evalPoison(cond_int, a.get(), b.get());
+    if (poison_res)
+      return shared_ptr<ConcreteVal>(poison_res);
+    return cond_int->getBoolVal() ? a : b;
   }
 
   ConcreteVal* ConcreteValInt::icmp(ConcreteVal* a, ConcreteVal* b, unsigned cond) {
@@ -1323,26 +1314,6 @@ namespace util{
     // Should we check the opStatus from the fusedMultipyAdd
     v->val.fusedMultiplyAdd(b_float->val, c_float->val, llvm::APFloatBase::rmNearestTiesToEven);
     return v; 
-  }
-
-   ConcreteVal* ConcreteValFloat::select(ConcreteVal* cond, ConcreteVal* a, ConcreteVal* b) {
-    auto cond_int = dynamic_cast<ConcreteValInt *>(cond);
-    auto a_float = dynamic_cast<ConcreteValFloat *>(a);
-    auto b_float = dynamic_cast<ConcreteValFloat *>(b);
-    assert(cond_int && a_float && b_float);
-    auto poison_res = evalPoison(cond_int, a_float, b_float);
-    if (poison_res) 
-      return poison_res;
-
-    if (cond_int->getBoolVal()) {
-      auto v = new ConcreteValFloat(*a_float);
-      return v;
-    }
-    else {
-      auto v = new ConcreteValFloat(*b_float);
-      return v;
-    }
-    UNREACHABLE();
   }
 
   void ConcreteValFloat::print() { 

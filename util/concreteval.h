@@ -94,7 +94,9 @@ namespace util {
     static ConcreteVal* iTrunc(ConcreteVal* op, unsigned tgt_bitwidth);
     static ConcreteVal* zext(ConcreteVal* op, unsigned tgt_bitwidth);
     static ConcreteVal* sext(ConcreteVal* op, unsigned tgt_bitwidth);
-    static ConcreteVal* select(ConcreteVal* cond, ConcreteVal* a, ConcreteVal* b);
+    static std::shared_ptr<ConcreteVal> select(ConcreteVal *cond,
+                                               std::shared_ptr<ConcreteVal> &a,
+                                               std::shared_ptr<ConcreteVal> &b);
     static ConcreteVal* icmp(ConcreteVal* a, ConcreteVal* b, unsigned cond);
   }; 
 
@@ -132,7 +134,6 @@ namespace util {
     static ConcreteVal* fmaximum(ConcreteVal* lhs, ConcreteVal* rhs, IR::FastMathFlags fmath);
     static ConcreteVal* fminimum(ConcreteVal* lhs, ConcreteVal* rhs, IR::FastMathFlags fmath);
     static ConcreteVal* fma(ConcreteVal* a, ConcreteVal* b, ConcreteVal* c);
-    static ConcreteVal* select(ConcreteVal* cond, ConcreteVal* a, ConcreteVal* b);
   };
 
   class ConcreteValVect : public ConcreteVal {

@@ -4,6 +4,7 @@
 // Distributed under the MIT license that can be found in the LICENSE file.
 
 #include <map>
+#include <memory>
 
 namespace IR {
 class BasicBlock;
@@ -40,7 +41,7 @@ public:
     return isReturned() || isUndefined() || isUnsupported();
   }
 
-  std::map<const IR::Value *, ConcreteVal *> concrete_vals;
+  std::map<const IR::Value *, std::shared_ptr<ConcreteVal>> concrete_vals;
   const IR::BasicBlock *pred_block = nullptr;
   const IR::BasicBlock *cur_block = nullptr;
   unsigned pos_in_block = 0;

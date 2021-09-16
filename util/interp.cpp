@@ -158,15 +158,14 @@ void Interpreter::step() {
     auto v_op = i.operands();
     assert(v_op.size() == 1);
     assert(concrete_vals.find(v_op[0]) != concrete_vals.end());
-    return_value = concrete_vals[v_op[0]];
+    return_value = concrete_vals[v_op[0]].get();
     cout << "Interpreter return result:" << '\n';
     return_value->print();
     cur_block = nullptr;
     return;
   } else if (dynamic_cast<const JumpInstr *>(&i)) {
     // cout << "jump inst: " << i << '\n';
-    auto br_ptr = dynamic_cast<const Branch *>(&i);
-    if (br_ptr) {
+    if (auto br_ptr = dynamic_cast<const Branch *>(&i)) {
       if (!br_ptr->getCondPtr()) { // unconditional branch
         // cout << "unconditional branch" << '\n';
         assert(br_ptr->getTruePtr());
@@ -184,7 +183,7 @@ void Interpreter::step() {
         assert(
             I !=
             concrete_vals.end()); // condition must be evaluated at this point
-        auto concrete_cond_val = I->second;
+        auto concrete_cond_val = I->second.get();
         if (concrete_cond_val->isPoison()) {
           UB_flag = true;
           cout << "branch condition val is poison. This results in UB" << '\n';
@@ -193,73 +192,23 @@ void Interpreter::step() {
           pred_block = cur_block;
           auto condVar = dynamic_cast<ConcreteValInt *>(concrete_cond_val);
           assert(condVar);
-          // if (concrete_cond_val->getVal().getBoolValue()) {
-          if (condVar->getBoolVal()) {
-            cur_block = br_ptr->getTruePtr();
-          } else {
-            cur_block = br_ptr->getFalsePtr();
-          }
+          cur_block = condVar->getBoolVal() ? br_ptr->getTruePtr()
+                                            : br_ptr->getFalsePtr();
           pos_in_block = 0;
         }
       }
     }
-  } else if (dynamic_cast<const Phi *>(&i)) {
+  } else if (auto phi_ptr = dynamic_cast<const Phi *>(&i)) {
     assert(pred_block);
-    auto phi_ptr = dynamic_cast<const Phi *>(&i);
     const auto &phi_vals = phi_ptr->getValues();
     // read pred_block to determine which phi value to choose
     for (auto &[phi_val_ptr, phi_label] : phi_vals) {
       // What to do if the phi_val is poison?
-      if (pred_block->getName() != phi_label) {
+      if (pred_block->getName() != phi_label)
         continue;
-      }
-
       auto phi_val_concrete_I = concrete_vals.find(phi_val_ptr);
       assert(phi_val_concrete_I != concrete_vals.end());
-      auto phi_concrete_I = concrete_vals.find(phi_ptr);
-      // CHECK super ugly code. neet to cleanup
-      if (phi_concrete_I == concrete_vals.end()) {
-        if (dynamic_cast<ConcreteValInt *>(phi_val_concrete_I->second)) {
-          auto ptr = dynamic_cast<ConcreteValInt *>(phi_val_concrete_I->second);
-          auto new_val = new ConcreteValInt(*ptr);
-          concrete_vals.emplace(phi_ptr, new_val);
-        } else if (dynamic_cast<ConcreteValFloat *>(
-                       phi_val_concrete_I->second)) {
-          auto ptr =
-              dynamic_cast<ConcreteValFloat *>(phi_val_concrete_I->second);
-          auto new_val = new ConcreteValFloat(*ptr);
-          concrete_vals.emplace(phi_ptr, new_val);
-        } else {
-          cout << "ERROR: alive-interp doesn't support phi instructions with "
-                  "this type yet. Aborting!"
-               << '\n';
-          unsupported_flag = true;
-          return;
-        }
-      } else {
-        if (dynamic_cast<ConcreteValInt *>(phi_val_concrete_I->second)) {
-          auto res_ptr = dynamic_cast<ConcreteValInt *>(concrete_vals[phi_ptr]);
-          auto ptr = dynamic_cast<ConcreteValInt *>(phi_val_concrete_I->second);
-          auto phi_int = llvm::APInt(ptr->getVal());
-          res_ptr->setVal(phi_int);
-        } else if (dynamic_cast<ConcreteValFloat *>(
-                       phi_val_concrete_I->second)) {
-          auto res_ptr =
-              dynamic_cast<ConcreteValFloat *>(concrete_vals[phi_ptr]);
-          auto ptr =
-              dynamic_cast<ConcreteValFloat *>(phi_val_concrete_I->second);
-          auto phi_float = llvm::APFloat(ptr->getVal());
-          res_ptr->setVal(phi_float);
-        } else {
-          cout << "ERROR: alive-interp doesn't support phi instructions with "
-                  "this type yet. Aborting!"
-               << '\n';
-          unsupported_flag = true;
-          return;
-        }
-        // auto new_phi_val = phi_val_concrete_I->second->getVal();
-        // concrete_vals[phi_ptr]->setVal(new_phi_val);
-      }
+      concrete_vals[phi_ptr] = phi_val_concrete_I->second;
       break;
     }
   } else {
@@ -269,12 +218,7 @@ void Interpreter::step() {
       unsupported_flag = true;
       return;
     }
-    auto I = concrete_vals.find(&i);
-    if (I == concrete_vals.end()) {
-      concrete_vals.emplace(&i, res_val);
-    } else {
-      concrete_vals[&i] = res_val;
-    }
+    concrete_vals[&i] = res_val;
   }
 }
 
@@ -287,12 +231,6 @@ void Interpreter::run(unsigned instr_limit) {
 }
 
 Interpreter::~Interpreter() {
-  // FIXME: when a concrete_vals entry is changed repeatedly in a loop, only
-  // the last value is freed.
-  for (auto [val, c_val] : concrete_vals) {
-    delete c_val;
-  }
-  concrete_vals.clear();
 }
 
 void interp(Function &f) {
