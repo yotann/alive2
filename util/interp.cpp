@@ -154,92 +154,7 @@ void Interpreter::step() {
   cout << "cur inst: ";
   i.print(cout);
   cout << '\n';
-  if (dynamic_cast<const BinOp *>(&i)) {
-    auto v_op = i.operands();
-    // i.print(cout);
-    // cout << '\n';
-    auto ptr = dynamic_cast<const BinOp *>(&i);
-    auto res_val = ptr->concreteEval(concrete_vals, UB_flag);
-    if (!res_val) {
-      unsupported_flag = true;
-      return;
-    }
-    auto I = concrete_vals.find(ptr);
-    if (I == concrete_vals.end()) {
-      concrete_vals.emplace(ptr, res_val);
-    } else {
-      concrete_vals[ptr] = res_val;
-    }
-  } else if (dynamic_cast<const UnaryOp *>(&i)) {
-    auto ptr = dynamic_cast<const UnaryOp *>(&i);
-    auto res_val = ptr->concreteEval(concrete_vals);
-    if (!res_val) {
-      unsupported_flag = true;
-      return;
-    }
-    auto I = concrete_vals.find(ptr);
-    if (I == concrete_vals.end()) {
-      concrete_vals.emplace(ptr, res_val);
-    } else {
-      concrete_vals[ptr] = res_val;
-    }
-  } else if (dynamic_cast<const ConversionOp *>(&i)) {
-    // auto v_op = i.operands();
-    // cout << "conv ops len" << v_op.size() << '\n';
-    // cout << i.getType().toString() << '\n';
-    auto ptr = dynamic_cast<const ConversionOp *>(&i);
-    auto res_val = ptr->concreteEval(concrete_vals);
-    if (!res_val) {
-      unsupported_flag = true;
-      return;
-    }
-    auto I = concrete_vals.find(ptr);
-    if (I == concrete_vals.end()) {
-      concrete_vals.emplace(ptr, res_val);
-    } else {
-      concrete_vals[ptr] = res_val;
-    }
-  } else if (dynamic_cast<const ICmp *>(&i)) {
-    auto icmp_ptr = dynamic_cast<const ICmp *>(&i);
-    auto res_val = icmp_ptr->concreteEval(concrete_vals);
-    if (!res_val) {
-      unsupported_flag = true;
-      return;
-    }
-    auto I = concrete_vals.find(icmp_ptr);
-    if (I == concrete_vals.end()) {
-      concrete_vals.emplace(icmp_ptr, res_val);
-    } else {
-      concrete_vals[icmp_ptr] = res_val;
-    }
-  } else if (dynamic_cast<const FCmp *>(&i)) {
-    auto fcmp_ptr = dynamic_cast<const FCmp *>(&i);
-    auto res_val = fcmp_ptr->concreteEval(concrete_vals);
-    if (!res_val) {
-      unsupported_flag = true;
-      return;
-    }
-    auto I = concrete_vals.find(fcmp_ptr);
-    if (I == concrete_vals.end()) {
-      concrete_vals.emplace(fcmp_ptr, res_val);
-    } else {
-      concrete_vals[fcmp_ptr] = res_val;
-    }
-  } else if (dynamic_cast<const Select *>(&i)) {
-    // cout << "ICMP instr" << '\n';
-    auto select_ptr = dynamic_cast<const Select *>(&i);
-    auto res_val = select_ptr->concreteEval(concrete_vals);
-    if (!res_val) {
-      unsupported_flag = true;
-      return;
-    }
-    auto I = concrete_vals.find(select_ptr);
-    if (I == concrete_vals.end()) {
-      concrete_vals.emplace(select_ptr, res_val);
-    } else {
-      concrete_vals[select_ptr] = res_val;
-    }
-  } else if (dynamic_cast<const Return *>(&i)) {
+  if (dynamic_cast<const Return *>(&i)) {
     auto v_op = i.operands();
     assert(v_op.size() == 1);
     assert(concrete_vals.find(v_op[0]) != concrete_vals.end());
@@ -348,9 +263,18 @@ void Interpreter::step() {
       break;
     }
   } else {
-    cout << "AliveExec-Error : unsupported instruction. Aborting" << '\n';
-    unsupported_flag = true;
-    return;
+    auto res_val = i.concreteEval(*this);
+    if (!res_val) {
+      cout << "AliveExec-Error : unsupported instruction. Aborting" << '\n';
+      unsupported_flag = true;
+      return;
+    }
+    auto I = concrete_vals.find(&i);
+    if (I == concrete_vals.end()) {
+      concrete_vals.emplace(&i, res_val);
+    } else {
+      concrete_vals[&i] = res_val;
+    }
   }
 }
 

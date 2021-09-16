@@ -12,6 +12,7 @@
 
 namespace util {
   class ConcreteVal;
+  class Interpreter;
 }
 
 namespace IR {
@@ -30,6 +31,7 @@ public:
   smt::expr getTypeConstraints() const override;
   virtual smt::expr getTypeConstraints(const Function &f) const = 0;
   virtual std::unique_ptr<Instr> dup(const std::string &suffix) const = 0;
+  virtual util::ConcreteVal *concreteEval(util::Interpreter &interpreter) const;
 };
 
 
@@ -61,7 +63,8 @@ public:
   StateValue toSMT(State &s) const override;
   smt::expr getTypeConstraints(const Function &f) const override;
   std::unique_ptr<Instr> dup(const std::string &suffix) const override;
-  util::ConcreteVal* concreteEval(std::map<const Value*, util::ConcreteVal*> &concrete_vals, bool &UB_flag) const;//TODO probably need to declare this in Instr
+  util::ConcreteVal *
+  concreteEval(util::Interpreter &interpreter) const override;
 };
 
 
@@ -92,7 +95,8 @@ public:
   smt::expr getTypeConstraints(const Function &f) const override;
   std::unique_ptr<Instr> dup(const std::string &suffix) const override;
   bool isFPInstr() const;
-  util::ConcreteVal* concreteEval(std::map<const Value*, util::ConcreteVal*> &concrete_vals) const;
+  util::ConcreteVal *
+  concreteEval(util::Interpreter &interpreter) const override;
 };
 
 
@@ -141,7 +145,8 @@ public:
   StateValue toSMT(State &s) const override;
   smt::expr getTypeConstraints(const Function &f) const override;
   std::unique_ptr<Instr> dup(const std::string &suffix) const override;
-  util::ConcreteVal* concreteEval(std::map<const Value*, util::ConcreteVal*> &concrete_vals) const;
+  util::ConcreteVal *
+  concreteEval(util::Interpreter &interpreter) const override;
 };
 
 
@@ -167,7 +172,8 @@ public:
   StateValue toSMT(State &s) const override;
   smt::expr getTypeConstraints(const Function &f) const override;
   std::unique_ptr<Instr> dup(const std::string &suffix) const override;
-  util::ConcreteVal* concreteEval(std::map<const Value*, util::ConcreteVal*> &concrete_vals) const;
+  util::ConcreteVal *
+  concreteEval(util::Interpreter &interpreter) const override;
 };
 
 
@@ -188,7 +194,8 @@ public:
   StateValue toSMT(State &s) const override;
   smt::expr getTypeConstraints(const Function &f) const override;
   std::unique_ptr<Instr> dup(const std::string &suffix) const override;
-  util::ConcreteVal* concreteEval(std::map<const Value*, util::ConcreteVal*> &concrete_vals) const;//TODO probably need to declare this in Instr
+  util::ConcreteVal *
+  concreteEval(util::Interpreter &interpreter) const override;
 };
 
 
@@ -258,7 +265,8 @@ public:
   StateValue toSMT(State &s) const override;
   smt::expr getTypeConstraints(const Function &f) const override;
   std::unique_ptr<Instr> dup(const std::string &suffix) const override;
-  util::ConcreteVal* concreteEval(std::map<const Value*, util::ConcreteVal*> &concrete_vals) const;
+  util::ConcreteVal *
+  concreteEval(util::Interpreter &interpreter) const override;
 };
 
 
@@ -283,7 +291,8 @@ public:
   StateValue toSMT(State &s) const override;
   smt::expr getTypeConstraints(const Function &f) const override;
   std::unique_ptr<Instr> dup(const std::string &suffix) const override;
-  util::ConcreteVal * concreteEval(std::map<const Value *, util::ConcreteVal *> &concrete_vals) const;
+  util::ConcreteVal *
+  concreteEval(util::Interpreter &interpreter) const override;
 };
 
 

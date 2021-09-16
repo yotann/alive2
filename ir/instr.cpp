@@ -9,10 +9,11 @@
 #include "smt/exprs.h"
 #include "smt/solver.h"
 #include "util/compiler.h"
+#include "util/interp.h"
 #include <functional>
+#include <iostream>
 #include <numeric>
 #include <sstream>
-#include <iostream>
 
 using namespace smt;
 using namespace util;
@@ -109,6 +110,10 @@ expr Instr::getTypeConstraints() const {
   return {};
 }
 
+ConcreteVal *Instr::concreteEval(Interpreter &interpreter) const {
+  cout << "[Instr::concreteEval] instruction not supported yet, aborting\n";
+  return nullptr;
+}
 
 BinOp::BinOp(Type &type, string &&name, Value &lhs, Value &rhs, Op op,
              unsigned flags, FastMathFlags fmath)
@@ -814,22 +819,23 @@ bool BinOp::isDivOrRem() const {
   }
 }
 
-util::ConcreteVal * BinOp::concreteEval(std::map<const Value *, util::ConcreteVal *> &concrete_vals, bool &UB_flag) const{
+ConcreteVal *BinOp::concreteEval(Interpreter &interpreter) const {
   auto v_op = operands();
   for (auto operand: v_op){
-      auto I = concrete_vals.find(operand);
-      if (I == concrete_vals.end()){
-        cout << "[BinOp::concreteEval] concrete values for operand not found. Aborting" << '\n';
-        assert(false);
-      }
+    auto I = interpreter.concrete_vals.find(operand);
+    if (I == interpreter.concrete_vals.end()) {
+      cout << "[BinOp::concreteEval] concrete values for operand not found. "
+              "Aborting\n";
+      assert(false);
+    }
   }  
   
   // bool firstOp = true;
   // bool nsw_flag = flags & NSW;
   // bool nuw_flag = flags & NUW;
   // bool exact_flag = flags & Exact;
-  auto lhs_concrete = concrete_vals.find(lhs)->second;
-  auto rhs_concrete = concrete_vals.find(rhs)->second;
+  auto lhs_concrete = interpreter.concrete_vals.find(lhs)->second;
+  auto rhs_concrete = interpreter.concrete_vals.find(rhs)->second;
   if (op == Op::Add) {
     auto lhs_vect = dynamic_cast<ConcreteValVect *>(lhs_concrete);
     if (lhs_vect) {
@@ -850,19 +856,23 @@ util::ConcreteVal * BinOp::concreteEval(std::map<const Value *, util::ConcreteVa
     return v;
   }
   else if (op == Op::SDiv) {
-    auto v = ConcreteValInt::sdiv(lhs_concrete, rhs_concrete, flags, UB_flag);
+    auto v = ConcreteValInt::sdiv(lhs_concrete, rhs_concrete, flags,
+                                  interpreter.UB_flag);
     return v;
   }
   else if (op == Op::UDiv) {
-    auto v = ConcreteValInt::udiv(lhs_concrete, rhs_concrete, flags, UB_flag);
+    auto v = ConcreteValInt::udiv(lhs_concrete, rhs_concrete, flags,
+                                  interpreter.UB_flag);
     return v;
   }
   else if (op == Op::SRem) {
-    auto v = ConcreteValInt::srem(lhs_concrete, rhs_concrete, flags, UB_flag);
+    auto v = ConcreteValInt::srem(lhs_concrete, rhs_concrete, flags,
+                                  interpreter.UB_flag);
     return v;
   }
   else if (op == Op::URem) {
-    auto v = ConcreteValInt::urem(lhs_concrete, rhs_concrete, flags, UB_flag);
+    auto v = ConcreteValInt::urem(lhs_concrete, rhs_concrete, flags,
+                                  interpreter.UB_flag);
     return v;
   }
   else if (op == Op::SAdd_Sat) {
@@ -963,10 +973,10 @@ util::ConcreteVal * BinOp::concreteEval(std::map<const Value *, util::ConcreteVa
   }
   else{
     cout << "[BinOP:concreteEval] not supported on this instruction yet" << '\n';
+    return nullptr;
   }
   UNREACHABLE();
 }
-
 
 vector<Value*> UnaryOp::operands() const {
   return { val };
@@ -1152,13 +1162,13 @@ bool UnaryOp::isFPInstr() const{
   return false;
 }
 
-util::ConcreteVal * UnaryOp::concreteEval(std::map<const Value *, util::ConcreteVal *> &concrete_vals) const{
-  auto I = concrete_vals.find(val);
-  if (I == concrete_vals.end()){
+ConcreteVal *UnaryOp::concreteEval(Interpreter &interpreter) const {
+  auto I = interpreter.concrete_vals.find(val);
+  if (I == interpreter.concrete_vals.end()) {
     cout << "[Unary::concreteEval] concrete value for operand not found. Aborting" << '\n';
     assert(false);
   }
-  
+
   auto operand = I->second;
   if (op == Op::FAbs) {
     auto v = ConcreteValFloat::fabs(operand, fmath);
@@ -1205,7 +1215,7 @@ util::ConcreteVal * UnaryOp::concreteEval(std::map<const Value *, util::Concrete
     return nullptr;
   }
 
-  UNREACHABLE(); 
+  UNREACHABLE();
 }
 
 vector<Value*> UnaryReductionOp::operands() const {
@@ -1402,20 +1412,21 @@ unique_ptr<Instr> TernaryOp::dup(const string &suffix) const {
   return make_unique<TernaryOp>(getType(), getName() + suffix, *a, *b, *c, op);
 }
 
-util::ConcreteVal * TernaryOp::concreteEval(std::map<const Value *, util::ConcreteVal *> &concrete_vals) const{
-  
+ConcreteVal *TernaryOp::concreteEval(Interpreter &interpreter) const {
   auto v_op = operands();  
   for (auto operand: v_op){
-      auto I = concrete_vals.find(operand);
-      if (I == concrete_vals.end()){
-        cout << "ERROR : [TernaryOp::concreteEval] concrete values for operand not found. Aborting!" << '\n';
-        assert(false);
-      }
+    auto I = interpreter.concrete_vals.find(operand);
+    if (I == interpreter.concrete_vals.end()) {
+      cout << "ERROR : [TernaryOp::concreteEval] concrete values for operand "
+              "not found. Aborting!"
+           << '\n';
+      assert(false);
+    }
   }
-  
-  auto op_a_concrete = concrete_vals.find(a)->second;
-  auto op_b_concrete = concrete_vals.find(b)->second;
-  auto op_c_concrete = concrete_vals.find(c)->second;
+
+  auto op_a_concrete = interpreter.concrete_vals.find(a)->second;
+  auto op_b_concrete = interpreter.concrete_vals.find(b)->second;
+  auto op_c_concrete = interpreter.concrete_vals.find(c)->second;
 
   if (op == Op::FMA){
     auto v = ConcreteValFloat::fma(op_a_concrete, op_b_concrete, op_c_concrete);
@@ -1630,9 +1641,9 @@ unique_ptr<Instr> ConversionOp::dup(const string &suffix) const {
   return make_unique<ConversionOp>(getType(), getName() + suffix, *val, op);
 }
 
-util::ConcreteVal * ConversionOp::concreteEval(std::map<const Value *, util::ConcreteVal *> &concrete_vals) const{
-  auto I = concrete_vals.find(val);
-  if (I == concrete_vals.end()){
+ConcreteVal *ConversionOp::concreteEval(Interpreter &interpreter) const {
+  auto I = interpreter.concrete_vals.find(val);
+  if (I == interpreter.concrete_vals.end()) {
     cout << "ERROR: [ConversionOp::concreteEval] concrete value for operand not found. Aborting" << '\n';
     assert(false);
   }
@@ -1713,16 +1724,16 @@ unique_ptr<Instr> Select::dup(const string &suffix) const {
   return make_unique<Select>(getType(), getName() + suffix, *cond, *a, *b);
 }
 
-util::ConcreteVal * Select::concreteEval(std::map<const Value *, util::ConcreteVal *> &concrete_vals) const {
+ConcreteVal *Select::concreteEval(Interpreter &interpreter) const {
 
-  auto a_I = concrete_vals.find(a);
-  assert(a_I != concrete_vals.end());
+  auto a_I = interpreter.concrete_vals.find(a);
+  assert(a_I != interpreter.concrete_vals.end());
   auto& concrete_a = a_I->second;
-  auto b_I = concrete_vals.find(b);
-  assert(b_I != concrete_vals.end());
+  auto b_I = interpreter.concrete_vals.find(b);
+  assert(b_I != interpreter.concrete_vals.end());
   auto& concrete_b = b_I->second;
-  auto cond_I = concrete_vals.find(cond);
-  assert(cond_I != concrete_vals.end());
+  auto cond_I = interpreter.concrete_vals.find(cond);
+  assert(cond_I != interpreter.concrete_vals.end());
   auto& concrete_cond = cond_I->second;
   
   // TODO need to change concreteVal's design to scale
@@ -1739,9 +1750,8 @@ util::ConcreteVal * Select::concreteEval(std::map<const Value *, util::ConcreteV
     return nullptr;
   }
     
-  UNREACHABLE();  
+  UNREACHABLE();
 }
-
 
 void ExtractValue::addIdx(unsigned idx) {
   idxs.emplace_back(idx);
@@ -2282,18 +2292,17 @@ unique_ptr<Instr> ICmp::dup(const string &suffix) const {
   return make_unique<ICmp>(getType(), getName() + suffix, cond, *a, *b);
 }
 
-util::ConcreteVal * ICmp::concreteEval(std::map<const Value *, util::ConcreteVal *> &concrete_vals) const{
-  auto a_I = concrete_vals.find(a);
-  assert(a_I != concrete_vals.end());
+ConcreteVal *ICmp::concreteEval(Interpreter &interpreter) const {
+  auto a_I = interpreter.concrete_vals.find(a);
+  assert(a_I != interpreter.concrete_vals.end());
   auto& concrete_a = a_I->second;
-  auto b_I = concrete_vals.find(b);
-  assert(b_I != concrete_vals.end());
+  auto b_I = interpreter.concrete_vals.find(b);
+  assert(b_I != interpreter.concrete_vals.end());
   auto& concrete_b = b_I->second;
   
   auto v = ConcreteValInt::icmp(concrete_a, concrete_b, cond);
   return v;
 }
-
 
 vector<Value*> FCmp::operands() const {
   return { a, b };
@@ -2377,9 +2386,8 @@ unique_ptr<Instr> FCmp::dup(const string &suffix) const {
   return make_unique<FCmp>(getType(), getName() + suffix, cond, *a, *b, fmath);
 }
 
-util::ConcreteVal * FCmp::concreteEval(std::map<const Value *, util::ConcreteVal *> &concrete_vals) const{
-  auto v = new ConcreteValFloat(false, llvm::APFloat(0.0));
-  return v;
+ConcreteVal *FCmp::concreteEval(Interpreter &interpreter) const {
+  return nullptr;
   //TODO support fcmp with vector operands
   /*
   auto v = new ConcreteVal();
@@ -2507,7 +2515,6 @@ util::ConcreteVal * FCmp::concreteEval(std::map<const Value *, util::ConcreteVal
   return v;
   */
 }
-
 
 vector<Value*> Freeze::operands() const {
   return { val };
