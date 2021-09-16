@@ -42,32 +42,16 @@ endmacro(remove_flags)
 remove_flags(-DNDEBUG)
 
 list(APPEND CMAKE_MODULE_PATH "${PROJECT_SOURCE_DIR}/cmake")
+list(APPEND CMAKE_MODULE_PATH "${PROJECT_SOURCE_DIR}/third_party/cmake-modules")
 
 if (CYGWIN)
   set(CMAKE_FIND_LIBRARY_SUFFIXES ".dll")
 endif()
 
-find_package(Git REQUIRED)
-add_custom_command(
-  OUTPUT "${PROJECT_BINARY_DIR}/version_gen.h.tmp"
-  COMMAND "${CMAKE_COMMAND}" -E echo_append "#define ALIVE_VERSION_MACRO " > "${PROJECT_BINARY_DIR}/version_gen.h.tmp"
-  COMMAND "${GIT_EXECUTABLE}" describe --tags --dirty --always >> "${PROJECT_BINARY_DIR}/version_gen.h.tmp"
-  WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}"
-  VERBATIM
-)
-add_custom_command(
-  DEPENDS "${PROJECT_BINARY_DIR}/version_gen.h.tmp"
-  OUTPUT "${PROJECT_BINARY_DIR}/version_gen.h"
-  COMMAND "${CMAKE_COMMAND}" -E copy_if_different "${PROJECT_BINARY_DIR}/version_gen.h.tmp" "${PROJECT_BINARY_DIR}/version_gen.h"
-  COMMAND "${CMAKE_COMMAND}" -E remove -f "${PROJECT_BINARY_DIR}/version_gen.h.tmp"
-  WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}"
-  VERBATIM
-)
-add_custom_target(
-  generate_version ALL
-  DEPENDS "${PROJECT_BINARY_DIR}/version_gen.h"
-  WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}"
-)
+include(GetRevisionDescription)
+get_revision_description(REVISION_DESCRIPTION_FINAL)
+configure_file("${CMAKE_SOURCE_DIR}/util/version_gen.h.in"
+  "${CMAKE_BINARY_DIR}/version_gen.h")
 
 find_package(ZLIB)
 find_package(Z3 4.8.5 REQUIRED)
@@ -165,10 +149,8 @@ set(UTIL_EXEC_SRCS
 )
 
 add_library(util STATIC ${UTIL_SRCS})
-add_dependencies(util generate_version)
 
 add_library(util_exec STATIC ${UTIL_EXEC_SRCS})
-add_dependencies(util_exec generate_version)
 
 set(ALIVE_LIBS ir smt tools util)
 set(ALIVE_EXEC_LIBS ir smt tools util_exec)
