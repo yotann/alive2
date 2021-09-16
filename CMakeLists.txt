@@ -159,7 +159,6 @@ set(UTIL_EXEC_SRCS
   util/random.cpp
   util/sort.cpp
   util/stopwatch.cpp
-  #util/exec.cpp
   util/unionfind.cpp
   util/concreteval.cpp
   util/interp.cpp
