@@ -1409,7 +1409,7 @@ util::ConcreteVal * TernaryOp::concreteEval(std::map<const Value *, util::Concre
       auto I = concrete_vals.find(operand);
       if (I == concrete_vals.end()){
         cout << "ERROR : [TernaryOp::concreteEval] concrete values for operand not found. Aborting!" << '\n';
-        exit(EXIT_FAILURE);
+        assert(false);
       }
   }
   
@@ -1424,7 +1424,7 @@ util::ConcreteVal * TernaryOp::concreteEval(std::map<const Value *, util::Concre
   }
   else {
     cout << "ERROR : [TernaryOp::concreteEval] operation not supported yet. Aborting!" << '\n';
-    exit(EXIT_FAILURE);
+    return nullptr;
   }
 
   UNREACHABLE();
@@ -1634,7 +1634,7 @@ util::ConcreteVal * ConversionOp::concreteEval(std::map<const Value *, util::Con
   auto I = concrete_vals.find(val);
   if (I == concrete_vals.end()){
     cout << "ERROR: [ConversionOp::concreteEval] concrete value for operand not found. Aborting" << '\n';
-    exit(EXIT_FAILURE);
+    assert(false);
   }
 
   auto op_concrete = I->second;
@@ -1653,7 +1653,7 @@ util::ConcreteVal * ConversionOp::concreteEval(std::map<const Value *, util::Con
   }
   else {
     cout << "ERROR : [ConversionOp::concreteEval] operation not supported yet. Aborting!" << '\n';
-    exit(EXIT_FAILURE);
+    return nullptr;
   }
   UNREACHABLE();
 }
@@ -1736,7 +1736,7 @@ util::ConcreteVal * Select::concreteEval(std::map<const Value *, util::ConcreteV
   }
   else {
     cout << "ERROR : [Select::concreteEval] select instruction on this type not supported yet. Aborting!" << '\n';
-    exit(EXIT_FAILURE);
+    return nullptr;
   }
     
   UNREACHABLE();  

@@ -160,6 +160,10 @@ void Interpreter::step() {
     // cout << '\n';
     auto ptr = dynamic_cast<const BinOp *>(&i);
     auto res_val = ptr->concreteEval(concrete_vals, UB_flag);
+    if (!res_val) {
+      unsupported_flag = true;
+      return;
+    }
     auto I = concrete_vals.find(ptr);
     if (I == concrete_vals.end()) {
       concrete_vals.emplace(ptr, res_val);
@@ -169,6 +173,10 @@ void Interpreter::step() {
   } else if (dynamic_cast<const UnaryOp *>(&i)) {
     auto ptr = dynamic_cast<const UnaryOp *>(&i);
     auto res_val = ptr->concreteEval(concrete_vals);
+    if (!res_val) {
+      unsupported_flag = true;
+      return;
+    }
     auto I = concrete_vals.find(ptr);
     if (I == concrete_vals.end()) {
       concrete_vals.emplace(ptr, res_val);
@@ -181,6 +189,10 @@ void Interpreter::step() {
     // cout << i.getType().toString() << '\n';
     auto ptr = dynamic_cast<const ConversionOp *>(&i);
     auto res_val = ptr->concreteEval(concrete_vals);
+    if (!res_val) {
+      unsupported_flag = true;
+      return;
+    }
     auto I = concrete_vals.find(ptr);
     if (I == concrete_vals.end()) {
       concrete_vals.emplace(ptr, res_val);
@@ -190,6 +202,10 @@ void Interpreter::step() {
   } else if (dynamic_cast<const ICmp *>(&i)) {
     auto icmp_ptr = dynamic_cast<const ICmp *>(&i);
     auto res_val = icmp_ptr->concreteEval(concrete_vals);
+    if (!res_val) {
+      unsupported_flag = true;
+      return;
+    }
     auto I = concrete_vals.find(icmp_ptr);
     if (I == concrete_vals.end()) {
       concrete_vals.emplace(icmp_ptr, res_val);
@@ -199,6 +215,10 @@ void Interpreter::step() {
   } else if (dynamic_cast<const FCmp *>(&i)) {
     auto fcmp_ptr = dynamic_cast<const FCmp *>(&i);
     auto res_val = fcmp_ptr->concreteEval(concrete_vals);
+    if (!res_val) {
+      unsupported_flag = true;
+      return;
+    }
     auto I = concrete_vals.find(fcmp_ptr);
     if (I == concrete_vals.end()) {
       concrete_vals.emplace(fcmp_ptr, res_val);
@@ -209,6 +229,10 @@ void Interpreter::step() {
     // cout << "ICMP instr" << '\n';
     auto select_ptr = dynamic_cast<const Select *>(&i);
     auto res_val = select_ptr->concreteEval(concrete_vals);
+    if (!res_val) {
+      unsupported_flag = true;
+      return;
+    }
     auto I = concrete_vals.find(select_ptr);
     if (I == concrete_vals.end()) {
       concrete_vals.emplace(select_ptr, res_val);
