@@ -8,7 +8,6 @@
 #include "ir/type.h"
 #include "smt/expr.h"
 #include "smt/exprs.h"
-#include "util/spaceship.h"
 #include <compare>
 #include <map>
 #include <optional>

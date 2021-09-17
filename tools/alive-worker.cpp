@@ -101,26 +101,6 @@ static std::optional<httplib::Client> session;
 
 static const httplib::Headers cbor_headers{{"Accept", "application/cbor"}};
 
-// util/spaceship.h screws up comparison between std::vector<T>s unless T
-// supports operator<=>. It's a bad idea to override operators on standard
-// types!
-#if defined(__clang__) && __clang_major__ < 14
-namespace jsoncons {
-static inline weak_ordering operator<=>(const ojson &lhs, const ojson &rhs) {
-  auto cmp = lhs.compare(rhs);
-  if (cmp == 0)
-    return std::weak_ordering::equivalent;
-  return cmp < 0 ? std::weak_ordering::less : std::weak_ordering::greater;
-}
-static inline weak_ordering operator<=>(const ojson::key_value_type &lhs,
-                                        const ojson::key_value_type &rhs) {
-  if (lhs == rhs)
-    return std::weak_ordering::equivalent;
-  return lhs < rhs ? std::weak_ordering::less : std::weak_ordering::greater;
-}
-} // namespace jsoncons
-#endif
-
 static ojson textCIDToBinary(const llvm::StringRef &text) {
   if (!text.startswith("u")) {
     llvm::errs() << "unsupported CID: " << text << "\n";
