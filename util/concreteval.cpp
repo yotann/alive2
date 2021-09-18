@@ -91,6 +91,12 @@ namespace util{
     return;
   }
 
+  ConcreteValVoid::ConcreteValVoid() : ConcreteVal(false) {}
+
+  void ConcreteValVoid::print() {
+    std::cout << "ConcreteValVoid()\n";
+  }
+
   ConcreteValInt::ConcreteValInt(bool poison, llvm::APInt &&val)
   : ConcreteVal(poison), val(move(val)) {
   }

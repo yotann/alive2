@@ -52,6 +52,12 @@ namespace util {
     virtual void print();
   };
 
+  class ConcreteValVoid : public ConcreteVal {
+  public:
+    ConcreteValVoid();
+    void print() override;
+  };
+
   class ConcreteValInt : public ConcreteVal {
     private:
     llvm::APInt val;

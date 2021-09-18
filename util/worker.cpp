@@ -163,7 +163,9 @@ static ojson compareFunctions(llvm::Function &f1, llvm::Function &f2,
 
 static ConcreteVal *loadConcreteVal(const IR::Type &type, const ojson &val) {
   static const ojson POISON = "poison";
-  if (type.isIntType()) {
+  if (&type == &IR::Type::voidTy) {
+    return new ConcreteValVoid();
+  } else if (type.isIntType()) {
     unsigned bits = type.bits();
     if (val.is_uint64()) {
       return new ConcreteValInt(false,
@@ -253,6 +255,8 @@ static ojson storeConcreteVal(const ConcreteVal *val) {
     return POISON;
   } else if (val->isUndef()) {
     return UNDEF;
+  } else if (dynamic_cast<const ConcreteValVoid *>(val)) {
+    return nullptr;
   } else if (auto val_int = dynamic_cast<const ConcreteValInt *>(val)) {
     auto i = val_int->getVal();
     if (i.isSignedIntN(64)) {

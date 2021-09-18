@@ -54,6 +54,9 @@ void Interpreter::start(Function &f) {
   // TODO need to check for Value subclasses for inputs and constants
   // i.e. PoisonValue, UndefValue, and etc.
   // initialize inputs with concrete values
+
+  concrete_vals[&Value::voidVal] = make_shared<ConcreteValVoid>();
+
   unsigned input_i = 0;
   for (auto &i : f.getInputs()) {
     // TODO for now we support IntType and FloatType
