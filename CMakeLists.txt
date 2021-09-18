@@ -181,6 +181,7 @@ if (BUILD_LLVM_UTILS OR BUILD_TV)
     "llvm_util/known_fns.cpp"
     "llvm_util/llvm2alive.cpp"
     "llvm_util/utils.cpp"
+    "util/worker.cpp"
   )
 
   add_library(llvm_util STATIC ${LLVM_UTIL_SRCS})
