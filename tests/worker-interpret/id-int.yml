@@ -65,6 +65,17 @@ expected:
   undefined: false
   return_value: -1
 ---
+name: id_i32_poison
+func: alive.interpret
+args:
+  - {}
+  - !ir 'define i32 @f(i32 %x) { ret i32 %x }'
+  - args: [poison]
+expected:
+  status: done
+  undefined: false
+  return_value: poison
+---
 name: id_i128_0
 func: alive.interpret
 args:
