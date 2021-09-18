@@ -206,6 +206,9 @@ if (BUILD_LLVM_UTILS OR BUILD_TV)
   add_llvm_executable(alive-worker
     "tools/alive-worker.cpp"
   )
+  add_llvm_executable(alive-worker-test
+    "tools/alive-worker-test.cpp"
+  )
 
 
 
@@ -259,6 +262,7 @@ if (BUILD_LLVM_UTILS OR BUILD_TV)
   target_link_libraries(alive-tv PRIVATE ${ALIVE_LIBS_LLVM} ${llvm_libs})
   target_link_libraries(alive-exec PRIVATE ${ALIVE_LIBS_LLVM} ${llvm_libs})
   target_link_libraries(alive-worker PRIVATE ${ALIVE_EXEC_LIBS_LLVM} ${llvm_libs})
+  target_link_libraries(alive-worker-test PRIVATE ${ALIVE_EXEC_LIBS_LLVM} ${llvm_libs})
   #target_link_libraries(alive-exec-concrete PRIVATE ${ALIVE_EXEC_LIBS_LLVM} ${llvm_libs})
   target_link_libraries(alive-interp PRIVATE ${ALIVE_EXEC_LIBS_LLVM} ${llvm_libs})
 endif()
@@ -278,6 +282,7 @@ else()
     #target_link_libraries(alive-exec-concrete PRIVATE ${Z3_LIBRARIES})
     target_link_libraries(alive-interp PRIVATE ${Z3_LIBRARIES})
     target_link_libraries(alive-worker PRIVATE ${Z3_LIBRARIES})
+    target_link_libraries(alive-worker-test PRIVATE ${Z3_LIBRARIES})
 
   endif()
 endif()

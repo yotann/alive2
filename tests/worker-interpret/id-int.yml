@@ -1,0 +1,10 @@
+name: id_i32_0
+func: alive.interpret
+args:
+  - {}
+  - !ir 'define i32 @f(i32 %x) { ret i32 %x }'
+  - args: [0]
+expected:
+  status: done
+  undefined: false
+  return_value: 0

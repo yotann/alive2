@@ -21,7 +21,6 @@
 // This command will run one alive-worker process per core. Whenever a process
 // exits, it will start a new one to replace it.
 
-#include "smt/smt.h"
 #include "util/version.h"
 #include "util/worker.h"
 
@@ -68,8 +67,6 @@ static llvm::cl::opt<string> opt_url(llvm::cl::Positional, llvm::cl::Required,
                                      llvm::cl::desc("<memodb server URL>"),
                                      llvm::cl::value_desc("url"),
                                      llvm::cl::cat(alive_cmdargs));
-
-static llvm::ExitOnError exit_on_error;
 
 // Used by signal handler to communicate with crash handler thread.
 static sem_t crash_sem;
