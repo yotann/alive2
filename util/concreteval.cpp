@@ -37,11 +37,11 @@ namespace util{
     this->flags = Flags::Undef;
   }
 
-  bool ConcreteVal::isPoison(){
+  bool ConcreteVal::isPoison() const {
     return flags & Flags::Poison;
   }
 
-  bool ConcreteVal::isUndef(){
+  bool ConcreteVal::isUndef() const {
     return flags & Flags::Undef;
   }
 
@@ -95,7 +95,7 @@ namespace util{
   : ConcreteVal(poison), val(move(val)) {
   }
 
-  llvm::APInt ConcreteValInt::getVal(){
+  llvm::APInt ConcreteValInt::getVal() const {
     return val;
   }
 
@@ -843,7 +843,7 @@ namespace util{
 
   }
 
-  llvm::APFloat ConcreteValFloat::getVal(){
+  llvm::APFloat ConcreteValFloat::getVal() const {
     return val;
   }
 
@@ -1369,8 +1369,8 @@ namespace util{
   //  return *this;
   //}
 
-  ConcreteValVect& ConcreteValVect::getVal() {
-    return *this;
+  const vector<ConcreteVal *> &ConcreteValVect::getVal() const {
+    return elements;
   }
 
   ConcreteValVect::~ConcreteValVect(){

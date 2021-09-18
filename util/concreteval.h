@@ -42,8 +42,8 @@ namespace util {
     virtual ~ConcreteVal();
     virtual void setPoison(bool poison);
     virtual void setUndef();
-    virtual bool isPoison();
-    virtual bool isUndef();
+    virtual bool isPoison() const;
+    virtual bool isUndef() const;
     //void setVal(ConcreteVal& v);
     //void setVal(llvm::APInt& v);
     //void setVal(llvm::APFloat& v);
@@ -58,7 +58,7 @@ namespace util {
     public:
     //ConcreteValInt(bool poison, llvm::APInt val);
     ConcreteValInt(bool poison, llvm::APInt &&val);
-    llvm::APInt getVal();
+    llvm::APInt getVal() const;
     void setVal(llvm::APInt& v);
     bool getBoolVal();
     void print() override;
@@ -114,7 +114,7 @@ namespace util {
     void setVal(llvm::APFloat& v);
     //ConcreteValInt(bool poison, llvm::APInt val);
     ConcreteValFloat(bool poison, llvm::APFloat &&val);
-    llvm::APFloat getVal();
+    llvm::APFloat getVal() const;
     void print() override;
 
     static ConcreteVal* fadd(ConcreteVal* lhs, ConcreteVal* rhs, IR::FastMathFlags fmath);
@@ -148,7 +148,7 @@ namespace util {
     //ConcreteValVect( ConcreteValVect &&r);
     //ConcreteValVect& operator=(ConcreteValVect &&r);
     //ConcreteValVect(bool poison, std::vector<ConcreteVal*> &elements);
-    ConcreteValVect& getVal();
+    const std::vector<ConcreteVal *> &getVal() const;
     virtual ~ConcreteValVect();
     static std::vector<ConcreteVal*> make_elements(const IR::Value* vect_val);
     static std::unique_ptr<std::vector<ConcreteVal*>> make_elements_unique(IR::Value* vect_val);

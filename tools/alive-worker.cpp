@@ -441,6 +441,55 @@ static ConcreteVal *loadConcreteVal(const IR::Type &type, const ojson &val) {
   return nullptr;
 }
 
+static ojson storeAPIntAsByteString(const llvm::APInt &val) {
+  // big endian
+  vector<uint8_t> tmp;
+  unsigned bytes = (val.getActiveBits() + 7) / 8;
+  tmp.reserve(bytes);
+  for (unsigned i = 0; i < bytes; ++i)
+    tmp.push_back(val.extractBitsAsZExtValue(8, 8 * (bytes - i - 1)));
+  return ojson(byte_string_arg, move(tmp));
+}
+
+static ojson storeConcreteVal(const ConcreteVal *val) {
+  static const ojson POISON = "poison";
+  static const ojson UNDEF = "undef";
+  if (val->isPoison()) {
+    return POISON;
+  } else if (val->isUndef()) {
+    return UNDEF;
+  } else if (auto val_int = dynamic_cast<const ConcreteValInt *>(val)) {
+    auto i = val_int->getVal();
+    if (i.isIntN(64)) {
+      return i.getZExtValue();
+    } else if (i.isSignedIntN(64)) {
+      return i.getSExtValue();
+    } else {
+      return storeAPIntAsByteString(i);
+    }
+  } else if (auto val_float = dynamic_cast<const ConcreteValFloat *>(val)) {
+    auto flt = val_float->getVal();
+    auto dbl = flt;
+    bool loses_info;
+    if (dbl.convert(llvm::APFloat::IEEEdouble(),
+                    llvm::RoundingMode::NearestTiesToEven,
+                    &loses_info) == llvm::APFloat::opOK) {
+      return dbl.convertToDouble();
+    } else {
+      return nullptr; // TODO
+    }
+  } else if (auto val_vec = dynamic_cast<const ConcreteValVect *>(val)) {
+    const auto &vec = val_vec->getVal();
+    ojson::array tmp;
+    tmp.reserve(vec.size());
+    for (auto item : vec)
+      tmp.emplace_back(storeConcreteVal(item));
+    return tmp;
+  } else {
+    return nullptr;
+  }
+}
+
 static ojson evaluateAliveInterpret(const ojson &options, const ojson &src,
                                     const ojson &test_input) {
   std::cerr << "alive.interpret not yet implemented!\n";
