@@ -25,6 +25,7 @@
 #include "llvm_util/llvm2alive.h"
 #include "smt/smt.h"
 #include "tools/transform.h"
+#include "util/interp.h"
 #include "util/version.h"
 
 #include "llvm/ADT/StringExtras.h"
@@ -492,8 +493,63 @@ static ojson storeConcreteVal(const ConcreteVal *val) {
 
 static ojson evaluateAliveInterpret(const ojson &options, const ojson &src,
                                     const ojson &test_input) {
-  std::cerr << "alive.interpret not yet implemented!\n";
-  _exit(2);
+  // TODO: it it better to use max_steps or use a timeout?
+  uint64_t max_steps =
+      options.get_with_default<uint64_t>("max_steps", uint64_t(1024));
+
+  auto to_stringref = [](const ojson &node) {
+    auto bytes = node.as_byte_string_view();
+    return llvm::StringRef(reinterpret_cast<const char *>(bytes.data()),
+                           bytes.size());
+  };
+
+  llvm::LLVMContext context;
+  auto m_or_err = llvm::parseBitcodeFile(
+      llvm::MemoryBufferRef(to_stringref(src), "src"), context);
+  if (!m_or_err) {
+    std::cerr << "could not parse bitcode file\n";
+    _exit(1);
+  }
+  auto m = std::move(*m_or_err);
+
+  auto &dl = m->getDataLayout();
+  llvm::Triple target_triple(m->getTargetTriple());
+  llvm::TargetLibraryInfoWrapperPass tli(target_triple);
+
+  std::ostringstream out;
+  llvm_util::initializer llvm_util_init(out, dl);
+  // TODO: include contents of out.str() in the response.
+
+  auto &f = getSoleDefinition(*m);
+  auto fn = llvm2alive(f, tli.getTLI(f));
+  if (!fn) {
+    std::cerr << "could not translate src to Alive IR\n";
+    _exit(1);
+  }
+
+  vector<shared_ptr<ConcreteVal>> args;
+  size_t arg_i = 0;
+  for (const auto &value : fn->getInputs())
+    args.emplace_back(
+        loadConcreteVal(value.getType(), test_input["args"][arg_i++]));
+
+  Interpreter interpreter(*fn);
+  interpreter.args = move(args);
+  interpreter.run(max_steps);
+  ojson result(json_object_arg);
+  if (interpreter.isUnsupported()) {
+    result["status"] = "unsupported";
+  } else if (interpreter.isUndefined()) {
+    result["status"] = "done";
+    result["undefined"] = true;
+  } else if (interpreter.isReturned()) {
+    result["status"] = "done";
+    result["undefined"] = false;
+    result["return_value"] = storeConcreteVal(interpreter.return_value);
+  } else {
+    result["status"] = "timeout";
+  }
+  return result;
 }
 
 static ojson evaluateAliveTV(const ojson &options, const ojson &src,
@@ -522,7 +578,7 @@ static ojson evaluateAliveTV(const ojson &options, const ojson &src,
   auto m2_or_err = llvm::parseBitcodeFile(
       llvm::MemoryBufferRef(to_stringref(tgt), "tgt"), context);
   if (!m1_or_err || !m2_or_err) {
-    std::cerr << "could not parse bitcode files";
+    std::cerr << "could not parse bitcode files\n";
     _exit(1);
   }
   auto m1 = std::move(*m1_or_err), m2 = std::move(*m2_or_err);

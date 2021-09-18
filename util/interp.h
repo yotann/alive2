@@ -5,6 +5,7 @@
 
 #include <map>
 #include <memory>
+#include <vector>
 
 namespace IR {
 class BasicBlock;
@@ -23,7 +24,8 @@ public:
   virtual ~Interpreter();
   void step();
   void run(unsigned instr_limit = 100);
-  virtual ConcreteVal *getInputValue(unsigned index, const IR::Input &input);
+  virtual std::shared_ptr<ConcreteVal> getInputValue(unsigned index,
+                                                     const IR::Input &input);
 
   bool isReturned() const {
     return !cur_block;
@@ -41,6 +43,7 @@ public:
     return isReturned() || isUndefined() || isUnsupported();
   }
 
+  std::vector<std::shared_ptr<ConcreteVal>> args;
   std::map<const IR::Value *, std::shared_ptr<ConcreteVal>> concrete_vals;
   const IR::BasicBlock *pred_block = nullptr;
   const IR::BasicBlock *cur_block = nullptr;

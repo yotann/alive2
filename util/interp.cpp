@@ -15,29 +15,35 @@ using util::config::dbg;
 
 namespace util {
 
-ConcreteVal *Interpreter::getInputValue(unsigned index, const Input &i) {
+shared_ptr<ConcreteVal> Interpreter::getInputValue(unsigned index,
+                                                   const Input &i) {
+  if (index < args.size())
+    return args[index];
   if (i.getType().isIntType()) {
     // Comment this to avoid random int function arguments
     // auto rand_int64 = get_random_int64();
     // cout << "input param random value = " << rand_int64 << "\n";
-    return new ConcreteValInt(false, llvm::APInt(i.getType().bits(), 3));
+    return shared_ptr<ConcreteVal>(
+        new ConcreteValInt(false, llvm::APInt(i.getType().bits(), 3)));
   } else if (i.getType().isFloatType()) {
     cout << "float input encountered " << '\n';
 
     if (i.bits() == 32) {
-      return new ConcreteValFloat(false, llvm::APFloat(3.0f));
+      return shared_ptr<ConcreteVal>(
+          new ConcreteValFloat(false, llvm::APFloat(3.0f)));
     } else if (i.bits() == 64) {
-      return new ConcreteValFloat(false, llvm::APFloat(3.0));
+      return shared_ptr<ConcreteVal>(
+          new ConcreteValFloat(false, llvm::APFloat(3.0)));
     } else if (i.bits() == 16) {
-      return new ConcreteValFloat(
-          false, llvm::APFloat(llvm::APFloatBase::IEEEhalf(), "3.0"));
+      return shared_ptr<ConcreteVal>(new ConcreteValFloat(
+          false, llvm::APFloat(llvm::APFloatBase::IEEEhalf(), "3.0")));
     } else {
       cout << "AliveExec-Error : Unsupported float input type. Aborting"
            << '\n';
       return nullptr;
     }
   } else if (i.getType().isVectorType()) {
-    return new ConcreteValVect(false, &i);
+    return shared_ptr<ConcreteVal>(new ConcreteValVect(false, &i));
   } else {
     cout << "AliveExec-Error : input type not supported" << '\n';
     return nullptr;
