@@ -255,10 +255,10 @@ static ojson storeConcreteVal(const ConcreteVal *val) {
     return UNDEF;
   } else if (auto val_int = dynamic_cast<const ConcreteValInt *>(val)) {
     auto i = val_int->getVal();
-    if (i.isIntN(64)) {
-      return i.getZExtValue();
-    } else if (i.isSignedIntN(64)) {
+    if (i.isSignedIntN(64)) {
       return i.getSExtValue();
+    } else if (i.isIntN(64)) {
+      return i.getZExtValue();
     } else {
       return storeAPIntAsByteString(i);
     }
@@ -283,6 +283,26 @@ static ojson storeConcreteVal(const ConcreteVal *val) {
   } else {
     return nullptr;
   }
+}
+
+namespace {
+class WorkerInterpreter : public Interpreter {
+public:
+  WorkerInterpreter(const ojson &test_input);
+  shared_ptr<ConcreteVal> getInputValue(unsigned index,
+                                        const IR::Input &input) override;
+
+  const ojson &test_input;
+};
+} // namespace
+
+WorkerInterpreter::WorkerInterpreter(const ojson &test_input)
+    : test_input(test_input) {}
+
+shared_ptr<ConcreteVal>
+WorkerInterpreter::getInputValue(unsigned index, const IR::Input &input) {
+  return shared_ptr<ConcreteVal>(
+      loadConcreteVal(input.getType(), test_input["args"][index]));
 }
 
 static ojson evaluateAliveInterpret(const ojson &options, const ojson &src,
@@ -321,14 +341,8 @@ static ojson evaluateAliveInterpret(const ojson &options, const ojson &src,
     _exit(1);
   }
 
-  vector<shared_ptr<ConcreteVal>> args;
-  size_t arg_i = 0;
-  for (const auto &value : fn->getInputs())
-    args.emplace_back(
-        loadConcreteVal(value.getType(), test_input["args"][arg_i++]));
-
-  Interpreter interpreter(*fn);
-  interpreter.args = move(args);
+  WorkerInterpreter interpreter(test_input);
+  interpreter.start(*fn);
   interpreter.run(max_steps);
   ojson result(json_object_arg);
   if (interpreter.isUnsupported()) {

@@ -17,8 +17,6 @@ namespace util {
 
 shared_ptr<ConcreteVal> Interpreter::getInputValue(unsigned index,
                                                    const Input &i) {
-  if (index < args.size())
-    return args[index];
   if (i.getType().isIntType()) {
     // Comment this to avoid random int function arguments
     // auto rand_int64 = get_random_int64();
@@ -50,7 +48,9 @@ shared_ptr<ConcreteVal> Interpreter::getInputValue(unsigned index,
   }
 }
 
-Interpreter::Interpreter(Function &f) {
+Interpreter::Interpreter() {}
+
+void Interpreter::start(Function &f) {
   // TODO need to check for Value subclasses for inputs and constants
   // i.e. PoisonValue, UndefValue, and etc.
   // initialize inputs with concrete values
@@ -236,12 +236,12 @@ void Interpreter::run(unsigned instr_limit) {
   }
 }
 
-Interpreter::~Interpreter() {
-}
+Interpreter::~Interpreter() {}
 
 void interp(Function &f) {
   cout << "running interp.cpp" << '\n';
-  Interpreter interpreter(f);
+  Interpreter interpreter;
+  interpreter.start(f);
 
   cout << "---run Interpreter---" << '\n';
   interpreter.run();

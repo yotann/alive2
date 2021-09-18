@@ -20,8 +20,9 @@ class ConcreteVal;
 
 class Interpreter {
 public:
-  Interpreter(IR::Function &f);
+  Interpreter();
   virtual ~Interpreter();
+  void start(IR::Function &f);
   void step();
   void run(unsigned instr_limit = 100);
   virtual std::shared_ptr<ConcreteVal> getInputValue(unsigned index,
@@ -43,7 +44,6 @@ public:
     return isReturned() || isUndefined() || isUnsupported();
   }
 
-  std::vector<std::shared_ptr<ConcreteVal>> args;
   std::map<const IR::Value *, std::shared_ptr<ConcreteVal>> concrete_vals;
   const IR::BasicBlock *pred_block = nullptr;
   const IR::BasicBlock *cur_block = nullptr;
