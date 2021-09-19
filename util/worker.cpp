@@ -219,19 +219,27 @@ static ConcreteVal *loadConcreteVal(const IR::Type &type, const ojson &val) {
   } else if (type.isVectorType() || type.isStructType()) {
     const auto &aggregate = static_cast<const IR::AggregateType &>(type);
     if (val.is_array()) {
-      vector<ConcreteVal *> elements;
-      for (size_t i = 0; i < val.size(); ++i) {
-        elements.push_back(loadConcreteVal(aggregate.getChild(i), val[i]));
+      vector<shared_ptr<ConcreteVal>> elements;
+      size_t val_i = 0;
+      for (size_t i = 0; i < aggregate.numElementsConst(); ++i) {
+        if (aggregate.isPadding(i)) {
+          elements.push_back(make_shared<ConcreteValInt>(
+              false, llvm::APInt(aggregate.getChild(i).bits(), 0)));
+        } else {
+          elements.push_back(shared_ptr<ConcreteVal>(
+              loadConcreteVal(aggregate.getChild(i), val[val_i++])));
+        }
         if (elements.back() == nullptr)
-          return nullptr; // TODO: fix memory leak in elements
+          return nullptr;
       }
       return new ConcreteValAggregate(false, move(elements));
     } else if (val == POISON) {
       // Make a vector of poison values, and then mark the vector as a whole as
       // poison.
-      vector<ConcreteVal *> elements;
+      vector<shared_ptr<ConcreteVal>> elements;
       for (size_t i = 0; i < aggregate.numElementsConst(); ++i)
-        elements.push_back(loadConcreteVal(aggregate.getChild(i), POISON));
+        elements.push_back(shared_ptr<ConcreteVal>(
+            loadConcreteVal(aggregate.getChild(i), POISON)));
       return new ConcreteValAggregate(true, move(elements));
     }
   }
@@ -249,7 +257,7 @@ static ojson storeAPIntAsByteString(const llvm::APInt &val) {
   return ojson(byte_string_arg, move(tmp));
 }
 
-static ojson storeConcreteVal(const ConcreteVal *val) {
+static ojson storeConcreteVal(const IR::Type &type, const ConcreteVal *val) {
   static const ojson POISON = "poison";
   static const ojson UNDEF = "undef";
   if (val->isPoison()) {
@@ -279,11 +287,15 @@ static ojson storeConcreteVal(const ConcreteVal *val) {
       return nullptr; // TODO
     }
   } else if (auto val_vec = dynamic_cast<const ConcreteValAggregate *>(val)) {
+    const auto &agg_type = static_cast<const IR::AggregateType &>(type);
     const auto &vec = val_vec->getVal();
     ojson::array tmp;
-    tmp.reserve(vec.size());
-    for (auto item : vec)
-      tmp.emplace_back(storeConcreteVal(item));
+    tmp.reserve(agg_type.numElementsConst() - agg_type.numPaddingsConst());
+    for (size_t i = 0; i < agg_type.numElementsConst(); ++i) {
+      if (agg_type.isPadding(i))
+        continue;
+      tmp.emplace_back(storeConcreteVal(agg_type.getChild(i), vec[i].get()));
+    }
     return tmp;
   } else {
     return nullptr;
@@ -358,7 +370,8 @@ static ojson evaluateAliveInterpret(const ojson &options, const ojson &src,
   } else if (interpreter.isReturned()) {
     result["status"] = "done";
     result["undefined"] = false;
-    result["return_value"] = storeConcreteVal(interpreter.return_value);
+    result["return_value"] =
+        storeConcreteVal(fn->getType(), interpreter.return_value);
   } else {
     result["status"] = "timeout";
   }

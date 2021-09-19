@@ -1332,103 +1332,19 @@ namespace util{
   }
 
   ConcreteValAggregate::ConcreteValAggregate(
-      bool poison, std::vector<ConcreteVal *> &&elements)
-      : ConcreteVal(poison), elements(move(elements)) {
-  }
+      bool poison, std::vector<shared_ptr<ConcreteVal>> &&elements)
+      : ConcreteVal(poison), elements(move(elements)) {}
 
-  ConcreteValAggregate::ConcreteValAggregate(bool poison,
-                                             const IR::Value *vect_val)
-      : ConcreteVal(poison) {
-    assert(vect_val->getType().isVectorType());
-    auto vect_type_ptr = dynamic_cast<const VectorType *>(&vect_val->getType());
-    // I don't think vector type can have padding
-    assert(vect_type_ptr->numPaddingsConst() == 0);
-    auto bitwidth =  vect_type_ptr->getChild(0).bits();
-    auto isIntTy = vect_type_ptr->getChild(0).isIntType();
-    
-    for (unsigned int i=0; i < vect_type_ptr->numElementsConst(); ++i) {
-      if (isIntTy){
-        auto *v = new ConcreteValInt(false, llvm::APInt(bitwidth, 3));
-        elements.push_back(v);
-      }
-      else{
-        assert( "Error: vector type not supported yet!" && false );
-      }  
-    }
-  }
-
-  // ConcreteValAggregate::ConcreteValAggregate(ConcreteValAggregate &l){
-  //  cout << "copy ctor concreteValVect" << '\n';
-  //}
-  //
-  // ConcreteValAggregate& ConcreteValAggregate::operator=(ConcreteValAggregate
-  // &l) {
-  //  cout << "assign op concreteValVect" << '\n';
-  //  return *this;
-  //}
-  //
-  // ConcreteValAggregate::ConcreteValAggregate(ConcreteValAggregate &&l){
-  //  cout << "move ctor concreteValVect" << '\n';
-  //}
-  //
-  // ConcreteValAggregate& ConcreteValAggregate::operator=(ConcreteValAggregate
-  // &&l) {
-  //  cout << "move assign op concreteValVect" << '\n';
-  //  return *this;
-  //}
-
-  const vector<ConcreteVal *> &ConcreteValAggregate::getVal() const {
+  const vector<shared_ptr<ConcreteVal>> &ConcreteValAggregate::getVal() const {
     return elements;
   }
 
   ConcreteValAggregate::~ConcreteValAggregate() {
-    for (auto elem : elements) {
-      delete elem;
-    }
-    elements.clear();
-  }
-
-  // ConcreteValAggregate::ConcreteValAggregate(bool poison,
-  // std::vector<ConcreteVal*> &elements) : ConcreteVal(poison),
-  //elements(elements) {
-  //  assert(elements.size() > 0);
-  //}
-
-  vector<ConcreteVal *>
-  ConcreteValAggregate::make_elements(const Value *vect_val) {
-    assert(vect_val->getType().isVectorType());
-    
-    auto vect_type_ptr = dynamic_cast<const VectorType *>(&vect_val->getType());
-    // I don't think vector type can have padding
-    assert(vect_type_ptr->numPaddingsConst() == 0);
-    //vect
-    cout << "vect_num_elem: " << vect_type_ptr->numElementsConst() << '\n';
-    //cout << ptr->numElementsConst() << "," << ptr->bits() 
-    //  << "," << ptr->getChild(0).bits() << '\n';
-    vector<ConcreteVal*> res(vect_type_ptr->numElementsConst());
-    auto bitwidth =  vect_type_ptr->getChild(0).bits();
-    auto isIntTy = vect_type_ptr->getChild(0).isIntType();
-    for (unsigned int i=0; i < res.size(); ++i) {
-      if (isIntTy){
-        res[i] = new ConcreteValInt(false, llvm::APInt(bitwidth, 3));
-      }
-      else{
-        assert( "ERROR: underlying vector type not supported yet!" && false );
-      }  
-    }
-  
-    return res;
-  }
-
-  unique_ptr<vector<ConcreteVal *>>
-  ConcreteValAggregate::make_elements_unique(Value *vect_val) {
-    auto res = make_unique<vector<ConcreteVal*>>();
-    return res;
   }
 
   void ConcreteValAggregate::print() {
     cout << "<" << '\n';
-    for (auto elem : elements) {
+    for (auto &elem : elements) {
       elem->print();
     }
     cout << ">" << '\n';

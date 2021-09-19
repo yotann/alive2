@@ -142,21 +142,16 @@ namespace util {
     static ConcreteVal* fma(ConcreteVal* a, ConcreteVal* b, ConcreteVal* c);
   };
 
+  // XXX: padding values are included!
   class ConcreteValAggregate : public ConcreteVal {
   private:
-  std::vector<ConcreteVal*> elements;
+    std::vector<std::shared_ptr<ConcreteVal>> elements;
+
   public:
-    ConcreteValAggregate(bool poison, std::vector<ConcreteVal *> &&elements);
-    ConcreteValAggregate(bool poison, const IR::Value *vect_val);
-    // ConcreteValAggregate(ConcreteValAggregate &l);
-    // ConcreteValAggregate& operator=(ConcreteValAggregate &l);
-    // ConcreteValAggregate( ConcreteValAggregate &&r);
-    // ConcreteValAggregate& operator=(ConcreteValAggregate &&r);
-    // ConcreteValAggregate(bool poison, std::vector<ConcreteVal*> &elements);
-    const std::vector<ConcreteVal *> &getVal() const;
+    ConcreteValAggregate(bool poison,
+                         std::vector<std::shared_ptr<ConcreteVal>> &&elements);
+    const std::vector<std::shared_ptr<ConcreteVal>> &getVal() const;
     virtual ~ConcreteValAggregate();
-    static std::vector<ConcreteVal*> make_elements(const IR::Value* vect_val);
-    static std::unique_ptr<std::vector<ConcreteVal*>> make_elements_unique(IR::Value* vect_val);
     void print() override;
   };
 }

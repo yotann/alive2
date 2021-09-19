@@ -843,9 +843,7 @@ BinOp::concreteEval(Interpreter &interpreter) const {
     auto lhs_vect = dynamic_cast<ConcreteValAggregate *>(lhs_concrete.get());
     if (lhs_vect) {
       cout << "bin op encountered vector operand" << '\n';
-      auto res_elems = ConcreteValAggregate::make_elements(lhs);
-      return shared_ptr<ConcreteVal>(
-          new ConcreteValAggregate(false, move(res_elems)));
+      return nullptr;
     }
     return shared_ptr<ConcreteVal>(
         ConcreteValInt::add(lhs_concrete.get(), rhs_concrete.get(), flags));
@@ -1745,6 +1743,16 @@ unique_ptr<Instr> ExtractValue::dup(const string &suffix) const {
   return ret;
 }
 
+shared_ptr<ConcreteVal>
+ExtractValue::concreteEval(Interpreter &interpreter) const {
+  shared_ptr<ConcreteVal> v = interpreter.concrete_vals[val];
+  for (unsigned idx : idxs) {
+    auto &agg = static_cast<ConcreteValAggregate &>(*v).getVal();
+    assert(idx < agg.size());
+    v = agg[idx];
+  }
+  return v;
+}
 
 void InsertValue::addIdx(unsigned idx) {
   idxs.emplace_back(idx);
@@ -1828,6 +1836,26 @@ unique_ptr<Instr> InsertValue::dup(const string &suffix) const {
     ret->addIdx(idx);
   }
   return ret;
+}
+
+static shared_ptr<ConcreteVal> InsertValueImpl(ConcreteVal *val,
+                                               shared_ptr<ConcreteVal> &elt,
+                                               const vector<unsigned> &idxs,
+                                               unsigned i) {
+  if (i >= idxs.size())
+    return elt;
+  vector<shared_ptr<ConcreteVal>> elements =
+      static_cast<ConcreteValAggregate &>(*val).getVal();
+  assert(idxs[i] < elements.size());
+  elements[idxs[i]] =
+      InsertValueImpl(elements[idxs[i]].get(), elt, idxs, i + 1);
+  return make_shared<ConcreteValAggregate>(false, move(elements));
+}
+
+shared_ptr<ConcreteVal>
+InsertValue::concreteEval(Interpreter &interpreter) const {
+  return InsertValueImpl(interpreter.concrete_vals[val].get(),
+                         interpreter.concrete_vals[elt], idxs, 0);
 }
 
 DEFINE_AS_RETZEROALIGN(FnCall, getMaxAllocSize);

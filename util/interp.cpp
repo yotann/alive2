@@ -40,10 +40,73 @@ shared_ptr<ConcreteVal> Interpreter::getInputValue(unsigned index,
            << '\n';
       return nullptr;
     }
-  } else if (i.getType().isVectorType()) {
-    return shared_ptr<ConcreteVal>(new ConcreteValAggregate(false, &i));
   } else {
     cout << "AliveExec-Error : input type not supported" << '\n';
+    return nullptr;
+  }
+}
+
+static shared_ptr<ConcreteVal> getConstantValue(const Value &i) {
+  // read poison consts
+  if (dynamic_cast<const PoisonValue *>(&i)) {
+    // TODO add a concreteValPoison subclass maybe
+    return make_shared<ConcreteValInt>(true,
+                                       llvm::APInt(i.getType().bits(), 0));
+  } else if (auto const_ptr = dynamic_cast<const IntConst *>(&i)) {
+    // need to do this for constants that are larger than i64
+    if (const_ptr->getString()) {
+      return make_shared<ConcreteValInt>(
+          false,
+          llvm::APInt(i.getType().bits(), *(const_ptr->getString()), 10));
+    } else if (const_ptr->getInt()) {
+      return make_shared<ConcreteValInt>(
+          false, llvm::APInt(i.getType().bits(), *(const_ptr->getInt())));
+    } else {
+      UNREACHABLE();
+    }
+  } else if (auto const_ptr = dynamic_cast<const FloatConst *>(&i)) {
+    assert((const_ptr->bits() == 32) || (const_ptr->bits() == 64) ||
+           (const_ptr->bits() == 16)); // TODO: add support for other FP types
+    if (auto double_float = const_ptr->getDouble()) {
+      if (const_ptr->bits() == 32) {
+        // Since the original ir was representable using float, casting the
+        // double back to float should be safe I think but this looks pretty
+        // bad and should think of a better solution
+        return make_shared<ConcreteValFloat>(
+            false, llvm::APFloat(static_cast<float>(*double_float)));
+      } else if (const_ptr->bits() == 64) {
+        return make_shared<ConcreteValFloat>(false,
+                                             llvm::APFloat(*double_float));
+      } else {
+        UNREACHABLE();
+      }
+    } else if (auto string_float = const_ptr->getString()) {
+      cout << "string repr of float constant : " << *string_float << '\n';
+      return nullptr;
+    } else if (auto int_float = const_ptr->getInt()) {
+      return make_shared<ConcreteValFloat>(
+          false, llvm::APFloat(llvm::APFloatBase::IEEEhalf(),
+                               llvm::APInt(16, *int_float)));
+    } else {
+      UNREACHABLE();
+    }
+  } else if (auto agg_value = dynamic_cast<const AggregateValue *>(&i)) {
+    auto &values = agg_value->getVals();
+    size_t values_i = 0;
+    vector<shared_ptr<ConcreteVal>> elements;
+    auto &type = static_cast<const AggregateType &>(agg_value->getType());
+    for (size_t j = 0; j < type.numElementsConst(); ++j) {
+      if (type.isPadding(j)) {
+        // TODO: initialize with undef
+        elements.emplace_back(make_shared<ConcreteValInt>(
+            false, llvm::APInt(type.getChild(j).bits(), 0)));
+      } else {
+        elements.emplace_back(getConstantValue(*values[values_i++]));
+      }
+    }
+    return make_shared<ConcreteValAggregate>(false, move(elements));
+  } else {
+    cout << "AliveExec-Error : Unsupported constant type. Aborting!\n";
     return nullptr;
   }
 }
@@ -71,70 +134,12 @@ void Interpreter::start(Function &f) {
   for (auto &i : f.getConstants()) {
     auto I = concrete_vals.find(&i);
     assert(I == concrete_vals.end());
-    // read poison consts
-    if (dynamic_cast<const PoisonValue *>(&i)) {
-      // TODO add a concreteValPoison sublcass maybe 
-      auto new_val = new ConcreteValInt(true, llvm::APInt(i.getType().bits(), 0));
-      concrete_vals.emplace(&i, new_val);
-    } else if (auto const_ptr = dynamic_cast<const IntConst *>(&i)) {
-      // auto const_ptr = dynamic_cast<const IntConst *>(&i);
-      // cout << "constant: " << i.getName() << " type: " <<
-      // i.getType().toString()
-      //<< " bitwidth: " << i.getType().bits() << '\n';
-      // need to do this for constants that are larger than i64
-      if (const_ptr->getString()) {
-        // cout << "encountered const stored as string: " <<
-        // *(const_ptr->getString())<< '\n';
-        auto new_val = new ConcreteValInt(
-            false,
-            llvm::APInt(i.getType().bits(), *(const_ptr->getString()), 10));
-        concrete_vals.emplace(&i, new_val);
-      } else if (const_ptr->getInt()) {
-        // cout << "encountered const stored as int: " <<
-        // *(const_ptr->getInt())<< '\n';
-        auto new_val = new ConcreteValInt(
-            false, llvm::APInt(i.getType().bits(), *(const_ptr->getInt())));
-        concrete_vals.emplace(&i, new_val);
-      }
-    } else if (auto const_ptr = dynamic_cast<const FloatConst *>(&i)) {
-      assert((const_ptr->bits() == 32) || (const_ptr->bits() == 64) ||
-             (const_ptr->bits() == 16)); // TODO: add support for other FP types
-      //cout << "float constant: " << const_ptr->getName()
-      //     << " type: " << i.getType().toString()
-      //     << " bitwidth: " << i.getType().bits() << '\n';
-      if (auto double_float = const_ptr->getDouble()) {
-        //cout << "double repr of float constant : " << *double_float << '\n';
-        if (const_ptr->bits() == 32) {
-          // Since the original ir was representable using float, casting the
-          // double back to float should be safe I think but this looks pretty
-          // bad and should think of a better solution
-          auto new_val = new ConcreteValFloat(
-              false, llvm::APFloat(static_cast<float>(*double_float)));
-          concrete_vals.emplace(&i, new_val);
-        } else if (const_ptr->bits() == 64) {
-          auto new_val = new ConcreteValFloat(false, llvm::APFloat(*double_float));
-          concrete_vals.emplace(&i, new_val);
-        } else {
-          UNREACHABLE();
-        }
-      }
-      if (auto string_float = const_ptr->getString()) {
-        cout << "string repr of float constant : " << *string_float << '\n';
-      } else if (auto int_float = const_ptr->getInt()) {
-
-        auto new_val = new ConcreteValFloat(false,
-                                  llvm::APFloat(llvm::APFloatBase::IEEEhalf(),
-                                                llvm::APInt(16, *int_float)));
-        concrete_vals.emplace(&i, new_val);
-
-        cout << "int repr of float constant : " << *int_float << '\n';
-      }
-
-    } else { // TODO for now we only support Int constants
-      cout << "AliveExec-Error : Unsupported constant type. Aborting!" << '\n';
+    auto new_val = getConstantValue(i);
+    if (!new_val) {
       unsupported_flag = true;
       return;
     }
+    concrete_vals.emplace(&i, new_val);
   }
 
   // TODO add stack for alloca
