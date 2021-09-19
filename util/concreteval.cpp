@@ -782,7 +782,9 @@ namespace util{
                                                  shared_ptr<ConcreteVal> &b) {
     auto cond_int = dynamic_cast<ConcreteValInt *>(cond);
     assert(cond_int);
-    auto poison_res = evalPoison(cond_int, a.get(), b.get());
+    // The result is only poison if cond or the selected value is poison; the
+    // other value doesn't matter.
+    auto poison_res = evalPoison(cond_int);
     if (poison_res)
       return shared_ptr<ConcreteVal>(poison_res);
     return cond_int->getBoolVal() ? a : b;
