@@ -41,7 +41,7 @@ shared_ptr<ConcreteVal> Interpreter::getInputValue(unsigned index,
       return nullptr;
     }
   } else if (i.getType().isVectorType()) {
-    return shared_ptr<ConcreteVal>(new ConcreteValVect(false, &i));
+    return shared_ptr<ConcreteVal>(new ConcreteValAggregate(false, &i));
   } else {
     cout << "AliveExec-Error : input type not supported" << '\n';
     return nullptr;
@@ -59,10 +59,6 @@ void Interpreter::start(Function &f) {
 
   unsigned input_i = 0;
   for (auto &i : f.getInputs()) {
-    // TODO for now we support IntType and FloatType
-    assert((i.getType().isIntType() 
-          || i.getType().isFloatType() 
-          || i.getType().isVectorType()) && "ERROR : input type not supported");
     auto I = concrete_vals.find(&i);
     assert(I == concrete_vals.end());
     auto new_val = getInputValue(input_i++, *dynamic_cast<const Input *>(&i));

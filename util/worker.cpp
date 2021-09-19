@@ -215,23 +215,23 @@ static ConcreteVal *loadConcreteVal(const IR::Type &type, const ojson &val) {
     // - Bigfloats (CBOR tag 5), widely supported but can't represent NaN bits
     // - Extended bigfloats (CBOR tag 269), can represent NaN bits but only
     //   supported by one CBOR implementation
-  } else if (type.isVectorType()) {
+  } else if (type.isVectorType() || type.isStructType()) {
     const auto &aggregate = static_cast<const IR::AggregateType &>(type);
     if (val.is_array()) {
       vector<ConcreteVal *> elements;
-      for (const ojson &subval : val.array_range()) {
-        elements.push_back(loadConcreteVal(aggregate.getChild(0), subval));
+      for (size_t i = 0; i < val.size(); ++i) {
+        elements.push_back(loadConcreteVal(aggregate.getChild(i), val[i]));
         if (elements.back() == nullptr)
           return nullptr; // TODO: fix memory leak in elements
       }
-      return new ConcreteValVect(false, move(elements));
+      return new ConcreteValAggregate(false, move(elements));
     } else if (val == POISON) {
       // Make a vector of poison values, and then mark the vector as a whole as
       // poison.
       vector<ConcreteVal *> elements;
       for (size_t i = 0; i < aggregate.numElementsConst(); ++i)
-        elements.push_back(loadConcreteVal(aggregate.getChild(0), POISON));
-      return new ConcreteValVect(true, move(elements));
+        elements.push_back(loadConcreteVal(aggregate.getChild(i), POISON));
+      return new ConcreteValAggregate(true, move(elements));
     }
   }
   // unsupported
@@ -277,7 +277,7 @@ static ojson storeConcreteVal(const ConcreteVal *val) {
     } else {
       return nullptr; // TODO
     }
-  } else if (auto val_vec = dynamic_cast<const ConcreteValVect *>(val)) {
+  } else if (auto val_vec = dynamic_cast<const ConcreteValAggregate *>(val)) {
     const auto &vec = val_vec->getVal();
     ojson::array tmp;
     tmp.reserve(vec.size());

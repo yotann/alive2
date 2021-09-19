@@ -1331,13 +1331,14 @@ namespace util{
               << bits << "b, " << F << "F)\n";
   }
 
-  ConcreteValVect::ConcreteValVect(bool poison, std::vector<ConcreteVal*> &&elements)
-  : ConcreteVal(poison), elements(move(elements)) {
-    assert(this->elements.size() > 0);
+  ConcreteValAggregate::ConcreteValAggregate(
+      bool poison, std::vector<ConcreteVal *> &&elements)
+      : ConcreteVal(poison), elements(move(elements)) {
   }
 
-  ConcreteValVect::ConcreteValVect(bool poison, const IR::Value* vect_val)
-  : ConcreteVal(poison) {
+  ConcreteValAggregate::ConcreteValAggregate(bool poison,
+                                             const IR::Value *vect_val)
+      : ConcreteVal(poison) {
     assert(vect_val->getType().isVectorType());
     auto vect_type_ptr = dynamic_cast<const VectorType *>(&vect_val->getType());
     // I don't think vector type can have padding
@@ -1354,44 +1355,47 @@ namespace util{
         assert( "Error: vector type not supported yet!" && false );
       }  
     }
-
   }
 
-  //ConcreteValVect::ConcreteValVect(ConcreteValVect &l){
+  // ConcreteValAggregate::ConcreteValAggregate(ConcreteValAggregate &l){
   //  cout << "copy ctor concreteValVect" << '\n';
   //}
-//
-  //ConcreteValVect& ConcreteValVect::operator=(ConcreteValVect &l) {
+  //
+  // ConcreteValAggregate& ConcreteValAggregate::operator=(ConcreteValAggregate
+  // &l) {
   //  cout << "assign op concreteValVect" << '\n';
   //  return *this;
   //}
-//
-  //ConcreteValVect::ConcreteValVect(ConcreteValVect &&l){
+  //
+  // ConcreteValAggregate::ConcreteValAggregate(ConcreteValAggregate &&l){
   //  cout << "move ctor concreteValVect" << '\n';
   //}
-//
-  //ConcreteValVect& ConcreteValVect::operator=(ConcreteValVect &&l) {
+  //
+  // ConcreteValAggregate& ConcreteValAggregate::operator=(ConcreteValAggregate
+  // &&l) {
   //  cout << "move assign op concreteValVect" << '\n';
   //  return *this;
   //}
 
-  const vector<ConcreteVal *> &ConcreteValVect::getVal() const {
+  const vector<ConcreteVal *> &ConcreteValAggregate::getVal() const {
     return elements;
   }
 
-  ConcreteValVect::~ConcreteValVect(){
+  ConcreteValAggregate::~ConcreteValAggregate() {
     for (auto elem : elements) {
       delete elem;
     }
     elements.clear();
   }
 
-  //ConcreteValVect::ConcreteValVect(bool poison, std::vector<ConcreteVal*> &elements)
-  //: ConcreteVal(poison), elements(elements) {
+  // ConcreteValAggregate::ConcreteValAggregate(bool poison,
+  // std::vector<ConcreteVal*> &elements) : ConcreteVal(poison),
+  //elements(elements) {
   //  assert(elements.size() > 0);
   //}
 
-  vector<ConcreteVal*> ConcreteValVect::make_elements(const Value* vect_val) {
+  vector<ConcreteVal *>
+  ConcreteValAggregate::make_elements(const Value *vect_val) {
     assert(vect_val->getType().isVectorType());
     
     auto vect_type_ptr = dynamic_cast<const VectorType *>(&vect_val->getType());
@@ -1416,17 +1420,17 @@ namespace util{
     return res;
   }
 
-  unique_ptr<vector<ConcreteVal*>> ConcreteValVect::make_elements_unique(Value* vect_val){
+  unique_ptr<vector<ConcreteVal *>>
+  ConcreteValAggregate::make_elements_unique(Value *vect_val) {
     auto res = make_unique<vector<ConcreteVal*>>();
     return res;
   }
 
-  void ConcreteValVect::print() {
+  void ConcreteValAggregate::print() {
     cout << "<" << '\n';
     for (auto elem : elements) {
       elem->print();
     }
     cout << ">" << '\n';
   }
-
 }

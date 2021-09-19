@@ -840,12 +840,12 @@ BinOp::concreteEval(Interpreter &interpreter) const {
   auto lhs_concrete = interpreter.concrete_vals.find(lhs)->second;
   auto rhs_concrete = interpreter.concrete_vals.find(rhs)->second;
   if (op == Op::Add) {
-    auto lhs_vect = dynamic_cast<ConcreteValVect *>(lhs_concrete.get());
+    auto lhs_vect = dynamic_cast<ConcreteValAggregate *>(lhs_concrete.get());
     if (lhs_vect) {
       cout << "bin op encountered vector operand" << '\n';
-      auto res_elems = ConcreteValVect::make_elements(lhs);
+      auto res_elems = ConcreteValAggregate::make_elements(lhs);
       return shared_ptr<ConcreteVal>(
-          new ConcreteValVect(false, move(res_elems)));
+          new ConcreteValAggregate(false, move(res_elems)));
     }
     return shared_ptr<ConcreteVal>(
         ConcreteValInt::add(lhs_concrete.get(), rhs_concrete.get(), flags));

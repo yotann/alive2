@@ -142,25 +142,21 @@ namespace util {
     static ConcreteVal* fma(ConcreteVal* a, ConcreteVal* b, ConcreteVal* c);
   };
 
-  class ConcreteValVect : public ConcreteVal {
+  class ConcreteValAggregate : public ConcreteVal {
   private:
   std::vector<ConcreteVal*> elements;
   public:
-    
-    ConcreteValVect(bool poison, std::vector<ConcreteVal*> &&elements);
-    ConcreteValVect(bool poison, const IR::Value* vect_val);
-    //ConcreteValVect(ConcreteValVect &l);
-    //ConcreteValVect& operator=(ConcreteValVect &l);
-    //ConcreteValVect( ConcreteValVect &&r);
-    //ConcreteValVect& operator=(ConcreteValVect &&r);
-    //ConcreteValVect(bool poison, std::vector<ConcreteVal*> &elements);
+    ConcreteValAggregate(bool poison, std::vector<ConcreteVal *> &&elements);
+    ConcreteValAggregate(bool poison, const IR::Value *vect_val);
+    // ConcreteValAggregate(ConcreteValAggregate &l);
+    // ConcreteValAggregate& operator=(ConcreteValAggregate &l);
+    // ConcreteValAggregate( ConcreteValAggregate &&r);
+    // ConcreteValAggregate& operator=(ConcreteValAggregate &&r);
+    // ConcreteValAggregate(bool poison, std::vector<ConcreteVal*> &elements);
     const std::vector<ConcreteVal *> &getVal() const;
-    virtual ~ConcreteValVect();
+    virtual ~ConcreteValAggregate();
     static std::vector<ConcreteVal*> make_elements(const IR::Value* vect_val);
     static std::unique_ptr<std::vector<ConcreteVal*>> make_elements_unique(IR::Value* vect_val);
     void print() override;
   };
-
-  
-  
 }
