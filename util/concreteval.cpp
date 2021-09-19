@@ -109,7 +109,7 @@ namespace util{
     val = v;
   }
 
-  bool ConcreteValInt::getBoolVal() {
+  bool ConcreteValInt::getBoolVal() const {
     return val.getBoolValue();
   }
 

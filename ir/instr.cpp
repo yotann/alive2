@@ -2905,6 +2905,35 @@ unique_ptr<Instr> Assume::dup(const string &suffix) const {
   return make_unique<Assume>(vector<Value *>(args), kind);
 }
 
+std::shared_ptr<util::ConcreteVal>
+Assume::concreteEval(util::Interpreter &interpreter) const {
+  auto &arg = *interpreter.concrete_vals[args[0]];
+  switch (kind) {
+  case AndNonPoison:
+    if (arg.isPoison() || arg.isUndef() ||
+        !static_cast<const ConcreteValInt &>(arg).getBoolVal())
+      interpreter.UB_flag = true;
+    break;
+  case IfNonPoison:
+    if (!arg.isPoison() &&
+        !static_cast<const ConcreteValInt &>(arg).getBoolVal())
+      interpreter.UB_flag = true;
+    break;
+  case WellDefined:
+    if (arg.isPoison())
+      interpreter.UB_flag = true;
+    break;
+  case Align:
+    cout << "[Assume::concreteEval] Align not supported yet, aborting\n";
+    interpreter.unsupported_flag = true;
+    break;
+  case NonNull:
+    cout << "[Assume::concreteEval] NonNull not supported yet, aborting\n";
+    interpreter.unsupported_flag = true;
+    break;
+  }
+  return make_shared<ConcreteValVoid>();
+}
 
 MemInstr::ByteAccessInfo
 MemInstr::ByteAccessInfo::intOnly(unsigned bytesz) {

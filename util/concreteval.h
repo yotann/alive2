@@ -66,7 +66,7 @@ namespace util {
     ConcreteValInt(bool poison, llvm::APInt &&val);
     llvm::APInt getVal() const;
     void setVal(llvm::APInt& v);
-    bool getBoolVal();
+    bool getBoolVal() const;
     void print() override;
 
     static ConcreteVal* evalPoison(ConcreteVal* op1, ConcreteVal* op2, ConcreteVal* op3);

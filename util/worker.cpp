@@ -39,9 +39,10 @@ static optional<smt::smt_initializer> smt_init;
 
 static llvm::Function &getSoleDefinition(llvm::Module &m) {
   for (llvm::Function &f : m.functions())
-    return f;
+    if (!f.isDeclaration())
+      return f;
   std::cerr << "missing definition in module\n";
-  _exit(2);
+  exit(2);
 }
 
 namespace {
