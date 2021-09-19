@@ -28,79 +28,6 @@ using namespace std;
 using util::config::dbg;
 
 
-static bool is_arbitrary(const expr &e) {
-  if (e.isConst())
-    return false;
-  return check_expr(expr::mkForAll(e.vars(), expr::mkVar("#someval", e) != e)).
-           isUnsat();
-}
-
-static void print_single_varval(ostream &os, const State &st, const Model &m,
-                                const Value *var, const Type &type,
-                                const StateValue &val, unsigned child) {
-  if (!val.isValid()) {
-    os << "(invalid expr)";
-    return;
-  }
-
-  // Best effort detection of poison if model is partial
-  if (auto v = m.eval(val.non_poison);
-      (v.isFalse() || check_expr(!v).isSat())) {
-    os << "poison";
-    return;
-  }
-
-  if (auto *in = dynamic_cast<const Input*>(var)) {
-    auto var = in->getUndefVar(type, child);
-    if (var.isValid() && m.eval(var, false).isAllOnes()) {
-      os << "undef";
-      return;
-    }
-  }
-
-  // TODO: detect undef bits (total or partial) with an SMT query
-
-  expr partial = m.eval(val.value);
-  if (is_arbitrary(partial)) {
-    os << "any";
-    return;
-  }
-
-  type.printVal(os, st, m.eval(val.value, true));
-
-  // undef variables may not have a model since each read uses a copy
-  // TODO: add intervals of possible values for ints at least?
-  if (!partial.isConst()) {
-    // some functions / vars may not have an interpretation because it's not
-    // needed, not because it's undef
-    for (auto &var : partial.vars()) {
-      if (isUndef(var)) {
-        os << "\t[based on undef value]";
-        break;
-      }
-    }
-  }
-}
-
-static void print_varval(ostream &os, const State &st, const Model &m,
-                         const Value *var, const Type &type,
-                         const StateValue &val, unsigned child = 0) {
-  if (!type.isAggregateType()) {
-    print_single_varval(os, st, m, var, type, val, child);
-    return;
-  }
-
-  os << (type.isStructType() ? "{ " : "< ");
-  auto agg = type.getAsAggregateType();
-  for (unsigned i = 0, e = agg->numElementsConst(); i < e; ++i) {
-    if (i != 0)
-      os << ", ";
-    print_varval(os, st, m, var, agg->getChild(i), agg->extract(val, i),
-                 child + i);
-  }
-  os << (type.isStructType() ? " }" : " >");
-}
-
 
 using print_var_val_ty = function<void(ostream&, const Model&)>;
 
@@ -108,30 +35,10 @@ static bool error(Errors &errs, const State &src_state, const State &tgt_state,
                   const Result &r, const Value *var,
                   const char *msg, bool check_each_var,
                   print_var_val_ty print_var_val) {
-
-  if (r.isInvalid()) {
-    errs.add("Invalid expr", false);
-    return true;
-  }
-
-  if (r.isTimeout()) {
-    errs.add("Timeout", false);
-    return false;
-  }
-
-  if (r.isError()) {
-    errs.add("SMT Error: " + r.getReason(), false);
-    return false;
-  }
-
-  if (r.isSkip()) {
-    errs.add("Skip", false);
-    return true;
-  }
+  if (!r.isSat())
+    return errs.addSolverError(r);
 
   stringstream s;
-  string empty;
-  auto &var_name = var ? var->getName() : empty;
   auto &m = r.getModel();
 
   {
@@ -147,64 +54,16 @@ static bool error(Errors &errs, const State &src_state, const State &tgt_state,
     }
 
     if (!approx.empty()) {
-      s << "Couldn't prove the correctness of the transformation\n"
-          "Alive2 approximated the semantics of the programs and therefore we\n"
-          "cannot conclude whether the bug found is valid or not.\n\n"
-          "Approximations done:\n";
       for (auto &msg : approx) {
         s << " - " << msg << '\n';
       }
-      errs.add(s.str(), false);
-      return false;
+      return errs.addSolverSatApprox(s.str());
     }
-  }
-
-  s << msg;
-  if (!var_name.empty())
-    s << " for " << *var;
-  s << "\n\nExample:\n";
-
-  for (auto &[var, val] : src_state.getValues()) {
-    if (!dynamic_cast<const Input*>(var) &&
-        !dynamic_cast<const ConstantInput*>(var))
-      continue;
-    s << *var << " = ";
-    print_varval(s, src_state, m, var, var->getType(), val.first);
-    s << '\n';
-  }
-
-  set<string> seen_vars;
-  for (auto st : { &src_state, &tgt_state }) {
-    if (!check_each_var) {
-      if (st->isSource()) {
-        s << "\nSource:\n";
-      } else {
-        s << "\nTarget:\n";
-      }
-    }
-
-    for (auto &[var, val] : st->getValues()) {
-      auto &name = var->getName();
-      if (name == var_name)
-        break;
-
-      if (name[0] != '%' ||
-          dynamic_cast<const Input*>(var) ||
-          (check_each_var && !seen_vars.insert(name).second))
-        continue;
-
-      s << *var << " = ";
-      print_varval(s, const_cast<State&>(*st), m, var, var->getType(),
-                   val.first);
-      s << '\n';
-    }
-
-    st->getMemory().print(s, m);
   }
 
   print_var_val(s, m);
-  errs.add(s.str(), true);
-  return false;
+  return errs.addSolverSat(src_state, tgt_state, r, var, msg, check_each_var,
+                           s.str());
 }
 
 
@@ -467,9 +326,9 @@ check_refinement(Errors &errs, const Transform &t, const State &src_state,
   // 3. Check poison
   auto print_value = [&](ostream &s, const Model &m) {
     s << "Source value: ";
-    print_varval(s, src_state, m, var, type, a);
+    errs.print_varval(s, src_state, m, var, type, a);
     s << "\nTarget value: ";
-    print_varval(s, tgt_state, m, var, type, b);
+    errs.print_varval(s, tgt_state, m, var, type, b);
   };
 
   auto [poison_cnstr, value_cnstr] = type.refines(src_state, tgt_state, a, b);
@@ -1039,10 +898,12 @@ pair<unique_ptr<State>, unique_ptr<State>> TransformVerify::exec() const {
   return { move(src_state), move(tgt_state) };
 }
 
-Errors TransformVerify::verify() const {
+void TransformVerify::verify(Errors &errs) const {
   if (!t.src.hasSameInputs(t.tgt)) {
-    return { "Unsupported interprocedural transformation: signature mismatch "
-             "between src and tgt", false };
+    errs.add("Unsupported interprocedural transformation: signature mismatch "
+             "between src and tgt",
+             false);
+    return;
   }
 
   // Check sizes of global variables
@@ -1061,21 +922,23 @@ Errors TransformVerify::verify() const {
          << GVS->getName() << " has different size in source and target ("
          << GVS->size() << " vs " << GVT->size()
          << " bytes)";
-      return { ss.str(), false };
+      errs.add(ss.str(), false);
+      return;
     } else if (GVS->isConst() && !GVT->isConst()) {
       stringstream ss;
       ss << "Transformation is incorrect because global variable "
          << GVS->getName() << " is const in source but not in target";
-      return { ss.str(), true };
+      errs.add(ss.str(), true);
+      return;
     } else if (!GVS->isConst() && GVT->isConst()) {
       stringstream ss;
       ss << "Unsupported interprocedural transformation: global variable "
          << GVS->getName() << " is const in target but not in source";
-      return { ss.str(), false };
+      errs.add(ss.str(), false);
+      return;
     }
   }
 
-  Errors errs;
   try {
     auto [src_state, tgt_state] = exec();
 
@@ -1091,7 +954,7 @@ Errors TransformVerify::verify() const {
                          true, true, tgt_state->at(*tgt_instrs.at(name)),
                          check_each_var);
         if (errs)
-          return errs;
+          return;
       }
     }
 
@@ -1102,11 +965,9 @@ Errors TransformVerify::verify() const {
                      tgt_state->returnVal(),
                      check_each_var);
   } catch (AliveException e) {
-    return move(e);
+    errs.add(move(e));
   }
-  return errs;
 }
-
 
 TypingAssignments::TypingAssignments(const expr &e) : s(true), sneg(true) {
   if (e.isTrue()) {

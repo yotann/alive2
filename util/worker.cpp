@@ -102,7 +102,7 @@ static VerifyResults verify(llvm::Function &f1, llvm::Function &f2,
   }
   assert(types.hasSingleTyping());
 
-  r.errs = verifier.verify();
+  verifier.verify(r.errs);
   if (r.errs) {
     r.status = r.errs.isUnsound() ? VerifyResults::UNSOUND
                                   : VerifyResults::FAILED_TO_PROVE;
