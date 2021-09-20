@@ -19,6 +19,7 @@
 #include "llvm/Support/raw_ostream.h"
 
 #include <iostream>
+#include <math.h>
 #include <string>
 #include <utility>
 #include <vector>
@@ -101,6 +102,14 @@ static ojson scalar2json(llvm::yaml::Node &node, llvm::StringRef scalar,
     if (err.empty())
       return result_signed;
   } else if (tag == "tag:yaml.org,2002:float") {
+    if (scalar == ".nan" || scalar == ".NaN" || scalar == ".NAN")
+      return NAN;
+    if (scalar == ".inf" || scalar == ".Inf" || scalar == ".INF")
+      return INFINITY;
+    if (scalar == "+.inf" || scalar == "+.Inf" || scalar == "+.INF")
+      return INFINITY;
+    if (scalar == "-.inf" || scalar == "-.Inf" || scalar == "-.INF")
+      return -INFINITY;
     double result_float;
     auto err = ScalarTraits<double>::input(scalar, nullptr, result_float);
     if (err.empty())
@@ -205,10 +214,17 @@ results are correct.
   llvm::yaml::Stream stream((*buf_or_err)->getBuffer(), source_mgr);
   for (auto &document : stream) {
     ojson job = yaml2json(*document.getRoot());
-    cout << "job: " << job << "\n";
     ojson actual = evaluateAliveFunc(job);
-    cout << "actual: " << actual << "\n";
-    if (job["expected"] != actual) {
+    const ojson &expected = job["expected"];
+    if (expected == actual) {
+      cerr << "test " << job["name"] << " passed\n";
+    } else {
+      jsoncons::json_options options;
+      options.nan_to_num(".nan");
+      options.inf_to_num(".inf");
+      options.neginf_to_num("-.inf");
+      cout << "expected: " << jsoncons::print(expected, options) << "\n";
+      cout << "actual: " << jsoncons::print(actual, options) << "\n";
       cerr << "test " << job["name"] << " failed\n";
       return 1;
     }

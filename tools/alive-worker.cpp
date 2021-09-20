@@ -270,7 +270,7 @@ calls that are submitted to the server by other programs.
   ojson worker_info(
       json_object_arg,
       {
-          {"funcs", ojson(json_array_arg, {"alive.tv", "alive.interpret"})},
+          {"funcs", ojson(json_array_arg, {"alive.tv_v2", "alive.interpret"})},
       });
   auto worker_info_cid = putNode(worker_info);
 

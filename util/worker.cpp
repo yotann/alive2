@@ -4,6 +4,8 @@
 #include "llvm_util/llvm2alive.h"
 #include "smt/smt.h"
 #include "tools/transform.h"
+#include "util/config.h"
+#include "util/errors.h"
 #include "util/interp.h"
 
 #include "llvm/ADT/StringExtras.h"
@@ -32,6 +34,7 @@ using namespace util;
 using namespace std;
 using namespace llvm_util;
 using jsoncons::byte_string_arg;
+using jsoncons::json_array_arg;
 using jsoncons::json_object_arg;
 using jsoncons::ojson;
 
@@ -46,37 +49,157 @@ static llvm::Function &getSoleDefinition(llvm::Module &m) {
 }
 
 namespace {
-struct VerifyResults {
+struct VerifyResults : public Errors {
   Transform t;
-  Errors errs;
-  enum {
-    COULD_NOT_TRANSLATE,
-    TYPE_CHECKER_FAILED,
-    SYNTACTIC_EQ,
-    CORRECT,
-    UNSOUND,
-    FAILED_TO_PROVE,
-  } status;
+  ojson result;
 
-  static VerifyResults error(string &&err) {
-    VerifyResults r;
-    r.status = COULD_NOT_TRANSLATE;
-    r.errs.add(move(err), false);
-    return r;
-  }
+  void checkErrs();
+  bool addSolverSat(const IR::State &src_state, const IR::State &tgt_state,
+                    const smt::Result &r, const IR::Value *main_var,
+                    const std::string &msg, bool check_each_var,
+                    const std::string &post_msg) override;
 };
 } // end anonymous namespace
 
+void VerifyResults::checkErrs() {
+  // Be selective about when to overwrite "outcome" and "valid". They might
+  // already be set to something more specific.
+  if (*this) {
+    if (isUnsound()) {
+      result["outcome"] = "unsound";
+      result["valid"] = false;
+    } else if (!result.count("outcome")) {
+      result["outcome"] = "failed_to_prove";
+      result["valid"] = ojson(nullptr); // unknown
+    }
+  } else if (!result.count("outcome") && !result.count("valid")) {
+    result["outcome"] = "correct";
+    result["valid"] = true;
+  }
+}
+
+static ojson storeAPIntAsByteString(const llvm::APInt &val) {
+  // big endian
+  vector<uint8_t> tmp;
+  unsigned bytes = (val.getActiveBits() + 7) / 8;
+  tmp.reserve(bytes);
+  for (unsigned i = 0; i < bytes; ++i)
+    tmp.push_back(val.extractBitsAsZExtValue(8, 8 * (bytes - i - 1)));
+  return ojson(byte_string_arg, move(tmp));
+}
+
+static llvm::APInt bvToAPInt(const smt::expr &example) {
+  llvm::APInt apint(example.bits(), 0);
+  uint64_t u64;
+  for (unsigned pos = 0; pos < example.bits(); pos += 64) {
+    unsigned high = min(pos + 63, example.bits() - 1);
+    assert(example.extract(high, pos).isUInt(u64));
+    apint.insertBits(u64, pos, 64);
+  }
+  return apint;
+}
+
+static const llvm::fltSemantics *getFloatSemantics(const IR::FloatType &type) {
+  switch (type.getFpType()) {
+  case IR::FloatType::Half:
+    return &llvm::APFloat::IEEEhalf();
+  case IR::FloatType::Float:
+    return &llvm::APFloat::IEEEsingle();
+  case IR::FloatType::Double:
+    return &llvm::APFloat::IEEEdouble();
+  case IR::FloatType::Quad:
+    return &llvm::APFloat::IEEEquad();
+  default:
+    return nullptr;
+  }
+}
+
+static ojson modelValToJSON(const smt::Model &m, const IR::Type &type,
+                            const IR::StateValue &val) {
+  if (!val.isValid())
+    return nullptr; // invalid expr
+  // TODO: if Input, check for undef
+
+  if (type.isAggregateType()) {
+    const auto &agg = *type.getAsAggregateType();
+    ojson result(json_array_arg);
+    for (size_t i = 0; i < agg.numElementsConst(); ++i) {
+      if (agg.isPadding(i))
+        continue;
+      result.push_back(modelValToJSON(m, agg.getChild(i), agg.extract(val, i)));
+    }
+    return result;
+  }
+
+  // Can't apply this to aggregates.
+  if (auto v = m.eval(val.non_poison); (v.isFalse() || check_expr(!v).isSat()))
+    return "poison";
+
+  if (type.isIntType()) {
+    smt::expr example = m.eval(val.value, true);
+    int64_t i64;
+    uint64_t u64;
+    if (example.isInt(i64))
+      return i64;
+    if (example.isUInt(u64))
+      return u64;
+    return storeAPIntAsByteString(bvToAPInt(example));
+  } else if (type.isFloatType()) {
+    smt::expr example = m.eval(val.value, true).float2BV();
+    llvm::APInt apint = bvToAPInt(example);
+    if (auto semantics =
+            getFloatSemantics(static_cast<const IR::FloatType &>(type))) {
+      auto dbl = llvm::APFloat(*semantics, apint);
+      bool loses_info;
+      if (dbl.convert(llvm::APFloat::IEEEdouble(),
+                      llvm::RoundingMode::NearestTiesToEven,
+                      &loses_info) == llvm::APFloat::opOK) {
+        return dbl.convertToDouble();
+      }
+    }
+    return storeAPIntAsByteString(apint);
+  } else if (type.isPtrType()) {
+    return nullptr; // TODO
+  } else if (&type == &IR::Type::voidTy) {
+    return nullptr;
+  }
+  return nullptr; // unsupported
+}
+
+static ojson testInputToJSON(const IR::Function &f, const IR::State &state,
+                             const smt::Model &m) {
+  ojson result(json_object_arg);
+  ojson &args = result["args"] = ojson(json_array_arg);
+  for (const auto &input : f.getInputs()) {
+    const auto &var = state.at(input);
+    args.push_back(modelValToJSON(m, input.getType(), var.first));
+  }
+  return result;
+}
+
+bool VerifyResults::addSolverSat(const IR::State &src_state,
+                                 const IR::State &tgt_state,
+                                 const smt::Result &r,
+                                 const IR::Value *main_var,
+                                 const std::string &msg, bool check_each_var,
+                                 const std::string &post_msg) {
+  add(string(msg), true);
+  // tgt_state may be more defined than src_state, so use that.
+  result["test_input"] = testInputToJSON(t.tgt, tgt_state, r.getModel());
+  return false;
+}
+
 static VerifyResults verify(llvm::Function &f1, llvm::Function &f2,
                             llvm::TargetLibraryInfoWrapperPass &tli) {
-  auto fn1 = llvm2alive(f1, tli.getTLI(f1));
-  if (!fn1)
-    return VerifyResults::error("Could not translate src to Alive IR\n");
-  auto fn2 = llvm2alive(f2, tli.getTLI(f2));
-  if (!fn2)
-    return VerifyResults::error("Could not translate tgt to Alive IR\n");
-
   VerifyResults r;
+  auto fn1 = llvm2alive(f1, tli.getTLI(f1));
+  auto fn2 = llvm2alive(f2, tli.getTLI(f2));
+  if (!fn1 || !fn2) {
+    r.result["outcome"] = "could_not_translate";
+    r.result["valid"] = ojson(nullptr); // unknown
+    return r;
+  }
+
   r.t.src = move(*fn1);
   r.t.tgt = move(*fn2);
 
@@ -84,7 +207,8 @@ static VerifyResults verify(llvm::Function &f1, llvm::Function &f2,
   r.t.src.print(ss1);
   r.t.tgt.print(ss2);
   if (ss1.str() == ss2.str()) {
-    r.status = VerifyResults::SYNTACTIC_EQ;
+    r.result["outcome"] = "syntactic_eq";
+    r.result["valid"] = true;
     return r;
   }
 
@@ -97,69 +221,27 @@ static VerifyResults verify(llvm::Function &f1, llvm::Function &f2,
 
   auto types = verifier.getTypings();
   if (!types) {
-    r.status = VerifyResults::TYPE_CHECKER_FAILED;
+    r.result["outcome"] = "type_checker_failed";
+    r.result["valid"] = false;
     return r;
   }
   assert(types.hasSingleTyping());
 
-  verifier.verify(r.errs);
-  if (r.errs) {
-    r.status = r.errs.isUnsound() ? VerifyResults::UNSOUND
-                                  : VerifyResults::FAILED_TO_PROVE;
-  } else {
-    r.status = VerifyResults::CORRECT;
-  }
+  verifier.verify(r);
+  r.checkErrs();
   return r;
 }
 
 static ojson compareFunctions(llvm::Function &f1, llvm::Function &f2,
                               llvm::TargetLibraryInfoWrapperPass &tli) {
   auto r = verify(f1, f2, tli);
-  ojson result(json_object_arg);
-
-  if (r.status == VerifyResults::UNSOUND ||
-      r.status == VerifyResults::FAILED_TO_PROVE ||
-      r.status == VerifyResults::COULD_NOT_TRANSLATE) {
+  if (r) {
     std::ostringstream sstr;
-    sstr << r.errs;
+    sstr << r;
     sstr.flush();
-    result["errs"] = sstr.str();
-  } else {
-    assert(!r.errs);
+    r.result["errs"] = sstr.str();
   }
-
-  if (r.status == VerifyResults::CORRECT ||
-      r.status == VerifyResults::SYNTACTIC_EQ) {
-    result["valid"] = true;
-  } else if (r.status == VerifyResults::UNSOUND ||
-             r.status == VerifyResults::TYPE_CHECKER_FAILED) {
-    result["valid"] = false;
-  } else {
-    result["valid"] = ojson(nullptr); // unknown
-  }
-
-  switch (r.status) {
-  case VerifyResults::CORRECT:
-    result["outcome"] = "correct";
-    break;
-  case VerifyResults::COULD_NOT_TRANSLATE:
-    result["outcome"] = "could_not_translate";
-    break;
-  case VerifyResults::FAILED_TO_PROVE:
-    result["outcome"] = "failed_to_prove";
-    break;
-  case VerifyResults::SYNTACTIC_EQ:
-    result["outcome"] = "syntactic_eq";
-    break;
-  case VerifyResults::TYPE_CHECKER_FAILED:
-    result["outcome"] = "type_checker_failed";
-    break;
-  case VerifyResults::UNSOUND:
-    result["outcome"] = "unsound";
-    break;
-  }
-
-  return result;
+  return r.result;
 }
 
 static ConcreteVal *loadConcreteVal(const IR::Type &type, const ojson &val) {
@@ -185,23 +267,8 @@ static ConcreteVal *loadConcreteVal(const IR::Type &type, const ojson &val) {
       return new ConcreteValInt(true, llvm::APInt(bits, 0));
     }
   } else if (type.isFloatType()) {
-    const llvm::fltSemantics *semantics;
-    switch (static_cast<const IR::FloatType &>(type).getFpType()) {
-    case IR::FloatType::Half:
-      semantics = &llvm::APFloat::IEEEhalf();
-      break;
-    case IR::FloatType::Float:
-      semantics = &llvm::APFloat::IEEEsingle();
-      break;
-    case IR::FloatType::Double:
-      semantics = &llvm::APFloat::IEEEdouble();
-      break;
-    case IR::FloatType::Quad:
-      semantics = &llvm::APFloat::IEEEquad();
-      break;
-    case IR::FloatType::Unknown:
-      return nullptr;
-    }
+    auto semantics =
+        getFloatSemantics(static_cast<const IR::FloatType &>(type));
     if (val.is_double()) {
       llvm::APFloat tmp(val.as_double());
       bool loses_info;
@@ -245,16 +312,6 @@ static ConcreteVal *loadConcreteVal(const IR::Type &type, const ojson &val) {
   }
   // unsupported
   return nullptr;
-}
-
-static ojson storeAPIntAsByteString(const llvm::APInt &val) {
-  // big endian
-  vector<uint8_t> tmp;
-  unsigned bytes = (val.getActiveBits() + 7) / 8;
-  tmp.reserve(bytes);
-  for (unsigned i = 0; i < bytes; ++i)
-    tmp.push_back(val.extractBitsAsZExtValue(8, 8 * (bytes - i - 1)));
-  return ojson(byte_string_arg, move(tmp));
 }
 
 static ojson storeConcreteVal(const IR::Type &type, const ConcreteVal *val) {
@@ -386,6 +443,10 @@ static ojson evaluateAliveTV(const ojson &options, const ojson &src,
       options.get_with_default<uint64_t>("smt_max_mem", 1024);
   uint64_t smt_random_seed =
       options.get_with_default<uint64_t>("smt_random_seed", uint64_t(0));
+  config::disable_poison_input =
+      options.get_with_default<bool>("disable_poison_input", false);
+  config::disable_undef_input =
+      options.get_with_default<bool>("disable_undef_input", false);
 
   auto to_stringref = [](const ojson &node) {
     auto bytes = node.as_byte_string_view();
@@ -429,7 +490,7 @@ static ojson evaluateAliveTV(const ojson &options, const ojson &src,
 
 ojson util::evaluateAliveFunc(const ojson &job) {
   string func = job["func"].as<string>();
-  if (func == "alive.tv") {
+  if (func == "alive.tv_v2") {
     return evaluateAliveTV(job["args"][0], job["args"][1], job["args"][2]);
   } else if (func == "alive.interpret") {
     return evaluateAliveInterpret(job["args"][0], job["args"][1],
