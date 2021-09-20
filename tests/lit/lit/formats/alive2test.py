@@ -68,7 +68,7 @@ class Alive2Test(TestFormat):
            filename.endswith('.cpp') or filename.endswith('.opt.ll') or
            filename.endswith('.ident.ll') or
            filename.endswith('.exec.ll') or 
-           filename.endswith('.ll') or
+           (filename.endswith('.ll') and not filename.endswith('.tgt.ll')) or
            filename.endswith('.yml')):
         yield lit.Test.Test(testSuite, path_in_suite + (filename,), localConfig)
 
