@@ -16,7 +16,7 @@ args:
 expected:
   test_input:
     args: [-0.0]
-  outcome: unsound
+  status: unsound
   valid: false
   errs: "ERROR: Value mismatch\n"
 ---
@@ -37,6 +37,6 @@ args:
 expected:
   test_input:
     args: [-0.0]
-  outcome: unsound
+  status: unsound
   valid: false
   errs: "ERROR: Value mismatch\n"

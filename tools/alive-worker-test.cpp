@@ -223,8 +223,8 @@ results are correct.
       options.nan_to_num(".nan");
       options.inf_to_num(".inf");
       options.neginf_to_num("-.inf");
-      cout << "expected: " << jsoncons::print(expected, options) << "\n";
-      cout << "actual: " << jsoncons::print(actual, options) << "\n";
+      cerr << "expected: " << jsoncons::print(expected, options) << "\n";
+      cerr << "actual: " << jsoncons::print(actual, options) << "\n";
       cerr << "test " << job["name"] << " failed\n";
       return 1;
     }

@@ -9,7 +9,7 @@ args:
 expected:
   test_input:
     args: [0, 0]
-  outcome: unsound
+  status: unsound
   valid: false
   errs: "ERROR: Source is more defined than target\n"
 ---
@@ -31,7 +31,7 @@ args:
 expected:
   test_input:
     args: [!!binary ESIzRFVmd4iZqrvM3e7/]
-  outcome: unsound
+  status: unsound
   valid: false
   errs: "ERROR: Source is more defined than target\n"
 ---
@@ -53,7 +53,7 @@ args:
 expected:
   test_input:
     args: [poison]
-  outcome: unsound
+  status: unsound
   valid: false
   errs: "ERROR: Source is more defined than target\n"
 ---
@@ -75,7 +75,7 @@ args:
 expected:
   test_input:
     args: [[0, 0]]
-  outcome: unsound
+  status: unsound
   valid: false
   errs: "ERROR: Source is more defined than target\n"
 ---
@@ -98,6 +98,6 @@ args:
 expected:
   test_input:
     args: [!!binary QACSH7VEQtGEaYmMxRcBuA==]
-  outcome: unsound
+  status: unsound
   valid: false
   errs: "ERROR: Source is more defined than target\n"

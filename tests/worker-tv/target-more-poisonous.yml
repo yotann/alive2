@@ -25,6 +25,6 @@ args:
 expected:
   test_input:
     args: [[0x7fffffff, -1]]
-  outcome: unsound
+  status: unsound
   valid: false
   errs: "ERROR: Target is more poisonous than source\n"

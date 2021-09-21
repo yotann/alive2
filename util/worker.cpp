@@ -54,6 +54,8 @@ struct VerifyResults : public Errors {
   ojson result;
 
   void checkErrs();
+  bool addSolverError(const smt::Result &r) override;
+  bool addSolverSatApprox(const std::string &approx) override;
   bool addSolverSat(const IR::State &src_state, const IR::State &tgt_state,
                     const smt::Result &r, const IR::Value *main_var,
                     const std::string &msg, bool check_each_var,
@@ -62,18 +64,18 @@ struct VerifyResults : public Errors {
 } // end anonymous namespace
 
 void VerifyResults::checkErrs() {
-  // Be selective about when to overwrite "outcome" and "valid". They might
+  // Be selective about when to overwrite "status" and "valid". They might
   // already be set to something more specific.
   if (*this) {
     if (isUnsound()) {
-      result["outcome"] = "unsound";
+      result["status"] = "unsound";
       result["valid"] = false;
-    } else if (!result.count("outcome")) {
-      result["outcome"] = "failed_to_prove";
+    } else if (!result.count("status")) {
+      result["status"] = "unknown";
       result["valid"] = ojson(nullptr); // unknown
     }
-  } else if (!result.count("outcome") && !result.count("valid")) {
-    result["outcome"] = "correct";
+  } else if (!result.count("status") && !result.count("valid")) {
+    result["status"] = "sound";
     result["valid"] = true;
   }
 }
@@ -174,6 +176,33 @@ static ojson testInputToJSON(const IR::Function &f, const IR::State &state,
   return result;
 }
 
+bool VerifyResults::addSolverError(const smt::Result &r) {
+  result["valid"] = nullptr; // unknown
+  if (r.isInvalid()) {
+    result["status"] = "invalid_expr";
+    return true;
+  } else if (r.isTimeout()) {
+    result["status"] = "solver_timeout";
+    return false;
+  } else if (r.isError()) {
+    result["status"] = "solver_error";
+    add("SMT Error: " + r.getReason(), false);
+    return false;
+  } else if (r.isSkip()) {
+    result["status"] = "solver_skip";
+    return true;
+  } else {
+    UNREACHABLE();
+  }
+}
+
+bool VerifyResults::addSolverSatApprox(const std::string &approx) {
+  result["status"] = "unsound_with_approximations";
+  result["valid"] = nullptr;
+  add("Approximations done:\n" + approx, false);
+  return false;
+}
+
 bool VerifyResults::addSolverSat(const IR::State &src_state,
                                  const IR::State &tgt_state,
                                  const smt::Result &r,
@@ -192,7 +221,7 @@ static VerifyResults verify(llvm::Function &f1, llvm::Function &f2,
   auto fn1 = llvm2alive(f1, tli.getTLI(f1));
   auto fn2 = llvm2alive(f2, tli.getTLI(f2));
   if (!fn1 || !fn2) {
-    r.result["outcome"] = "could_not_translate";
+    r.result["status"] = "could_not_translate";
     r.result["valid"] = ojson(nullptr); // unknown
     return r;
   }
@@ -204,7 +233,7 @@ static VerifyResults verify(llvm::Function &f1, llvm::Function &f2,
   r.t.src.print(ss1);
   r.t.tgt.print(ss2);
   if (ss1.str() == ss2.str()) {
-    r.result["outcome"] = "syntactic_eq";
+    r.result["status"] = "syntactic_eq";
     r.result["valid"] = true;
     return r;
   }
@@ -218,7 +247,7 @@ static VerifyResults verify(llvm::Function &f1, llvm::Function &f2,
 
   auto types = verifier.getTypings();
   if (!types) {
-    r.result["outcome"] = "type_checker_failed";
+    r.result["status"] = "type_checker_failed";
     r.result["valid"] = false;
     return r;
   }
