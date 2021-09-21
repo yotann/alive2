@@ -46,12 +46,53 @@ shared_ptr<ConcreteVal> Interpreter::getInputValue(unsigned index,
   }
 }
 
+ConcreteVal *Interpreter::getPoisonValue(const IR::Type &type) {
+  if (&type == &IR::Type::voidTy) {
+    return new ConcreteValVoid();
+  } else if (type.isIntType()) {
+    unsigned bits = type.bits();
+    return new ConcreteValInt(true, llvm::APInt(bits, 0));
+  } else if (type.isFloatType()) {
+    auto semantics =
+        getFloatSemantics(static_cast<const IR::FloatType &>(type));
+    return new ConcreteValFloat(true, llvm::APFloat::getZero(*semantics));
+  } else if (type.isVectorType() || type.isStructType()) {
+    const auto &aggregate = static_cast<const IR::AggregateType &>(type);
+    // Make a vector of poison values, and then mark the vector as a whole as
+    // poison.
+    vector<shared_ptr<ConcreteVal>> elements;
+    for (size_t i = 0; i < aggregate.numElementsConst(); ++i)
+      elements.push_back(
+          shared_ptr<ConcreteVal>(getPoisonValue(aggregate.getChild(i))));
+    return new ConcreteValAggregate(true, move(elements));
+  } else {
+    // unsupported
+    return nullptr;
+  }
+}
+
+const llvm::fltSemantics *
+Interpreter::getFloatSemantics(const IR::FloatType &type) {
+  switch (type.getFpType()) {
+  case IR::FloatType::Half:
+    return &llvm::APFloat::IEEEhalf();
+  case IR::FloatType::Float:
+    return &llvm::APFloat::IEEEsingle();
+  case IR::FloatType::Double:
+    return &llvm::APFloat::IEEEdouble();
+  case IR::FloatType::Quad:
+    return &llvm::APFloat::IEEEquad();
+  default:
+    return nullptr;
+  }
+}
+
 static shared_ptr<ConcreteVal> getConstantValue(const Value &i) {
-  // read poison consts
   if (dynamic_cast<const PoisonValue *>(&i)) {
-    // TODO add a concreteValPoison subclass maybe
-    return make_shared<ConcreteValInt>(true,
-                                       llvm::APInt(i.getType().bits(), 0));
+    return shared_ptr<ConcreteVal>(Interpreter::getPoisonValue(i.getType()));
+  } else if (dynamic_cast<const UndefValue *>(&i)) {
+    // TODO
+    return shared_ptr<ConcreteVal>(Interpreter::getPoisonValue(i.getType()));
   } else if (auto const_ptr = dynamic_cast<const IntConst *>(&i)) {
     // need to do this for constants that are larger than i64
     if (const_ptr->getString()) {
@@ -122,8 +163,7 @@ void Interpreter::start(Function &f) {
 
   unsigned input_i = 0;
   for (auto &i : f.getInputs()) {
-    auto I = concrete_vals.find(&i);
-    assert(I == concrete_vals.end());
+    assert(!concrete_vals.count(&i));
     auto new_val = getInputValue(input_i++, *dynamic_cast<const Input *>(&i));
     if (!new_val) {
       unsupported_flag = true;
@@ -132,14 +172,34 @@ void Interpreter::start(Function &f) {
     concrete_vals.emplace(&i, new_val);
   }
   for (auto &i : f.getConstants()) {
-    auto I = concrete_vals.find(&i);
-    assert(I == concrete_vals.end());
+    assert(!concrete_vals.count(&i));
     auto new_val = getConstantValue(i);
     if (!new_val) {
       unsupported_flag = true;
       return;
     }
     concrete_vals.emplace(&i, new_val);
+  }
+  for (auto &i : f.getUndefs()) {
+    assert(!concrete_vals.count(&i));
+    auto new_val = getConstantValue(i);
+    if (!new_val) {
+      unsupported_flag = true;
+      return;
+    }
+    concrete_vals.emplace(&i, new_val);
+  }
+  for (auto &i : f.getPredicates()) {
+    (void)i;
+    cerr << "Interpreter::start: predicates not supported\n";
+    unsupported_flag = true;
+    return;
+  }
+  for (auto &i : f.getAggregates()) {
+    (void)i;
+    cerr << "Interpreter::start: aggregates not supported\n";
+    unsupported_flag = true;
+    return;
   }
 
   // TODO add stack for alloca

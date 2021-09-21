@@ -15,3 +15,23 @@ expected:
   status: done
   undefined: false
   return_value: [-1, [0, 0, 32], 0]
+---
+name: insertvalue_undef
+func: alive.interpret
+args:
+  - {}
+  - !ir |
+    define fastcc { i32 } @0(i32 %0, i32 %1, i32 %2) #0 {
+    outline_entry:
+      %3 = sdiv i32 %1, %0
+      %4 = sub i32 %3, %2
+      %5 = insertvalue { i32 } undef, i32 %4, 0
+      ret { i32 } %5
+    }
+
+    attributes #0 = { minsize norecurse nounwind readnone willreturn }
+  - args: [128, -2147483648, -16777221]
+expected:
+  status: done
+  undefined: false
+  return_value: [5]

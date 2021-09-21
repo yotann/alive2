@@ -101,21 +101,6 @@ static llvm::APInt bvToAPInt(const smt::expr &example) {
   return apint;
 }
 
-static const llvm::fltSemantics *getFloatSemantics(const IR::FloatType &type) {
-  switch (type.getFpType()) {
-  case IR::FloatType::Half:
-    return &llvm::APFloat::IEEEhalf();
-  case IR::FloatType::Float:
-    return &llvm::APFloat::IEEEsingle();
-  case IR::FloatType::Double:
-    return &llvm::APFloat::IEEEdouble();
-  case IR::FloatType::Quad:
-    return &llvm::APFloat::IEEEquad();
-  default:
-    return nullptr;
-  }
-}
-
 static ojson modelValToJSON(const smt::Model &m, const IR::Type &type,
                             const IR::StateValue &val) {
   if (!val.isValid())
@@ -146,8 +131,8 @@ static ojson modelValToJSON(const smt::Model &m, const IR::Type &type,
   } else if (type.isFloatType()) {
     smt::expr example = m.eval(val.value, true).float2BV();
     llvm::APInt apint = bvToAPInt(example);
-    if (auto semantics =
-            getFloatSemantics(static_cast<const IR::FloatType &>(type))) {
+    if (auto semantics = Interpreter::getFloatSemantics(
+            static_cast<const IR::FloatType &>(type))) {
       auto dbl = llvm::APFloat(*semantics, apint);
       bool loses_info;
       if (dbl.convert(llvm::APFloat::IEEEdouble(),
@@ -272,6 +257,8 @@ static ojson compareFunctions(llvm::Function &f1, llvm::Function &f2,
 
 static ConcreteVal *loadConcreteVal(const IR::Type &type, const ojson &val) {
   static const ojson POISON = "poison";
+  if (val == POISON)
+    return Interpreter::getPoisonValue(type);
   if (&type == &IR::Type::voidTy) {
     return new ConcreteValVoid();
   } else if (type.isIntType()) {
@@ -289,20 +276,16 @@ static ConcreteVal *loadConcreteVal(const IR::Type &type, const ojson &val) {
       for (size_t i = 0; i < bsv.size(); ++i)
         tmp.insertBits(bsv[i], 8 * (bsv.size() - i - 1), 8);
       return new ConcreteValInt(false, move(tmp));
-    } else if (val == POISON) {
-      return new ConcreteValInt(true, llvm::APInt(bits, 0));
     }
   } else if (type.isFloatType()) {
-    auto semantics =
-        getFloatSemantics(static_cast<const IR::FloatType &>(type));
+    auto semantics = Interpreter::getFloatSemantics(
+        static_cast<const IR::FloatType &>(type));
     if (val.is_double()) {
       llvm::APFloat tmp(val.as_double());
       bool loses_info;
       tmp.convert(*semantics, llvm::RoundingMode::NearestTiesToEven,
                   &loses_info);
       return new ConcreteValFloat(false, move(tmp));
-    } else if (val == POISON) {
-      return new ConcreteValFloat(true, llvm::APFloat::getZero(*semantics));
     }
     // TODO: support larger floats. Options are:
     // - Byte strings
@@ -326,14 +309,6 @@ static ConcreteVal *loadConcreteVal(const IR::Type &type, const ojson &val) {
           return nullptr;
       }
       return new ConcreteValAggregate(false, move(elements));
-    } else if (val == POISON) {
-      // Make a vector of poison values, and then mark the vector as a whole as
-      // poison.
-      vector<shared_ptr<ConcreteVal>> elements;
-      for (size_t i = 0; i < aggregate.numElementsConst(); ++i)
-        elements.push_back(shared_ptr<ConcreteVal>(
-            loadConcreteVal(aggregate.getChild(i), POISON)));
-      return new ConcreteValAggregate(true, move(elements));
     }
   }
   // unsupported

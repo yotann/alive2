@@ -28,6 +28,9 @@ public:
   virtual std::shared_ptr<ConcreteVal> getInputValue(unsigned index,
                                                      const IR::Input &input);
 
+  static ConcreteVal *getPoisonValue(const IR::Type &type);
+  static const llvm::fltSemantics *getFloatSemantics(const IR::FloatType &type);
+
   bool isReturned() const {
     return !cur_block;
   }
