@@ -255,7 +255,21 @@ static ojson compareFunctions(llvm::Function &f1, llvm::Function &f2,
   return r.result;
 }
 
-static ConcreteVal *loadConcreteVal(const IR::Type &type, const ojson &val) {
+namespace {
+class WorkerInterpreter : public Interpreter {
+public:
+  WorkerInterpreter(const ojson &test_input);
+  shared_ptr<ConcreteVal> getInputValue(unsigned index,
+                                        const IR::Input &input) override;
+
+  ConcreteVal *loadConcreteVal(const IR::Type &type, const ojson &val);
+
+  const ojson &test_input;
+};
+} // namespace
+
+ConcreteVal *WorkerInterpreter::loadConcreteVal(const IR::Type &type,
+                                                const ojson &val) {
   static const ojson POISON = "poison";
   if (val == POISON)
     return Interpreter::getPoisonValue(type);
@@ -292,7 +306,7 @@ static ConcreteVal *loadConcreteVal(const IR::Type &type, const ojson &val) {
     // - Bigfloats (CBOR tag 5), widely supported but can't represent NaN bits
     // - Extended bigfloats (CBOR tag 269), can represent NaN bits but only
     //   supported by one CBOR implementation
-  } else if (type.isVectorType() || type.isStructType()) {
+  } else if (type.isAggregateType()) {
     const auto &aggregate = static_cast<const IR::AggregateType &>(type);
     if (val.is_array()) {
       vector<shared_ptr<ConcreteVal>> elements;
@@ -305,13 +319,18 @@ static ConcreteVal *loadConcreteVal(const IR::Type &type, const ojson &val) {
           elements.push_back(shared_ptr<ConcreteVal>(
               loadConcreteVal(aggregate.getChild(i), val[val_i++])));
         }
-        if (elements.back() == nullptr)
-          return nullptr;
+        assert(unsupported_flag || elements.back());
       }
       return new ConcreteValAggregate(false, move(elements));
     }
+  } else if (type.isPtrType()) {
+    setUnsupported("pointer input type");
+    return nullptr;
+  } else {
+    setUnsupported("unknown input type");
+    return nullptr;
   }
-  // unsupported
+  setUnsupported("invalid data for this input type");
   return nullptr;
 }
 
@@ -359,17 +378,6 @@ static ojson storeConcreteVal(const IR::Type &type, const ConcreteVal *val) {
     return nullptr;
   }
 }
-
-namespace {
-class WorkerInterpreter : public Interpreter {
-public:
-  WorkerInterpreter(const ojson &test_input);
-  shared_ptr<ConcreteVal> getInputValue(unsigned index,
-                                        const IR::Input &input) override;
-
-  const ojson &test_input;
-};
-} // namespace
 
 WorkerInterpreter::WorkerInterpreter(const ojson &test_input)
     : test_input(test_input) {}
@@ -422,6 +430,7 @@ static ojson evaluateAliveInterpret(const ojson &options, const ojson &src,
   ojson result(json_object_arg);
   if (interpreter.isUnsupported()) {
     result["status"] = "unsupported";
+    result["unsupported"] = interpreter.unsupported_reason;
   } else if (interpreter.isUndefined()) {
     result["status"] = "done";
     result["undefined"] = true;

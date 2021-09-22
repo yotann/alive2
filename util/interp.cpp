@@ -15,6 +15,12 @@ using util::config::dbg;
 
 namespace util {
 
+void Interpreter::setUnsupported(std::string reason) {
+  unsupported_flag = true;
+  if (unsupported_reason.empty())
+    unsupported_reason = reason;
+}
+
 shared_ptr<ConcreteVal> Interpreter::getInputValue(unsigned index,
                                                    const Input &i) {
   if (i.getType().isIntType()) {
@@ -24,8 +30,6 @@ shared_ptr<ConcreteVal> Interpreter::getInputValue(unsigned index,
     return shared_ptr<ConcreteVal>(
         new ConcreteValInt(false, llvm::APInt(i.getType().bits(), 3)));
   } else if (i.getType().isFloatType()) {
-    cout << "float input encountered " << '\n';
-
     if (i.bits() == 32) {
       return shared_ptr<ConcreteVal>(
           new ConcreteValFloat(false, llvm::APFloat(3.0f)));
@@ -36,12 +40,11 @@ shared_ptr<ConcreteVal> Interpreter::getInputValue(unsigned index,
       return shared_ptr<ConcreteVal>(new ConcreteValFloat(
           false, llvm::APFloat(llvm::APFloatBase::IEEEhalf(), "3.0")));
     } else {
-      cout << "AliveExec-Error : Unsupported float input type. Aborting"
-           << '\n';
+      setUnsupported("unsupported float input type");
       return nullptr;
     }
   } else {
-    cout << "AliveExec-Error : input type not supported" << '\n';
+    setUnsupported("unsupported input type");
     return nullptr;
   }
 }
@@ -87,12 +90,15 @@ Interpreter::getFloatSemantics(const IR::FloatType &type) {
   }
 }
 
-static shared_ptr<ConcreteVal> getConstantValue(const Value &i) {
+shared_ptr<ConcreteVal> Interpreter::getConstantValue(const Value &i) {
   if (dynamic_cast<const PoisonValue *>(&i)) {
     return shared_ptr<ConcreteVal>(Interpreter::getPoisonValue(i.getType()));
   } else if (dynamic_cast<const UndefValue *>(&i)) {
     // TODO
     return shared_ptr<ConcreteVal>(Interpreter::getPoisonValue(i.getType()));
+  } else if (dynamic_cast<const NullPointerValue *>(&i)) {
+    setUnsupported("null pointer constant");
+    return nullptr;
   } else if (auto const_ptr = dynamic_cast<const IntConst *>(&i)) {
     // need to do this for constants that are larger than i64
     if (const_ptr->getString()) {
@@ -122,7 +128,8 @@ static shared_ptr<ConcreteVal> getConstantValue(const Value &i) {
         UNREACHABLE();
       }
     } else if (auto string_float = const_ptr->getString()) {
-      cout << "string repr of float constant : " << *string_float << '\n';
+      (void)string_float;
+      setUnsupported("float constant represented with string");
       return nullptr;
     } else if (auto int_float = const_ptr->getInt()) {
       return make_shared<ConcreteValFloat>(
@@ -146,8 +153,11 @@ static shared_ptr<ConcreteVal> getConstantValue(const Value &i) {
       }
     }
     return make_shared<ConcreteValAggregate>(false, move(elements));
+  } else if (dynamic_cast<const GlobalVariable *>(&i)) {
+    setUnsupported("global variable used as constant");
+    return nullptr;
   } else {
-    cout << "AliveExec-Error : Unsupported constant type. Aborting!\n";
+    setUnsupported("unknown class used as constant");
     return nullptr;
   }
 }
@@ -165,40 +175,29 @@ void Interpreter::start(Function &f) {
   for (auto &i : f.getInputs()) {
     assert(!concrete_vals.count(&i));
     auto new_val = getInputValue(input_i++, *dynamic_cast<const Input *>(&i));
-    if (!new_val) {
-      unsupported_flag = true;
-      return;
-    }
+    assert(new_val || unsupported_flag);
     concrete_vals.emplace(&i, new_val);
   }
   for (auto &i : f.getConstants()) {
     assert(!concrete_vals.count(&i));
     auto new_val = getConstantValue(i);
-    if (!new_val) {
-      unsupported_flag = true;
-      return;
-    }
+    assert(new_val || unsupported_flag);
     concrete_vals.emplace(&i, new_val);
   }
   for (auto &i : f.getUndefs()) {
     assert(!concrete_vals.count(&i));
     auto new_val = getConstantValue(i);
-    if (!new_val) {
-      unsupported_flag = true;
-      return;
-    }
+    assert(new_val || unsupported_flag);
     concrete_vals.emplace(&i, new_val);
   }
   for (auto &i : f.getPredicates()) {
     (void)i;
-    cerr << "Interpreter::start: predicates not supported\n";
-    unsupported_flag = true;
+    setUnsupported("function predicates are not supported");
     return;
   }
   for (auto &i : f.getAggregates()) {
     (void)i;
-    cerr << "Interpreter::start: aggregates not supported\n";
-    unsupported_flag = true;
+    setUnsupported("function aggregates are not supported");
     return;
   }
 
@@ -283,11 +282,7 @@ void Interpreter::step() {
     }
   } else {
     auto res_val = i.concreteEval(*this);
-    if (!res_val) {
-      cout << "AliveExec-Error : unsupported instruction. Aborting" << '\n';
-      unsupported_flag = true;
-      return;
-    }
+    assert(res_val || unsupported_flag);
     concrete_vals[&i] = res_val;
   }
 }

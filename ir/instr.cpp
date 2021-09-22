@@ -113,8 +113,18 @@ expr Instr::getTypeConstraints() const {
 
 std::shared_ptr<util::ConcreteVal>
 Instr::concreteEval(Interpreter &interpreter) const {
-  cout << "[Instr::concreteEval] instruction not supported yet, aborting\n";
+  interpreter.setUnsupported(getOpcodeName());
   return nullptr;
+}
+
+std::string Instr::getOpcodeName() const {
+  ostringstream name_stream;
+  print(name_stream);
+  string name = name_stream.str();
+  auto i = name.find(' ');
+  if (i != string::npos)
+    name.resize(i);
+  return name;
 }
 
 BinOp::BinOp(Type &type, string &&name, Value &lhs, Value &rhs, Op op,
@@ -839,12 +849,12 @@ BinOp::concreteEval(Interpreter &interpreter) const {
   // bool exact_flag = flags & Exact;
   auto lhs_concrete = interpreter.concrete_vals.find(lhs)->second;
   auto rhs_concrete = interpreter.concrete_vals.find(rhs)->second;
+  auto lhs_vect = dynamic_cast<ConcreteValAggregate *>(lhs_concrete.get());
+  if (lhs_vect) {
+    interpreter.setUnsupported("vector operand to binary operator");
+    return nullptr;
+  }
   if (op == Op::Add) {
-    auto lhs_vect = dynamic_cast<ConcreteValAggregate *>(lhs_concrete.get());
-    if (lhs_vect) {
-      cout << "bin op encountered vector operand" << '\n';
-      return nullptr;
-    }
     return shared_ptr<ConcreteVal>(
         ConcreteValInt::add(lhs_concrete.get(), rhs_concrete.get(), flags));
   } else if (op == Op::Sub) {
@@ -938,7 +948,7 @@ BinOp::concreteEval(Interpreter &interpreter) const {
     return shared_ptr<ConcreteVal>(
         ConcreteValInt::ctlz(lhs_concrete.get(), rhs_concrete.get(), flags));
   } else {
-    cout << "[BinOP:concreteEval] not supported on this instruction yet" << '\n';
+    interpreter.setUnsupported(getOpcodeName());
     return nullptr;
   }
   UNREACHABLE();
@@ -1158,7 +1168,7 @@ UnaryOp::concreteEval(Interpreter &interpreter) const {
   } else if (op == Op::BSwap) {
     return shared_ptr<ConcreteVal>(ConcreteValInt::bswap(operand));
   } else {
-    cout << "Error: ConcreteEval for unary op not supported yet" << '\n';
+    interpreter.setUnsupported(getOpcodeName());
     return nullptr;
   }
 
@@ -1381,7 +1391,7 @@ TernaryOp::concreteEval(Interpreter &interpreter) const {
     return shared_ptr<ConcreteVal>(
         ConcreteValFloat::fma(op_a_concrete, op_b_concrete, op_c_concrete));
   } else {
-    cout << "ERROR : [TernaryOp::concreteEval] operation not supported yet. Aborting!" << '\n';
+    interpreter.setUnsupported(getOpcodeName());
     return nullptr;
   }
 
@@ -1608,7 +1618,7 @@ ConversionOp::concreteEval(Interpreter &interpreter) const {
     return shared_ptr<ConcreteVal>(
         ConcreteValInt::sext(op_concrete, tgt_bitwidth));
   } else {
-    cout << "ERROR : [ConversionOp::concreteEval] operation not supported yet. Aborting!" << '\n';
+    interpreter.setUnsupported(getOpcodeName());
     return nullptr;
   }
   UNREACHABLE();
@@ -2349,6 +2359,7 @@ unique_ptr<Instr> FCmp::dup(const string &suffix) const {
 
 std::shared_ptr<util::ConcreteVal>
 FCmp::concreteEval(Interpreter &interpreter) const {
+  interpreter.setUnsupported(getOpcodeName());
   return nullptr;
   //TODO support fcmp with vector operands
   /*
@@ -2952,12 +2963,10 @@ Assume::concreteEval(util::Interpreter &interpreter) const {
       interpreter.UB_flag = true;
     break;
   case Align:
-    cout << "[Assume::concreteEval] Align not supported yet, aborting\n";
-    interpreter.unsupported_flag = true;
+    interpreter.setUnsupported("assume.align");
     break;
   case NonNull:
-    cout << "[Assume::concreteEval] NonNull not supported yet, aborting\n";
-    interpreter.unsupported_flag = true;
+    interpreter.setUnsupported("assume.nonnull");
     break;
   }
   return make_shared<ConcreteValVoid>();

@@ -5,6 +5,7 @@
 
 #include <map>
 #include <memory>
+#include <string>
 #include <vector>
 
 namespace IR {
@@ -25,10 +26,11 @@ public:
   void start(IR::Function &f);
   void step();
   void run(unsigned instr_limit = 100);
+  void setUnsupported(std::string reason);
   virtual std::shared_ptr<ConcreteVal> getInputValue(unsigned index,
                                                      const IR::Input &input);
-
-  static ConcreteVal *getPoisonValue(const IR::Type &type);
+  std::shared_ptr<ConcreteVal> getConstantValue(const IR::Value &i);
+  ConcreteVal *getPoisonValue(const IR::Type &type);
   static const llvm::fltSemantics *getFloatSemantics(const IR::FloatType &type);
 
   bool isReturned() const {
@@ -53,6 +55,7 @@ public:
   unsigned pos_in_block = 0;
   bool UB_flag = false;
   bool unsupported_flag = false;
+  std::string unsupported_reason;
   ConcreteVal *return_value = nullptr;
 };
 

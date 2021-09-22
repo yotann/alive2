@@ -85,3 +85,18 @@ args:
 expected:
   status: done
   undefined: true
+---
+name: assume_nonnull
+func: alive.interpret
+args:
+  - {}
+  - !ir |
+    declare void @llvm.assume(i1 %cond)
+    define void @f() {
+      call void @llvm.assume(i1 1) [ "nonnull"(i8* null) ]
+      ret void
+    }
+  - args: []
+expected:
+  status: unsupported
+  unsupported: null pointer constant

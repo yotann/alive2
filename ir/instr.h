@@ -34,6 +34,7 @@ public:
   virtual std::unique_ptr<Instr> dup(const std::string &suffix) const = 0;
   virtual std::shared_ptr<util::ConcreteVal>
   concreteEval(util::Interpreter &interpreter) const;
+  virtual std::string getOpcodeName() const;
 };
 
 
