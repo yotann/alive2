@@ -150,8 +150,20 @@ namespace util {
   public:
     ConcreteValAggregate(bool poison,
                          std::vector<std::shared_ptr<ConcreteVal>> &&elements);
+    ~ConcreteValAggregate();
     const std::vector<std::shared_ptr<ConcreteVal>> &getVal() const;
-    virtual ~ConcreteValAggregate();
+    void print() override;
+  };
+
+  class ConcreteValPointer : public ConcreteVal {
+  private:
+    unsigned bid;
+    std::int64_t offset;
+
+  public:
+    ConcreteValPointer(bool poison, unsigned bid, std::int64_t offset);
+    unsigned getBid() const;
+    std::int64_t getOffset() const;
     void print() override;
   };
 }

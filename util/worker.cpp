@@ -101,8 +101,8 @@ static llvm::APInt bvToAPInt(const smt::expr &example) {
   return apint;
 }
 
-static ojson modelValToJSON(const smt::Model &m, const IR::Type &type,
-                            const IR::StateValue &val) {
+static ojson modelValToJSON(const IR::State &state, const smt::Model &m,
+                            const IR::Type &type, const IR::StateValue &val) {
   if (!val.isValid())
     return nullptr; // invalid expr
   // TODO: if Input, check for undef
@@ -113,7 +113,8 @@ static ojson modelValToJSON(const smt::Model &m, const IR::Type &type,
     for (size_t i = 0; i < agg.numElementsConst(); ++i) {
       if (agg.isPadding(i))
         continue;
-      result.push_back(modelValToJSON(m, agg.getChild(i), agg.extract(val, i)));
+      result.push_back(
+          modelValToJSON(state, m, agg.getChild(i), agg.extract(val, i)));
     }
     return result;
   }
@@ -143,7 +144,18 @@ static ojson modelValToJSON(const smt::Model &m, const IR::Type &type,
     }
     return storeAPIntAsByteString(apint);
   } else if (type.isPtrType()) {
-    return nullptr; // TODO
+    IR::Pointer ptr(state.getMemory(), m.eval(val.value, true));
+    smt::expr bid_expr = ptr.getBid();
+    smt::expr offset_expr = ptr.getShortOffset();
+    uint64_t bid;
+    int64_t offset;
+    if (bid_expr.isUInt(bid) && offset_expr.isInt(offset)) {
+      ojson tmp(json_array_arg);
+      tmp.emplace_back(bid);
+      tmp.emplace_back(offset);
+      return tmp;
+    }
+    return nullptr;
   } else if (&type == &IR::Type::voidTy) {
     return nullptr;
   }
@@ -156,7 +168,7 @@ static ojson testInputToJSON(const IR::Function &f, const IR::State &state,
   ojson &args = result["args"] = ojson(json_array_arg);
   for (const auto &input : f.getInputs()) {
     const auto &var = state.at(input);
-    args.push_back(modelValToJSON(m, input.getType(), var.first));
+    args.push_back(modelValToJSON(state, m, input.getType(), var.first));
   }
   return result;
 }
@@ -324,8 +336,10 @@ ConcreteVal *WorkerInterpreter::loadConcreteVal(const IR::Type &type,
       return new ConcreteValAggregate(false, move(elements));
     }
   } else if (type.isPtrType()) {
-    setUnsupported("pointer input type");
-    return nullptr;
+    if (val.is_array() && val.size() == 2) {
+      return new ConcreteValPointer(false, val[0].as<unsigned>(),
+                                    val[1].as<int64_t>());
+    }
   } else {
     setUnsupported("unknown input type");
     return nullptr;
@@ -373,6 +387,11 @@ static ojson storeConcreteVal(const IR::Type &type, const ConcreteVal *val) {
         continue;
       tmp.emplace_back(storeConcreteVal(agg_type.getChild(i), vec[i].get()));
     }
+    return tmp;
+  } else if (auto val_ptr = dynamic_cast<const ConcreteValPointer *>(val)) {
+    ojson::array tmp;
+    tmp.emplace_back(val_ptr->getBid());
+    tmp.emplace_back(val_ptr->getOffset());
     return tmp;
   } else {
     return nullptr;

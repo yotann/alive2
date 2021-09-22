@@ -59,7 +59,7 @@ ConcreteVal *Interpreter::getPoisonValue(const IR::Type &type) {
     auto semantics =
         getFloatSemantics(static_cast<const IR::FloatType &>(type));
     return new ConcreteValFloat(true, llvm::APFloat::getZero(*semantics));
-  } else if (type.isVectorType() || type.isStructType()) {
+  } else if (type.isAggregateType()) {
     const auto &aggregate = static_cast<const IR::AggregateType &>(type);
     // Make a vector of poison values, and then mark the vector as a whole as
     // poison.
@@ -68,8 +68,11 @@ ConcreteVal *Interpreter::getPoisonValue(const IR::Type &type) {
       elements.push_back(
           shared_ptr<ConcreteVal>(getPoisonValue(aggregate.getChild(i))));
     return new ConcreteValAggregate(true, move(elements));
+  } else if (type.isPtrType()) {
+    return new ConcreteValPointer(true, 0, 0);
   } else {
     // unsupported
+    setUnsupported("type for poison");
     return nullptr;
   }
 }
@@ -97,8 +100,7 @@ shared_ptr<ConcreteVal> Interpreter::getConstantValue(const Value &i) {
     // TODO
     return shared_ptr<ConcreteVal>(Interpreter::getPoisonValue(i.getType()));
   } else if (dynamic_cast<const NullPointerValue *>(&i)) {
-    setUnsupported("null pointer constant");
-    return nullptr;
+    return make_shared<ConcreteValPointer>(false, 0, 0);
   } else if (auto const_ptr = dynamic_cast<const IntConst *>(&i)) {
     // need to do this for constants that are larger than i64
     if (const_ptr->getString()) {

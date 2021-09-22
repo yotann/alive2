@@ -1351,4 +1351,20 @@ namespace util{
     }
     cout << ">" << '\n';
   }
+
+  ConcreteValPointer::ConcreteValPointer(bool poison, unsigned bid,
+                                         std::int64_t offset)
+      : ConcreteVal(poison), bid(bid), offset(offset) {}
+
+  unsigned ConcreteValPointer::getBid() const {
+    return bid;
+  }
+
+  std::int64_t ConcreteValPointer::getOffset() const {
+    return offset;
+  }
+
+  void ConcreteValPointer::print() {
+    cout << "pointer(block_id=" << bid << ", offset=" << offset << ")\n";
+  }
 }

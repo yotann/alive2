@@ -101,3 +101,26 @@ expected:
   status: unsound
   valid: false
   errs: "ERROR: Source is more defined than target\n"
+---
+name: unsound_pointer
+func: alive.tv_v2
+args:
+  - disable_undef_input: true
+    disable_poison_input: true
+  - !ir |
+    define void @src(i8* dereferenceable(1) %x) {
+      load i8, i8* %x
+      ret void
+    }
+  - !ir |
+    define void @tgt(i8* dereferenceable(1) %x) {
+      %y = getelementptr i8, i8* %x, i32 -1
+      load i8, i8* %y
+      ret void
+    }
+expected:
+  test_input:
+    args: [[1, 0]]
+  status: unsound
+  valid: false
+  errs: "ERROR: Source is more defined than target\n"
