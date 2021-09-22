@@ -118,10 +118,15 @@ Instr::concreteEval(Interpreter &interpreter) const {
 }
 
 std::string Instr::getOpcodeName() const {
+  // TODO: modify Instr subclasses to override this method, so we don't have to
+  // parse the output of print().
   ostringstream name_stream;
   print(name_stream);
   string name = name_stream.str();
-  auto i = name.find(' ');
+  auto i = name.find(" = ");
+  if (i != string::npos)
+    name = string(name.begin() + i + 3, name.end());
+  i = name.find(' ');
   if (i != string::npos)
     name.resize(i);
   return name;
