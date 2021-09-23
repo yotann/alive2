@@ -438,15 +438,16 @@ static ojson evaluateAliveInterpret(const ojson &options, const ojson &src,
 
   auto &f = getSoleDefinition(*m);
   auto fn = llvm2alive(f, tli.getTLI(f));
+  ojson result(json_object_arg);
   if (!fn) {
-    std::cerr << "could not translate src to Alive IR\n";
-    _exit(1);
+    result["status"] = "unsupported";
+    result["unsupported"] = "could not translate to Alive IR";
+    return result;
   }
 
   WorkerInterpreter interpreter(test_input);
   interpreter.start(*fn);
   interpreter.run(max_steps);
-  ojson result(json_object_arg);
   if (interpreter.isUnsupported()) {
     result["status"] = "unsupported";
     result["unsupported"] = interpreter.unsupported_reason;
