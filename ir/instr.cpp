@@ -1613,6 +1613,12 @@ ConversionOp::concreteEval(Interpreter &interpreter) const {
 
   auto op_concrete = I->second.get();
   auto tgt_bitwidth = getType().bits();
+
+  if (dynamic_cast<ConcreteValAggregate *>(op_concrete)) {
+    interpreter.setUnsupported("vector operand to conversion operator");
+    return nullptr;
+  }
+
   if (op == Op::Trunc) {
     return shared_ptr<ConcreteVal>(
         ConcreteValInt::iTrunc(op_concrete, tgt_bitwidth));
@@ -1622,6 +1628,11 @@ ConversionOp::concreteEval(Interpreter &interpreter) const {
   } else if (op == Op::SExt) {
     return shared_ptr<ConcreteVal>(
         ConcreteValInt::sext(op_concrete, tgt_bitwidth));
+  } else if (op == Op::BitCast) {
+    if (getType().isPtrType() && val->getType().isPtrType())
+      return I->second;
+    interpreter.setUnsupported("bitcast on non-pointers");
+    return nullptr;
   } else {
     interpreter.setUnsupported(getOpcodeName());
     return nullptr;
@@ -2276,8 +2287,16 @@ ICmp::concreteEval(Interpreter &interpreter) const {
   assert(b_I != interpreter.concrete_vals.end());
   auto concrete_b = b_I->second.get();
 
-  return shared_ptr<ConcreteVal>(
-      ConcreteValInt::icmp(concrete_a, concrete_b, cond));
+  if (a->getType().isPtrType()) {
+    interpreter.setUnsupported("pointer icmp");
+    return nullptr;
+  } else if (a->getType().isVectorType()) {
+    interpreter.setUnsupported("vector icmp");
+    return nullptr;
+  } else {
+    return shared_ptr<ConcreteVal>(
+        ConcreteValInt::icmp(concrete_a, concrete_b, cond));
+  }
 }
 
 vector<Value*> FCmp::operands() const {
