@@ -129,6 +129,9 @@ static ojson modelValToJSON(const IR::State &state, const smt::Model &m,
     int64_t i64;
     if (example.isInt(i64))
       return i64;
+    uint64_t u64;
+    if (example.isUInt(u64))
+      return u64;
     return storeAPIntAsByteString(bvToAPInt(example));
   } else if (type.isFloatType()) {
     smt::expr example = m.eval(val.value, true).float2BV();
