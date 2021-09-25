@@ -129,6 +129,7 @@ class Memory {
   };
 
   std::vector<MemBlock> non_local_block_val;
+  std::vector<smt::expr> non_local_block_init_val;
   std::vector<MemBlock> local_block_val;
 
   smt::expr non_local_block_liveness; // BV w/ 1 bit per bid (1 if live)
@@ -150,7 +151,12 @@ class Memory {
   unsigned next_nonlocal_bid;
   unsigned nextNonlocalBid();
 
+public:
   static bool observesAddresses();
+  static unsigned getNumInitBlocks();
+  const smt::expr &getBlockInit(unsigned bid) const;
+
+private:
   static int isInitialMemBlock(const smt::expr &e, bool match_any_init = false);
 
   unsigned numLocals() const;

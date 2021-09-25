@@ -384,6 +384,15 @@ bool Memory::observesAddresses() {
   return has_ptr2int || has_int2ptr;
 }
 
+unsigned Memory::getNumInitBlocks() {
+  return has_null_block + num_globals_src + num_ptrinputs + has_fncall;
+}
+
+const smt::expr &Memory::getBlockInit(unsigned bid) const {
+  assert(bid < non_local_block_init_val.size());
+  return non_local_block_init_val[bid];
+}
+
 int Memory::isInitialMemBlock(const expr &e, bool match_any_init) {
   string name;
   expr load, blk, idx;
@@ -1064,8 +1073,7 @@ Memory::Memory(State &state) : state(&state), escaped_local_blks(*this) {
   if (memory_unused())
     return;
 
-  next_nonlocal_bid
-    = has_null_block + num_globals_src + num_ptrinputs + has_fncall;
+  next_nonlocal_bid = getNumInitBlocks();
 
   if (has_null_block)
     non_local_block_val.emplace_back();
@@ -1074,6 +1082,9 @@ Memory::Memory(State &state) : state(&state), escaped_local_blks(*this) {
   for (unsigned bid = has_null_block, e = numNonlocals(); bid != e; ++bid) {
     non_local_block_val.emplace_back(mk_block_val_array(bid));
   }
+
+  for (auto &block : non_local_block_val)
+    non_local_block_init_val.emplace_back(block.val);
 
   non_local_block_liveness = mk_liveness_array();
 

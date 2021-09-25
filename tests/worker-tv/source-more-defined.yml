@@ -121,6 +121,13 @@ args:
 expected:
   test_input:
     args: [[1, 0]]
+    memory:
+      - size: 0
+        align: 0
+      - size: 34359738368
+        align: 32
+        bytes:
+          - [null, 0, 0]
   status: unsound
   valid: false
   errs: "ERROR: Source is more defined than target\n"

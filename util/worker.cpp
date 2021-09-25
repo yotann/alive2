@@ -1,5 +1,6 @@
 #include "util/worker.h"
 
+#include "ir/globals.h"
 #include "ir/type.h"
 #include "llvm_util/llvm2alive.h"
 #include "smt/smt.h"
@@ -145,11 +146,9 @@ static ojson modelValToJSON(const IR::State &state, const smt::Model &m,
     return storeAPIntAsByteString(apint);
   } else if (type.isPtrType()) {
     IR::Pointer ptr(state.getMemory(), m.eval(val.value, true));
-    smt::expr bid_expr = ptr.getBid();
-    smt::expr offset_expr = ptr.getShortOffset();
     uint64_t bid;
     int64_t offset;
-    if (bid_expr.isUInt(bid) && offset_expr.isInt(offset)) {
+    if (ptr.getBid().isUInt(bid) && ptr.getShortOffset().isInt(offset)) {
       ojson tmp(json_array_arg);
       tmp.emplace_back(bid);
       tmp.emplace_back(offset);
@@ -162,6 +161,76 @@ static ojson modelValToJSON(const IR::State &state, const smt::Model &m,
   return nullptr; // unsupported
 }
 
+static void byteToJSON(ojson &array, const IR::Byte &byte) {
+  if (byte.isPtr().isTrue()) {
+    auto ptr = byte.ptr();
+    uint64_t bid;
+    int64_t offset;
+    int64_t byte_offset;
+    if (ptr.getBid().isUInt(bid) && ptr.getShortOffset().isInt(offset) &&
+        byte.ptrByteoffset().isInt(byte_offset)) {
+      array.emplace_back(byte.ptrNonpoison().isTrue() ? 0xff : 0x00);
+      ojson tmp(json_array_arg);
+      tmp.emplace_back(bid);
+      tmp.emplace_back(offset);
+      tmp.emplace_back(byte_offset);
+      array.emplace_back(move(tmp));
+      return;
+    }
+  } else {
+    uint64_t np;
+    uint64_t x;
+    if (byte.nonptrNonpoison().isUInt(np) && byte.nonptrValue().isUInt(x)) {
+      uint64_t np8 = 0;
+      for (unsigned i = 0; i < 8; ++i) {
+        if (np & (1 << (i * IR::bits_poison_per_byte / 8)))
+          np8 |= 1 << i;
+      }
+      array.emplace_back(np8);
+      array.emplace_back(x);
+      return;
+    }
+  }
+  array.emplace_back(0);
+  array.emplace_back(nullptr);
+}
+
+static ojson memoryBlockToJSON(const IR::State &state, const smt::Model &m,
+                               IR::Pointer &p) {
+  ojson result(json_object_arg);
+  auto size = m.getUInt(p.blockSize());
+  result["size"] = size;
+  if (IR::Memory::observesAddresses())
+    result["address"] = m.getUInt(p.getAddress());
+  result["align"] = m.getUInt(p.blockAlignment());
+
+  if (size) {
+    // Each byte is stored in the form [offset, nonpoison_mask, value].
+    // For normal data, the value is an integer.
+    // For a pointer byte, the value is [bid, offset, byte_offset].
+    // For the default byte value, offset is null.
+    ojson bytes(json_array_arg);
+    smt::expr array = m[state.getMemory().getBlockInit(m.getUInt(p.getBid()))];
+    smt::expr idx, val;
+    while (array.isStore(array, idx, val)) {
+      ojson tmp(json_array_arg, {m.getUInt(idx)});
+      byteToJSON(tmp, IR::Byte(state.getMemory(), m[val]));
+      bytes.emplace_back(move(tmp));
+    }
+    if (array.isConstArray(val)) {
+      ojson tmp(json_array_arg, {nullptr});
+      byteToJSON(tmp, IR::Byte(state.getMemory(), m[val]));
+      bytes.emplace_back(move(tmp));
+    } else {
+      // TODO: can this happen?
+      bytes.emplace_back(nullptr);
+    }
+    result["bytes"] = move(bytes);
+  }
+
+  return result;
+}
+
 static ojson testInputToJSON(const IR::Function &f, const IR::State &state,
                              const smt::Model &m) {
   ojson result(json_object_arg);
@@ -169,6 +238,13 @@ static ojson testInputToJSON(const IR::Function &f, const IR::State &state,
   for (const auto &input : f.getInputs()) {
     const auto &var = state.at(input);
     args.push_back(modelValToJSON(state, m, input.getType(), var.first));
+  }
+  if (IR::Memory::getNumInitBlocks() > 0) {
+    ojson &memory = result["memory"] = ojson(json_array_arg);
+    for (unsigned bid = 0; bid < IR::Memory::getNumInitBlocks(); ++bid) {
+      IR::Pointer p(state.getMemory(), bid, /*local*/ false);
+      memory.push_back(memoryBlockToJSON(state, m, p));
+    }
   }
   return result;
 }
