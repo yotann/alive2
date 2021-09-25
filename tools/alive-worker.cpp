@@ -21,18 +21,10 @@
 // This command will run one alive-worker process per core. Whenever a process
 // exits, it will start a new one to replace it.
 
-#include "llvm_util/llvm2alive.h"
-#include "smt/smt.h"
-#include "tools/transform.h"
 #include "util/version.h"
+#include "util/worker.h"
 
 #include "llvm/ADT/StringExtras.h"
-#include "llvm/ADT/Triple.h"
-#include "llvm/Analysis/TargetLibraryInfo.h"
-#include "llvm/Bitcode/BitcodeReader.h"
-#include "llvm/IR/Function.h"
-#include "llvm/IR/LLVMContext.h"
-#include "llvm/IR/Module.h"
 #include "llvm/Support/CommandLine.h"
 #include "llvm/Support/PrettyStackTrace.h"
 #include "llvm/Support/Signals.h"
@@ -41,7 +33,6 @@
 #include <iostream>
 #include <mutex>
 #include <optional>
-#include <sstream>
 #include <string>
 #include <thread>
 #include <utility>
@@ -60,10 +51,8 @@
 #include <jsoncons_ext/cbor/decode_cbor.hpp>
 #include <jsoncons_ext/cbor/encode_cbor.hpp>
 
-using namespace tools;
 using namespace util;
 using namespace std;
-using namespace llvm_util;
 using jsoncons::byte_string_arg;
 using jsoncons::decode_base64url;
 using jsoncons::encode_base64url;
@@ -78,10 +67,6 @@ static llvm::cl::opt<string> opt_url(llvm::cl::Positional, llvm::cl::Required,
                                      llvm::cl::desc("<memodb server URL>"),
                                      llvm::cl::value_desc("url"),
                                      llvm::cl::cat(alive_cmdargs));
-
-static llvm::ExitOnError exit_on_error;
-
-static optional<smt::smt_initializer> smt_init;
 
 // Used by signal handler to communicate with crash handler thread.
 static sem_t crash_sem;
@@ -244,196 +229,6 @@ static void exitHandler() {
   timeout_cv.notify_all();
 }
 
-static llvm::Function &getSoleDefinition(llvm::Module &m) {
-  for (llvm::Function &f : m.functions())
-    return f;
-  std::cerr << "missing definition in module\n";
-  _exit(2);
-}
-
-namespace {
-struct VerifyResults {
-  Transform t;
-  Errors errs;
-  enum {
-    COULD_NOT_TRANSLATE,
-    TYPE_CHECKER_FAILED,
-    SYNTACTIC_EQ,
-    CORRECT,
-    UNSOUND,
-    FAILED_TO_PROVE,
-  } status;
-
-  static VerifyResults error(string &&err) {
-    VerifyResults r;
-    r.status = COULD_NOT_TRANSLATE;
-    r.errs.add(move(err), false);
-    return r;
-  }
-};
-} // end anonymous namespace
-
-static VerifyResults verify(llvm::Function &f1, llvm::Function &f2,
-                            llvm::TargetLibraryInfoWrapperPass &tli) {
-  auto fn1 = llvm2alive(f1, tli.getTLI(f1));
-  if (!fn1)
-    return VerifyResults::error("Could not translate src to Alive IR\n");
-  auto fn2 = llvm2alive(f2, tli.getTLI(f2));
-  if (!fn2)
-    return VerifyResults::error("Could not translate tgt to Alive IR\n");
-
-  VerifyResults r;
-  r.t.src = move(*fn1);
-  r.t.tgt = move(*fn2);
-
-  stringstream ss1, ss2;
-  r.t.src.print(ss1);
-  r.t.tgt.print(ss2);
-  if (ss1.str() == ss2.str()) {
-    r.status = VerifyResults::SYNTACTIC_EQ;
-    return r;
-  }
-
-  smt_init->reset();
-  r.t.preprocess();
-  TransformVerify verifier(r.t, false);
-
-  auto types = verifier.getTypings();
-  if (!types) {
-    r.status = VerifyResults::TYPE_CHECKER_FAILED;
-    return r;
-  }
-  assert(types.hasSingleTyping());
-
-  r.errs = verifier.verify();
-  if (r.errs) {
-    r.status = r.errs.isUnsound() ? VerifyResults::UNSOUND
-                                  : VerifyResults::FAILED_TO_PROVE;
-  } else {
-    r.status = VerifyResults::CORRECT;
-  }
-  return r;
-}
-
-static ojson compareFunctions(llvm::Function &f1, llvm::Function &f2,
-                              llvm::TargetLibraryInfoWrapperPass &tli) {
-  auto r = verify(f1, f2, tli);
-  ojson result(json_object_arg);
-
-  if (r.status == VerifyResults::UNSOUND ||
-      r.status == VerifyResults::FAILED_TO_PROVE ||
-      r.status == VerifyResults::COULD_NOT_TRANSLATE) {
-    std::ostringstream sstr;
-    sstr << r.errs;
-    sstr.flush();
-    result["errs"] = sstr.str();
-  } else {
-    assert(!r.errs);
-  }
-
-  if (r.status == VerifyResults::CORRECT ||
-      r.status == VerifyResults::SYNTACTIC_EQ) {
-    result["valid"] = true;
-  } else if (r.status == VerifyResults::UNSOUND ||
-             r.status == VerifyResults::TYPE_CHECKER_FAILED) {
-    result["valid"] = false;
-  } else {
-    result["valid"] = ojson(nullptr); // unknown
-  }
-
-  switch (r.status) {
-  case VerifyResults::CORRECT:
-    result["outcome"] = "correct";
-    break;
-  case VerifyResults::COULD_NOT_TRANSLATE:
-    result["outcome"] = "could_not_translate";
-    break;
-  case VerifyResults::FAILED_TO_PROVE:
-    result["outcome"] = "failed_to_prove";
-    break;
-  case VerifyResults::SYNTACTIC_EQ:
-    result["outcome"] = "syntactic_eq";
-    break;
-  case VerifyResults::TYPE_CHECKER_FAILED:
-    result["outcome"] = "type_checker_failed";
-    break;
-  case VerifyResults::UNSOUND:
-    result["outcome"] = "unsound";
-    break;
-  }
-
-  return result;
-}
-
-static ojson evaluateAliveInterpret(const ojson &options, const ojson &src,
-                                    const ojson &test_input) {
-  std::cerr << "alive.interpret not yet implemented!\n";
-  _exit(2);
-}
-
-static ojson evaluateAliveTV(const ojson &options, const ojson &src,
-                             const ojson &tgt) {
-  uint64_t smt_timeout =
-      options.get_with_default<uint64_t>("smt_timeout", 10000);
-  uint64_t timeout = options.get_with_default<uint64_t>("timeout", 60000);
-  uint64_t smt_max_mem =
-      options.get_with_default<uint64_t>("smt_max_mem", 1024);
-  uint64_t smt_random_seed =
-      options.get_with_default<uint64_t>("smt_random_seed", uint64_t(0));
-
-  auto to_stringref = [](const ojson &node) {
-    auto bytes = node.as_byte_string_view();
-    return llvm::StringRef(reinterpret_cast<const char *>(bytes.data()),
-                           bytes.size());
-  };
-
-  smt::set_query_timeout(to_string(smt_timeout));
-  smt::set_memory_limit(smt_max_mem * 1024 * 1024);
-  smt::set_random_seed(to_string(smt_random_seed));
-
-  llvm::LLVMContext context;
-  auto m1_or_err = llvm::parseBitcodeFile(
-      llvm::MemoryBufferRef(to_stringref(src), "src"), context);
-  auto m2_or_err = llvm::parseBitcodeFile(
-      llvm::MemoryBufferRef(to_stringref(tgt), "tgt"), context);
-  if (!m1_or_err || !m2_or_err) {
-    std::cerr << "could not parse bitcode files";
-    _exit(1);
-  }
-  auto m1 = std::move(*m1_or_err), m2 = std::move(*m2_or_err);
-
-  auto &dl = m1->getDataLayout();
-  llvm::Triple target_triple(m1->getTargetTriple());
-  llvm::TargetLibraryInfoWrapperPass tli(target_triple);
-
-  std::ostringstream out;
-  llvm_util::initializer llvm_util_init(out, dl);
-  // TODO: include contents of out.str() in the response.
-
-  if (m1->getTargetTriple() != m2->getTargetTriple()) {
-    std::cerr << "module target triples do not match";
-    abort();
-  }
-
-  auto &f1 = getSoleDefinition(*m1);
-  auto &f2 = getSoleDefinition(*m2);
-
-  std::unique_lock lock(timeout_mutex);
-  timeout_millis = timeout;
-  timeout_index++;
-  lock.unlock();
-  timeout_cv.notify_one();
-
-  auto result = compareFunctions(f1, f2, tli);
-
-  lock.lock();
-  timeout_millis = 0;
-  lock.unlock();
-  timeout_cv.notify_one();
-
-  return result;
-}
-
 int main(int argc, char **argv) {
   // Register our signal handler before LLVM's stack trace printer, so our
   // handler will run first.
@@ -450,7 +245,6 @@ int main(int argc, char **argv) {
   llvm::PrettyStackTraceProgram X(argc, argv);
   llvm::EnableDebugBuffering = true;
   llvm::llvm_shutdown_obj llvm_shutdown; // Call llvm_shutdown() on exit.
-  smt_init.emplace();
 
   std::string Usage =
       R"EOF(Alive2 stand-alone distributed worker:
@@ -476,53 +270,57 @@ calls that are submitted to the server by other programs.
   ojson worker_info(
       json_object_arg,
       {
-          {"funcs", ojson(json_array_arg, {"alive.tv", "alive.interpret"})},
+          {"funcs", ojson(json_array_arg, {"alive.tv_v2", "alive.interpret"})},
       });
   auto worker_info_cid = putNode(worker_info);
 
   while (true) {
     std::string buffer;
     encode_cbor(worker_info_cid, buffer);
-    auto result =
+    auto response =
         session->Post("/worker", cbor_headers, buffer, "application/cbor");
-    checkResult(result);
-    if (result->get_header_value("Content-Type") != "application/cbor") {
+    checkResult(response);
+    if (response->get_header_value("Content-Type") != "application/cbor") {
       std::cerr << "unexpected Content-Type!\n";
       return 1;
     }
-    ojson job = decode_cbor<ojson>(result->body);
-    if (job.is_null())
-      continue; // No jobs available, try again.
+    ojson job = decode_cbor<ojson>(response->body);
+    if (job.is_null()) {
+      // No jobs available, try again.
+      sleep(1); // TODO: exponential backoff
+      continue;
+    }
 
     string func = job["func"].as<string>();
     std::string call_uri = "/call/" + func + "/";
-    for (const ojson &arg : job["args"].array_range())
+    for (ojson &arg : job["args"].array_range()) {
       call_uri += binaryCIDToText(arg) + ",";
+      arg = getNodeFromCID(arg);
+    }
     call_uri.pop_back(); // remove last comma
     llvm::errs() << "evaluating " << call_uri << "\n";
 
     std::unique_lock lock(result_mutex);
     result_uri = call_uri;
     lock.unlock();
-    if (func == "alive.tv") {
-      ojson options = getNodeFromCID(job["args"][0]);
-      ojson src = getNodeFromCID(job["args"][1]);
-      ojson tgt = getNodeFromCID(job["args"][2]);
-      ojson result = evaluateAliveTV(options, src, tgt);
-      sendResult(result);
-    } else if (func == "alive.interpret") {
-      ojson options = getNodeFromCID(job["args"][0]);
-      ojson src = getNodeFromCID(job["args"][1]);
-      ojson test_input = getNodeFromCID(job["args"][2]);
-      ojson result = evaluateAliveInterpret(options, src, test_input);
-      sendResult(result);
-    } else {
-      std::cerr << "unsupported func \"" << func << "\"\n";
-      return 1;
-    }
-  }
 
-  smt_init.reset();
+    uint64_t timeout =
+        job["args"][0].get_with_default<uint64_t>("timeout", 60000);
+    lock = unique_lock(timeout_mutex);
+    timeout_millis = timeout;
+    timeout_index++;
+    lock.unlock();
+    timeout_cv.notify_one();
+
+    ojson result = evaluateAliveFunc(job);
+
+    lock.lock();
+    timeout_millis = 0;
+    lock.unlock();
+    timeout_cv.notify_one();
+
+    sendResult(result);
+  }
 
   return 0;
 }

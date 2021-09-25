@@ -37,11 +37,11 @@ namespace util{
     this->flags = Flags::Undef;
   }
 
-  bool ConcreteVal::isPoison(){
+  bool ConcreteVal::isPoison() const {
     return flags & Flags::Poison;
   }
 
-  bool ConcreteVal::isUndef(){
+  bool ConcreteVal::isUndef() const {
     return flags & Flags::Undef;
   }
 
@@ -91,11 +91,17 @@ namespace util{
     return;
   }
 
+  ConcreteValVoid::ConcreteValVoid() : ConcreteVal(false) {}
+
+  void ConcreteValVoid::print() {
+    std::cout << "ConcreteValVoid()\n";
+  }
+
   ConcreteValInt::ConcreteValInt(bool poison, llvm::APInt &&val)
   : ConcreteVal(poison), val(move(val)) {
   }
 
-  llvm::APInt ConcreteValInt::getVal(){
+  llvm::APInt ConcreteValInt::getVal() const {
     return val;
   }
 
@@ -103,7 +109,7 @@ namespace util{
     val = v;
   }
 
-  bool ConcreteValInt::getBoolVal() {
+  bool ConcreteValInt::getBoolVal() const {
     return val.getBoolValue();
   }
 
@@ -771,24 +777,17 @@ namespace util{
     return v;
   }
 
-  ConcreteVal* ConcreteValInt::select(ConcreteVal* cond, ConcreteVal* a, ConcreteVal* b) {
+  shared_ptr<ConcreteVal> ConcreteValInt::select(ConcreteVal *cond,
+                                                 shared_ptr<ConcreteVal> &a,
+                                                 shared_ptr<ConcreteVal> &b) {
     auto cond_int = dynamic_cast<ConcreteValInt *>(cond);
-    auto a_int = dynamic_cast<ConcreteValInt *>(a);
-    auto b_int = dynamic_cast<ConcreteValInt *>(b);
-    assert(cond_int && a_int && b_int);
-    auto poison_res = evalPoison(cond_int, a_int, b_int);
-    if (poison_res) 
-      return poison_res;
-
-    if (cond_int->getBoolVal()) {
-      auto v = new ConcreteValInt(*a_int);
-      return v;
-    }
-    else {
-      auto v = new ConcreteValInt(*b_int);
-      return v;
-    }
-    UNREACHABLE();
+    assert(cond_int);
+    // The result is only poison if cond or the selected value is poison; the
+    // other value doesn't matter.
+    auto poison_res = evalPoison(cond_int);
+    if (poison_res)
+      return shared_ptr<ConcreteVal>(poison_res);
+    return cond_int->getBoolVal() ? a : b;
   }
 
   ConcreteVal* ConcreteValInt::icmp(ConcreteVal* a, ConcreteVal* b, unsigned cond) {
@@ -852,7 +851,7 @@ namespace util{
 
   }
 
-  llvm::APFloat ConcreteValFloat::getVal(){
+  llvm::APFloat ConcreteValFloat::getVal() const {
     return val;
   }
 
@@ -1325,26 +1324,6 @@ namespace util{
     return v; 
   }
 
-   ConcreteVal* ConcreteValFloat::select(ConcreteVal* cond, ConcreteVal* a, ConcreteVal* b) {
-    auto cond_int = dynamic_cast<ConcreteValInt *>(cond);
-    auto a_float = dynamic_cast<ConcreteValFloat *>(a);
-    auto b_float = dynamic_cast<ConcreteValFloat *>(b);
-    assert(cond_int && a_float && b_float);
-    auto poison_res = evalPoison(cond_int, a_float, b_float);
-    if (poison_res) 
-      return poison_res;
-
-    if (cond_int->getBoolVal()) {
-      auto v = new ConcreteValFloat(*a_float);
-      return v;
-    }
-    else {
-      auto v = new ConcreteValFloat(*b_float);
-      return v;
-    }
-    UNREACHABLE();
-  }
-
   void ConcreteValFloat::print() { 
     llvm::SmallVector<char, 16> Buffer;
     val.toString(Buffer);
@@ -1354,102 +1333,38 @@ namespace util{
               << bits << "b, " << F << "F)\n";
   }
 
-  ConcreteValVect::ConcreteValVect(bool poison, std::vector<ConcreteVal*> &&elements)
-  : ConcreteVal(poison), elements(move(elements)) {
-    assert(this->elements.size() > 0);
+  ConcreteValAggregate::ConcreteValAggregate(
+      bool poison, std::vector<shared_ptr<ConcreteVal>> &&elements)
+      : ConcreteVal(poison), elements(move(elements)) {}
+
+  const vector<shared_ptr<ConcreteVal>> &ConcreteValAggregate::getVal() const {
+    return elements;
   }
 
-  ConcreteValVect::ConcreteValVect(bool poison, const IR::Value* vect_val)
-  : ConcreteVal(poison) {
-    assert(vect_val->getType().isVectorType());
-    auto vect_type_ptr = dynamic_cast<const VectorType *>(&vect_val->getType());
-    // I don't think vector type can have padding
-    assert(vect_type_ptr->numPaddingsConst() == 0);
-    auto bitwidth =  vect_type_ptr->getChild(0).bits();
-    auto isIntTy = vect_type_ptr->getChild(0).isIntType();
-    
-    for (unsigned int i=0; i < vect_type_ptr->numElementsConst(); ++i) {
-      if (isIntTy){
-        auto *v = new ConcreteValInt(false, llvm::APInt(bitwidth, 3));
-        elements.push_back(v);
-      }
-      else{
-        assert( "Error: vector type not supported yet!" && false );
-      }  
-    }
-
+  ConcreteValAggregate::~ConcreteValAggregate() {
   }
 
-  //ConcreteValVect::ConcreteValVect(ConcreteValVect &l){
-  //  cout << "copy ctor concreteValVect" << '\n';
-  //}
-//
-  //ConcreteValVect& ConcreteValVect::operator=(ConcreteValVect &l) {
-  //  cout << "assign op concreteValVect" << '\n';
-  //  return *this;
-  //}
-//
-  //ConcreteValVect::ConcreteValVect(ConcreteValVect &&l){
-  //  cout << "move ctor concreteValVect" << '\n';
-  //}
-//
-  //ConcreteValVect& ConcreteValVect::operator=(ConcreteValVect &&l) {
-  //  cout << "move assign op concreteValVect" << '\n';
-  //  return *this;
-  //}
-
-  ConcreteValVect& ConcreteValVect::getVal() {
-    return *this;
-  }
-
-  ConcreteValVect::~ConcreteValVect(){
-    for (auto elem : elements) {
-      delete elem;
-    }
-    elements.clear();
-  }
-
-  //ConcreteValVect::ConcreteValVect(bool poison, std::vector<ConcreteVal*> &elements)
-  //: ConcreteVal(poison), elements(elements) {
-  //  assert(elements.size() > 0);
-  //}
-
-  vector<ConcreteVal*> ConcreteValVect::make_elements(const Value* vect_val) {
-    assert(vect_val->getType().isVectorType());
-    
-    auto vect_type_ptr = dynamic_cast<const VectorType *>(&vect_val->getType());
-    // I don't think vector type can have padding
-    assert(vect_type_ptr->numPaddingsConst() == 0);
-    //vect
-    cout << "vect_num_elem: " << vect_type_ptr->numElementsConst() << '\n';
-    //cout << ptr->numElementsConst() << "," << ptr->bits() 
-    //  << "," << ptr->getChild(0).bits() << '\n';
-    vector<ConcreteVal*> res(vect_type_ptr->numElementsConst());
-    auto bitwidth =  vect_type_ptr->getChild(0).bits();
-    auto isIntTy = vect_type_ptr->getChild(0).isIntType();
-    for (unsigned int i=0; i < res.size(); ++i) {
-      if (isIntTy){
-        res[i] = new ConcreteValInt(false, llvm::APInt(bitwidth, 3));
-      }
-      else{
-        assert( "ERROR: underlying vector type not supported yet!" && false );
-      }  
-    }
-  
-    return res;
-  }
-
-  unique_ptr<vector<ConcreteVal*>> ConcreteValVect::make_elements_unique(Value* vect_val){
-    auto res = make_unique<vector<ConcreteVal*>>();
-    return res;
-  }
-
-  void ConcreteValVect::print() {
+  void ConcreteValAggregate::print() {
     cout << "<" << '\n';
-    for (auto elem : elements) {
+    for (auto &elem : elements) {
       elem->print();
     }
     cout << ">" << '\n';
   }
 
+  ConcreteValPointer::ConcreteValPointer(bool poison, unsigned bid,
+                                         std::int64_t offset)
+      : ConcreteVal(poison), bid(bid), offset(offset) {}
+
+  unsigned ConcreteValPointer::getBid() const {
+    return bid;
+  }
+
+  std::int64_t ConcreteValPointer::getOffset() const {
+    return offset;
+  }
+
+  void ConcreteValPointer::print() {
+    cout << "pointer(block_id=" << bid << ", offset=" << offset << ")\n";
+  }
 }

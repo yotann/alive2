@@ -1039,6 +1039,7 @@ public:
       }
 
       case LLVMContext::MD_tbaa:
+      case LLVMContext::MD_tbaa_struct:
         // skip this for now
         break;
 

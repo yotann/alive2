@@ -42,8 +42,8 @@ namespace util {
     virtual ~ConcreteVal();
     virtual void setPoison(bool poison);
     virtual void setUndef();
-    virtual bool isPoison();
-    virtual bool isUndef();
+    virtual bool isPoison() const;
+    virtual bool isUndef() const;
     //void setVal(ConcreteVal& v);
     //void setVal(llvm::APInt& v);
     //void setVal(llvm::APFloat& v);
@@ -52,15 +52,21 @@ namespace util {
     virtual void print();
   };
 
+  class ConcreteValVoid : public ConcreteVal {
+  public:
+    ConcreteValVoid();
+    void print() override;
+  };
+
   class ConcreteValInt : public ConcreteVal {
     private:
     llvm::APInt val;
     public:
     //ConcreteValInt(bool poison, llvm::APInt val);
     ConcreteValInt(bool poison, llvm::APInt &&val);
-    llvm::APInt getVal();
+    llvm::APInt getVal() const;
     void setVal(llvm::APInt& v);
-    bool getBoolVal();
+    bool getBoolVal() const;
     void print() override;
 
     static ConcreteVal* evalPoison(ConcreteVal* op1, ConcreteVal* op2, ConcreteVal* op3);
@@ -94,7 +100,9 @@ namespace util {
     static ConcreteVal* iTrunc(ConcreteVal* op, unsigned tgt_bitwidth);
     static ConcreteVal* zext(ConcreteVal* op, unsigned tgt_bitwidth);
     static ConcreteVal* sext(ConcreteVal* op, unsigned tgt_bitwidth);
-    static ConcreteVal* select(ConcreteVal* cond, ConcreteVal* a, ConcreteVal* b);
+    static std::shared_ptr<ConcreteVal> select(ConcreteVal *cond,
+                                               std::shared_ptr<ConcreteVal> &a,
+                                               std::shared_ptr<ConcreteVal> &b);
     static ConcreteVal* icmp(ConcreteVal* a, ConcreteVal* b, unsigned cond);
   }; 
 
@@ -112,7 +120,7 @@ namespace util {
     void setVal(llvm::APFloat& v);
     //ConcreteValInt(bool poison, llvm::APInt val);
     ConcreteValFloat(bool poison, llvm::APFloat &&val);
-    llvm::APFloat getVal();
+    llvm::APFloat getVal() const;
     void print() override;
 
     static ConcreteVal* fadd(ConcreteVal* lhs, ConcreteVal* rhs, IR::FastMathFlags fmath);
@@ -132,28 +140,30 @@ namespace util {
     static ConcreteVal* fmaximum(ConcreteVal* lhs, ConcreteVal* rhs, IR::FastMathFlags fmath);
     static ConcreteVal* fminimum(ConcreteVal* lhs, ConcreteVal* rhs, IR::FastMathFlags fmath);
     static ConcreteVal* fma(ConcreteVal* a, ConcreteVal* b, ConcreteVal* c);
-    static ConcreteVal* select(ConcreteVal* cond, ConcreteVal* a, ConcreteVal* b);
   };
 
-  class ConcreteValVect : public ConcreteVal {
+  // XXX: padding values are included!
+  class ConcreteValAggregate : public ConcreteVal {
   private:
-  std::vector<ConcreteVal*> elements;
+    std::vector<std::shared_ptr<ConcreteVal>> elements;
+
   public:
-    
-    ConcreteValVect(bool poison, std::vector<ConcreteVal*> &&elements);
-    ConcreteValVect(bool poison, const IR::Value* vect_val);
-    //ConcreteValVect(ConcreteValVect &l);
-    //ConcreteValVect& operator=(ConcreteValVect &l);
-    //ConcreteValVect( ConcreteValVect &&r);
-    //ConcreteValVect& operator=(ConcreteValVect &&r);
-    //ConcreteValVect(bool poison, std::vector<ConcreteVal*> &elements);
-    ConcreteValVect& getVal();
-    virtual ~ConcreteValVect();
-    static std::vector<ConcreteVal*> make_elements(const IR::Value* vect_val);
-    static std::unique_ptr<std::vector<ConcreteVal*>> make_elements_unique(IR::Value* vect_val);
+    ConcreteValAggregate(bool poison,
+                         std::vector<std::shared_ptr<ConcreteVal>> &&elements);
+    ~ConcreteValAggregate();
+    const std::vector<std::shared_ptr<ConcreteVal>> &getVal() const;
     void print() override;
   };
 
-  
-  
+  class ConcreteValPointer : public ConcreteVal {
+  private:
+    unsigned bid;
+    std::int64_t offset;
+
+  public:
+    ConcreteValPointer(bool poison, unsigned bid, std::int64_t offset);
+    unsigned getBid() const;
+    std::int64_t getOffset() const;
+    void print() override;
+  };
 }
