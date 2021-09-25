@@ -1,0 +1,15 @@
+---
+name: extractvalue
+func: alive.interpret
+args:
+  - {}
+  - !ir |
+    define i32 @f({i1, {i8, i16, i32}, i1} %x) {
+      %y = extractvalue {i1, {i8, i16, i32}, i1} %x, 1, 2
+      ret i32 %y
+    }
+  - args: [[0, [0, 0, 27], 0]]
+expected:
+  status: done
+  undefined: false
+  return_value: 27

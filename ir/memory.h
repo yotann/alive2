@@ -8,7 +8,6 @@
 #include "ir/type.h"
 #include "smt/expr.h"
 #include "smt/exprs.h"
-#include "util/spaceship.h"
 #include <compare>
 #include <map>
 #include <optional>
@@ -146,10 +145,6 @@ class Memory {
 
   std::vector<unsigned> byval_blks;
   AliasSet escaped_local_blks;
-
-  bool hasEscapedLocals() const {
-    return escaped_local_blks.numMayAlias(true) > 0;
-  }
 
   std::map<smt::expr, AliasSet> ptr_alias; // blockid -> alias
   unsigned next_nonlocal_bid;
@@ -298,6 +293,10 @@ public:
   // Returns true if a nocapture pointer byte is not in the memory.
   smt::expr checkNocapture() const;
   void escapeLocalPtr(const smt::expr &ptr);
+
+  bool hasEscapedLocals() const {
+    return escaped_local_blks.numMayAlias(true) > 0;
+  }
 
   static Memory mkIf(const smt::expr &cond, const Memory &then,
                      const Memory &els);
