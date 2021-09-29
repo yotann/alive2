@@ -1,0 +1,29 @@
+---
+name: unsound_store
+func: alive.tv_v2
+args:
+  - disable_undef_input: true
+    disable_poison_input: true
+  - !ir |
+    define void @src(i8* dereferenceable(1) %x) {
+      ret void
+    }
+  - !ir |
+    define void @tgt(i8* dereferenceable(1) %x) {
+      store i8 0, i8* %x
+      ret void
+    }
+expected:
+  test_input:
+    args: [[1, 0]]
+    memory:
+      - size: 0
+        align: 0
+      - size: 3
+        align: 32
+        bytes:
+          - [0, 255, 128]
+          - [null, 0, 0]
+  status: unsound
+  valid: false
+  errs: "ERROR: Mismatch in memory\n"
