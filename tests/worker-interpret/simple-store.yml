@@ -1,0 +1,21 @@
+name: store_i8_-1
+func: alive.interpret
+args:
+  - memory:
+      - size: 0
+        align: 0
+      - size: 3
+        align: 32
+        bytes:
+          - [0, 255, 128]
+          - [null, 0, 0]
+  - !ir | 
+    define void @tgt(i8* dereferenceable(1) %x) {
+      store i8 0, i8* %x
+      ret void
+    }
+  - args: [[1,0]]
+expected:
+  status: done
+  undefined: false
+  return_value: null

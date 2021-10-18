@@ -282,7 +282,11 @@ void Interpreter::step() {
       concrete_vals[phi_ptr] = phi_val_concrete_I->second;
       break;
     }
-  } else {
+  }
+  else if (dynamic_cast<const Store *>(&i)) {
+    i.concreteEval(*this);
+  }
+  else {
     auto res_val = i.concreteEval(*this);
     assert(res_val || unsupported_flag);
     concrete_vals[&i] = res_val;

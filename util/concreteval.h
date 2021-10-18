@@ -28,8 +28,10 @@ namespace util {
       None = 0 , Poison = 1 << 0, Undef = 1 << 1
     };
     unsigned flags = Flags::None;
-    //bool poison;
-    //std::variant<llvm::APInt, llvm::APFloat> val;
+    virtual bool equals(ConcreteVal& rhs) {
+      return flags == rhs.flags;
+    }
+  
   public:
     //ConcreteVal(): flags(Flags::None), val() {}
     ConcreteVal(bool poison);
@@ -44,12 +46,10 @@ namespace util {
     virtual void setUndef();
     virtual bool isPoison() const;
     virtual bool isUndef() const;
-    //void setVal(ConcreteVal& v);
-    //void setVal(llvm::APInt& v);
-    //void setVal(llvm::APFloat& v);
-    //virtual ConcreteVal& getVal();
-    //virtual llvm::APFloat& getValFloat() = 0;
     virtual void print();
+    bool operator==(ConcreteVal& rhs) {
+      return equals(rhs);
+    }
   };
 
   class ConcreteValVoid : public ConcreteVal {
@@ -61,8 +61,15 @@ namespace util {
   class ConcreteValInt : public ConcreteVal {
     private:
     llvm::APInt val;
+    protected:
+    virtual bool equals(ConcreteVal& rhs) override {
+      auto int_rhs = static_cast<ConcreteValInt&>(rhs);
+      if (val != int_rhs.val) 
+        return false;
+      return ConcreteVal::equals(rhs);
+    }
+
     public:
-    //ConcreteValInt(bool poison, llvm::APInt val);
     ConcreteValInt(bool poison, llvm::APInt &&val);
     llvm::APInt getVal() const;
     void setVal(llvm::APInt& v);
@@ -109,7 +116,13 @@ namespace util {
   class ConcreteValFloat : public ConcreteVal {
     private:
     llvm::APFloat val;
-
+    protected:
+    virtual bool equals(ConcreteVal& rhs) override {
+      auto float_rhs = static_cast<ConcreteValFloat&>(rhs);
+      if (val != float_rhs.val) 
+        return false;
+      return ConcreteVal::equals(rhs);
+    }
     static ConcreteVal* evalPoison(ConcreteVal* op1, ConcreteVal* op2, ConcreteVal* op3);
     static ConcreteVal* evalPoison(ConcreteVal* lhs, ConcreteVal* rhs);
     static ConcreteVal* evalPoison(ConcreteVal* op);
@@ -118,7 +131,6 @@ namespace util {
     static void unOPEvalFmath(ConcreteVal* n, IR::FastMathFlags fmath);
     public:
     void setVal(llvm::APFloat& v);
-    //ConcreteValInt(bool poison, llvm::APInt val);
     ConcreteValFloat(bool poison, llvm::APFloat &&val);
     llvm::APFloat getVal() const;
     void print() override;
@@ -159,7 +171,13 @@ namespace util {
   private:
     unsigned bid;
     std::int64_t offset;
-
+  protected:
+    virtual bool equals(ConcreteVal& rhs) override {
+      auto ptr_rhs = static_cast<ConcreteValPointer&>(rhs);
+      if (bid != ptr_rhs.bid || offset != ptr_rhs.offset) 
+        return false;
+      return ConcreteVal::equals(rhs);
+    }
   public:
     ConcreteValPointer(bool poison, unsigned bid, std::int64_t offset);
     unsigned getBid() const;

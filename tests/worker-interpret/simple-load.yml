@@ -1,0 +1,22 @@
+name: id_i1_-1
+func: alive.interpret
+args:
+  - memory:
+      - size: 0
+        align: 0
+      - size: 3
+        align: 32
+        bytes:
+          - [0, 255, 128]
+          - [null, 0, 0]
+  - !ir |
+    define i8 @src(i8* dereferenceable(1) %x) {
+      %res = load i8, i8* %x
+      ret i8 %res
+    }
+  - args: [[1,0]]
+
+expected:
+  status: done
+  undefined: false
+  return_value: poison
