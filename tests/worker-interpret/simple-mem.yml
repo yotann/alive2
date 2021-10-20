@@ -1,11 +1,11 @@
-name: mem_i8_-1
+name: mem_i8_1
 func: alive.interpret
 args:
   - memory:
       - size: 0
         align: 0
       - size: 3
-        align: 32
+        align: 1
         bytes:
           - [0, 255, 128]
           - [null, 0, 0]
@@ -21,3 +21,74 @@ expected:
   status: done
   undefined: false
   return_value: 42
+---
+name: mem_i16_1
+func: alive.interpret
+args:
+  - memory:
+      - size: 0
+        align: 0
+      - size: 3
+        align: 2
+        bytes:
+          - [0, 255, 128]
+          - [null, 0, 0]
+  - !ir |
+    define i16 @src(i16* dereferenceable(1) %x) {
+      store i16 1948, i16* %x
+      %res = load i16, i16* %x
+      ret i16 %res
+    }
+  - args: [[1,0]]
+
+expected:
+  status: done
+  undefined: false
+  return_value: 1948
+---
+name: mem_i32_1
+func: alive.interpret
+args:
+  - memory:
+      - size: 0
+        align: 0
+      - size: 8
+        align: 4
+        bytes:
+          - [0, 255, 128]
+          - [null, 0, 0]
+  - !ir |
+    define i32 @src(i32* dereferenceable(1) %x) {
+      store i32 421948, i32* %x
+      %res = load i32, i32* %x
+      ret i32 %res
+    }
+  - args: [[1,0]]
+
+expected:
+  status: done
+  undefined: false
+  return_value: 421948
+---
+name: mem_i32_2_undef
+func: alive.interpret
+args:
+  - memory:
+      - size: 0
+        align: 0
+      - size: 3
+        align: 2
+        bytes:
+          - [0, 255, 128]
+          - [null, 0, 0]
+  - !ir |
+    define i32 @src(i32* dereferenceable(1) %x) {
+      store i32 421948, i32* %x
+      %res = load i32, i32* %x
+      ret i32 %res
+    }
+  - args: [[1,0]]
+
+expected:
+  status: done
+  undefined: true

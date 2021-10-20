@@ -103,9 +103,19 @@ struct ConcreteBlock {
     }
   }
 
-  ConcreteByte &getByte(uint64_t index) {
-    if (!bytes.contains(index))
+  ConcreteByte &getByte(uint64_t index, bool &ub) {
+    if (index >= size) {
+      ub = true;
       return default_byte;
+    }
+    else 
+      ub = false;
+    
+    if (!bytes.contains(index)) {
+      auto new_byte = ConcreteByte();
+      bytes.emplace(index, std::move(new_byte));
+    }
+    
     return bytes[index];
   }
 
