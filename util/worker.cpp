@@ -455,10 +455,9 @@ ConcreteBlock WorkerInterpreter::loadConcreteBlock(const ojson &block, bool init
         c_block.bytes.emplace(mem_offset, move(default_byte));
       } 
       else {
-        bool is_poison = json_byte[1].as_integer<uint64_t>() == 255 ? false : true;
-        auto byte_val = llvm::APInt(8, json_byte[2].as_integer<uint64_t>());
-        auto concrete_int = ConcreteValInt(is_poison, move(byte_val));
-        auto cur_byte = ConcreteByte(move(concrete_int));
+        bool nonpoison_mask = json_byte[1].as_integer<uint8_t>();
+        DataByteVal byte_val(nonpoison_mask, json_byte[2].as_integer<uint8_t>());
+        auto cur_byte = ConcreteByte(move(byte_val));
         c_block.bytes.emplace(mem_offset, move(cur_byte));
       }
     }
@@ -472,7 +471,7 @@ ConcreteBlock WorkerInterpreter::loadConcreteBlock(const ojson &block, bool init
                                              ptr_value[0].as_integer<uint64_t>(),
                                              ptr_value[1].as_integer<uint64_t>());
       auto cur_ptr_byte = ConcreteByte(move(concrete_ptr));
-      cur_ptr_byte.pointer_byte_offset = ptr_value[2].as_integer<int32_t>();
+      cur_ptr_byte.pointer_byte_offset = ptr_value[2].as_integer<uint64_t>();
       c_block.bytes.emplace(mem_offset, move(cur_ptr_byte));
     }
     else {
@@ -484,10 +483,8 @@ ConcreteBlock WorkerInterpreter::loadConcreteBlock(const ojson &block, bool init
 
 void WorkerInterpreter::loadMemory(const ojson &mem) {
   for (auto& mem_block : mem.array_range()) {
-    auto c_block = loadConcreteBlock(mem_block);
-    mem_blocks.push_back(std::move(c_block));
     auto c_init_block = loadConcreteBlock(mem_block, true);
-    init_mem_blocks.push_back(std::move(c_init_block));
+    mem_blocks.push_back(std::move(c_init_block));
   }
   // for debug
   // printMemory(cout);
@@ -592,8 +589,8 @@ static ojson evaluateAliveInterpret(const ojson &options, const ojson &src,
   }
 
   WorkerInterpreter interpreter(test_input);
-  if (options.contains("memory"))
-    interpreter.loadMemory(options["memory"]);
+  if (test_input.contains("memory"))
+    interpreter.loadMemory(test_input["memory"]);
   interpreter.start(*fn);
   interpreter.run(max_steps);
   if (interpreter.isUnsupported()) {

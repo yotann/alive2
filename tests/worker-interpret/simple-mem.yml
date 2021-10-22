@@ -1,14 +1,7 @@
 name: mem_i8_1
 func: alive.interpret
 args:
-  - memory:
-      - size: 0
-        align: 0
-      - size: 3
-        align: 1
-        bytes:
-          - [0, 255, 128]
-          - [null, 0, 0]
+  - {}
   - !ir |
     define i8 @src(i8* dereferenceable(1) %x) {
       store i8 42, i8* %x
@@ -16,6 +9,14 @@ args:
       ret i8 %res
     }
   - args: [[1,0]]
+    memory:
+      - size: 0
+        align: 0
+      - size: 3
+        align: 1
+        bytes:
+          - [0, 255, 128]
+          - [null, 0, 0]
 
 expected:
   status: done
@@ -25,14 +26,7 @@ expected:
 name: mem_i16_1
 func: alive.interpret
 args:
-  - memory:
-      - size: 0
-        align: 0
-      - size: 3
-        align: 2
-        bytes:
-          - [0, 255, 128]
-          - [null, 0, 0]
+  - {}
   - !ir |
     define i16 @src(i16* dereferenceable(1) %x) {
       store i16 1948, i16* %x
@@ -40,6 +34,14 @@ args:
       ret i16 %res
     }
   - args: [[1,0]]
+    memory:
+      - size: 0
+        align: 0
+      - size: 3
+        align: 2
+        bytes:
+          - [0, 255, 128]
+          - [null, 0, 0]
 
 expected:
   status: done
@@ -49,14 +51,7 @@ expected:
 name: mem_i32_1
 func: alive.interpret
 args:
-  - memory:
-      - size: 0
-        align: 0
-      - size: 8
-        align: 4
-        bytes:
-          - [0, 255, 128]
-          - [null, 0, 0]
+  - {}
   - !ir |
     define i32 @src(i32* dereferenceable(1) %x) {
       store i32 421948, i32* %x
@@ -64,7 +59,14 @@ args:
       ret i32 %res
     }
   - args: [[1,0]]
-
+    memory:
+      - size: 0
+        align: 0
+      - size: 8
+        align: 4
+        bytes:
+          - [0, 255, 128]
+          - [null, 0, 0]
 expected:
   status: done
   undefined: false
@@ -73,14 +75,7 @@ expected:
 name: mem_i32_2_undef
 func: alive.interpret
 args:
-  - memory:
-      - size: 0
-        align: 0
-      - size: 3
-        align: 2
-        bytes:
-          - [0, 255, 128]
-          - [null, 0, 0]
+  - {}
   - !ir |
     define i32 @src(i32* dereferenceable(1) %x) {
       store i32 421948, i32* %x
@@ -88,7 +83,14 @@ args:
       ret i32 %res
     }
   - args: [[1,0]]
-
+    memory:
+      - size: 0
+        align: 0
+      - size: 3
+        align: 2
+        bytes:
+          - [0, 255, 128]
+          - [null, 0, 0]
 expected:
   status: done
   undefined: true

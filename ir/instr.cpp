@@ -3604,14 +3604,15 @@ static util::ConcreteVal *loadIntVal(Interpreter &interpreter,
       return nullptr;
     }
 
-    if (cur_byte == cur_block.default_byte || cur_byte.intValue().isPoison()) {
+    if (cur_byte.intValue().first == 0) {
+    // if (cur_byte == cur_block.default_byte || cur_byte.intValue().isPoison()) {
       // cout << "encountered default byte\n";
       res->setPoison(true);
       return res;
     } else {
-      auto byte_val = cur_byte.intValue().getVal().zextOrSelf(bitwidth);
-      byte_val<<=(i*8);
-      res->setVal(res->getVal() += byte_val);
+      auto byte_val_int = llvm::APInt(bitwidth, cur_byte.intValue().second);
+      byte_val_int<<=(i*8);
+      res->setVal(res->getVal() += byte_val_int);
     }
   }
   return res;
@@ -3718,12 +3719,12 @@ static void storeIntVal(Interpreter &interpreter, util::ConcreteValPointer *ptr,
       return;
     }
 
-    assert(!cur_byte.isPointer());
+    assert(!cur_byte.is_pointer);
     // This will fail for types that are non multiples of 8
     auto tgt_byte = tgt_val.extractBits(8, i*8);
-    ConcreteValInt &dst_byte = cur_byte.intValue();
-    dst_byte.setVal(tgt_byte);
-    dst_byte.setPoison(int_val->isPoison());
+    DataByteVal &cur_byte_val = cur_byte.intValue();
+    cur_byte_val.first = (int_val->isPoison()) ? 0 : 255;
+    cur_byte_val.second = tgt_byte.getZExtValue();
   }
 
 }

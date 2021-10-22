@@ -1352,6 +1352,9 @@ namespace util{
     cout << ">" << '\n';
   }
 
+  ConcreteValPointer::ConcreteValPointer()
+      : ConcreteVal(false), bid(0), offset(0) {}
+
   ConcreteValPointer::ConcreteValPointer(bool poison, unsigned bid,
                                          std::int64_t offset)
       : ConcreteVal(poison), bid(bid), offset(offset) {}

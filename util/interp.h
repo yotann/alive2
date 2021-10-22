@@ -7,8 +7,8 @@
 #include <map>
 #include <memory>
 #include <string>
-#include <variant>
 #include <vector>
+#include <utility>
 
 namespace IR {
 class BasicBlock;
@@ -21,40 +21,38 @@ namespace util {
 
 class ConcreteVal;
 
+using DataByteVal = std::pair<uint8_t, uint8_t>;// <8-bit nonpoison_mask, 8-bit value>
+
 struct ConcreteByte {
-  // for now, for non pointer bytes, treat the entire byte as an i8 for poison
-  // purposes
-  std::variant<ConcreteValPointer, ConcreteValInt> value;
+
+  DataByteVal byte_val;
+  ConcreteValPointer ptr_val;
   int pointer_byte_offset;
+  bool is_pointer;
 
   ConcreteByte()
-      : value(ConcreteValInt(true, llvm::APInt(8, 0))),
-        pointer_byte_offset(0) {}
+      : byte_val(DataByteVal(0,0)), pointer_byte_offset(0), is_pointer(false) {}
 
   ConcreteByte(ConcreteValPointer &&_value)
-      : value(std::move(_value)), pointer_byte_offset(0) {}
+      : ptr_val(std::move(_value)), pointer_byte_offset(0), is_pointer(true) {}
 
-  ConcreteByte(ConcreteValInt &&_value)
-      : value(std::move(_value)), pointer_byte_offset(0) {}
+  ConcreteByte(DataByteVal &&_value)
+      : byte_val(std::move(_value)), pointer_byte_offset(0) {}
 
   auto &intValue() {
-    assert(std::holds_alternative<ConcreteValInt>(value));
-    return get<ConcreteValInt>(value);
+    assert(!is_pointer);
+    return byte_val;
   }
 
   auto &pointerValue() {
-    assert(std::holds_alternative<ConcreteValPointer>(value));
-    return get<ConcreteValPointer>(value);
-  }
-
-  bool isPointer() const {
-    return std::holds_alternative<ConcreteValPointer>(value);
+    assert(is_pointer);
+    return ptr_val;
   }
 
   bool operator==(ConcreteByte &rhs) {
-    if (isPointer() != rhs.isPointer())
+    if (is_pointer != rhs.is_pointer)
       return false;
-    if (isPointer()) {
+    if (is_pointer) {
       if (pointer_byte_offset != rhs.pointer_byte_offset)
         return false;
       return (pointerValue() == rhs.pointerValue());
@@ -65,20 +63,15 @@ struct ConcreteByte {
   }
 
   void print(std::ostream &os) const {
-    if (isPointer()) {
-      auto is_poison = get<ConcreteValPointer>(value).isPoison();
+    if (is_pointer) {
+      auto is_poison = ptr_val.isPoison();
       auto nonpoison_mask = is_poison ? 0 : 255;
-      auto ptr_bid = get<ConcreteValPointer>(value).getBid();
-      auto ptr_offset = get<ConcreteValPointer>(value).getOffset();
+      auto ptr_bid = ptr_val.getBid();
+      auto ptr_offset = ptr_val.getOffset();
       os << nonpoison_mask << ",[" << ptr_bid << "," << ptr_offset << ","
          << pointer_byte_offset << "]";
-    } else {
-      auto is_poison = get<ConcreteValInt>(value).isPoison();
-      auto nonpoison_mask = is_poison ? 0 : 255;
-      llvm::SmallString<40> U;
-      get<ConcreteValInt>(value).getVal().toStringUnsigned(U);
-      os << nonpoison_mask << "," << U.c_str() << "]";
-    }
+    } else 
+      os << byte_val.first << "," << byte_val.second << "]";
   }
 
 };
@@ -88,7 +81,7 @@ struct ConcreteBlock {
   uint64_t address;
   uint64_t align;
   std::map<uint64_t, ConcreteByte> bytes;
-  ConcreteByte default_byte;
+  ConcreteByte default_byte{};
 
   ConcreteBlock() {}
 
@@ -116,7 +109,7 @@ struct ConcreteBlock {
       ub = false;
     
     if (!bytes.contains(index)) {
-      auto new_byte = ConcreteByte();
+      auto new_byte = default_byte;
       bytes.emplace(index, std::move(new_byte));
     }
     
@@ -171,15 +164,6 @@ public:
   }
 
   void printMemory(std::ostream &os) const {
-    os << "init memory state\n";
-    os << "[";
-    for (auto &block : init_mem_blocks) {
-      os << "{";
-      block.print(os);
-      os << "}";
-    }
-    os << "]\n";
-    os << "final memory state\n";
     os << "[";
     for (auto &block : mem_blocks) {
       os << "{";
@@ -190,8 +174,8 @@ public:
   }
 
   ConcreteBlock &getBlock(uint64_t index) {
-    assert(index < init_mem_blocks.size() && "block doesn't exist");
-    return init_mem_blocks[index];
+    assert(index < mem_blocks.size() && "block doesn't exist");
+    return mem_blocks[index];
   }
 
   std::map<const IR::Value *, std::shared_ptr<ConcreteVal>> concrete_vals;
@@ -202,7 +186,6 @@ public:
   bool unsupported_flag = false;
   std::string unsupported_reason;
   ConcreteVal *return_value = nullptr;
-  std::vector<ConcreteBlock> init_mem_blocks;
   std::vector<ConcreteBlock> mem_blocks;
 };
 
