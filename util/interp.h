@@ -22,36 +22,39 @@ namespace util {
 class ConcreteVal;
 
 struct ConcreteByte {
-  bool is_pointer;
   // for now, for non pointer bytes, treat the entire byte as an i8 for poison
   // purposes
   std::variant<ConcreteValPointer, ConcreteValInt> value;
   int pointer_byte_offset;
 
   ConcreteByte()
-      : is_pointer(false), value(ConcreteValInt(true, llvm::APInt(8, 0))),
+      : value(ConcreteValInt(true, llvm::APInt(8, 0))),
         pointer_byte_offset(0) {}
 
   ConcreteByte(ConcreteValPointer &&_value)
-      : is_pointer(true), value(std::move(_value)), pointer_byte_offset(0) {}
+      : value(std::move(_value)), pointer_byte_offset(0) {}
 
   ConcreteByte(ConcreteValInt &&_value)
-      : is_pointer(false), value(std::move(_value)), pointer_byte_offset(0) {}
+      : value(std::move(_value)), pointer_byte_offset(0) {}
 
   auto &intValue() {
-    assert(!is_pointer);
+    assert(std::holds_alternative<ConcreteValInt>(value));
     return get<ConcreteValInt>(value);
   }
 
   auto &pointerValue() {
-    assert(is_pointer);
+    assert(std::holds_alternative<ConcreteValPointer>(value));
     return get<ConcreteValPointer>(value);
   }
 
+  bool isPointer() const {
+    return std::holds_alternative<ConcreteValPointer>(value);
+  }
+
   bool operator==(ConcreteByte &rhs) {
-    if (is_pointer != rhs.is_pointer)
+    if (isPointer() != rhs.isPointer())
       return false;
-    if (is_pointer) {
+    if (isPointer()) {
       if (pointer_byte_offset != rhs.pointer_byte_offset)
         return false;
       return (pointerValue() == rhs.pointerValue());
@@ -62,7 +65,7 @@ struct ConcreteByte {
   }
 
   void print(std::ostream &os) const {
-    if (is_pointer) {
+    if (isPointer()) {
       auto is_poison = get<ConcreteValPointer>(value).isPoison();
       auto nonpoison_mask = is_poison ? 0 : 255;
       auto ptr_bid = get<ConcreteValPointer>(value).getBid();
@@ -77,6 +80,7 @@ struct ConcreteByte {
       os << nonpoison_mask << "," << U.c_str() << "]";
     }
   }
+
 };
 
 struct ConcreteBlock {

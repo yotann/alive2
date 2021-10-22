@@ -3577,11 +3577,13 @@ unique_ptr<Instr> Load::dup(const string &suffix) const {
   return make_unique<Load>(getType(), getName() + suffix, *ptr, align);
 }
 
-util::ConcreteVal *loadIntVal(Interpreter &interpreter,
+static util::ConcreteVal *loadIntVal(Interpreter &interpreter,
                               util::ConcreteValPointer *ptr,
                               unsigned int bitwidth) {
-  assert(bitwidth >= 8);
-  assert ((bitwidth % 8) == 0); // FIXME
+  if ((bitwidth < 8) || ((bitwidth % 8) != 0)) { // TODO Relax this constraint
+    interpreter.setUnsupported("loadIntVal unsupported int bitwidth");
+    return nullptr;
+  }
   // cout << "loadIntVal\n";
   // cout << "ptr bid= " << ptr->getBid()
   //      << ",offset=" << ptr->getOffset()
@@ -3634,8 +3636,7 @@ Load::concreteEval(Interpreter &interpreter) const {
     return nullptr;
   }
 
-  interpreter.setUnsupported("load a value");
-  return nullptr;
+  UNREACHABLE();
 }
 
 DEFINE_AS_RETZEROALIGN(Store, getMaxAllocSize);
@@ -3687,20 +3688,23 @@ unique_ptr<Instr> Store::dup(const string &suffix) const {
   return make_unique<Store>(*ptr, *val, align);
 }
 
-void storeIntVal(Interpreter &interpreter, util::ConcreteValPointer *ptr,
+static void storeIntVal(Interpreter &interpreter, util::ConcreteValPointer *ptr,
                  util::ConcreteValInt *int_val) {
   // cout << "storeIntVal\n";
   // cout << "ptr bid= " << ptr->getBid()
   //     << ",offset=" << ptr->getOffset()
   //     << ",poison=" << ptr->isPoison() << "\n";
   // cout << "getting block\n";
-  auto &cur_block = interpreter.getBlock(ptr->getBid());
-  // cur_block.print(cout);
-  // cout << "\n";
-  
   auto bitwidth = int_val->getVal().getBitWidth();
+  if ((bitwidth % 8) != 0) { // FIXME relax this constraint
+    interpreter.setUnsupported("storeIntVal unsupported bitwidth");
+    return;
+  }
+  auto &cur_block = interpreter.getBlock(ptr->getBid());
+  
+  
   auto num_bytes = bitwidth / 8;
-  assert ((bitwidth % 8) == 0); // FIXME
+  
   
   if (bitwidth > (num_bytes * 8))
     num_bytes += 1;
@@ -3714,7 +3718,7 @@ void storeIntVal(Interpreter &interpreter, util::ConcreteValPointer *ptr,
       return;
     }
 
-    assert(!cur_byte.is_pointer);
+    assert(!cur_byte.isPointer());
     // This will fail for types that are non multiples of 8
     auto tgt_byte = tgt_val.extractBits(8, i*8);
     ConcreteValInt &dst_byte = cur_byte.intValue();
