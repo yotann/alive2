@@ -354,7 +354,7 @@ public:
                                         const IR::Input &input) override;
 
   ConcreteVal *loadConcreteVal(const IR::Type &type, const ojson &val);
-  ConcreteBlock loadConcreteBlock(const ojson &block, bool init=false);
+  ConcreteBlock loadConcreteBlock(const ojson &block);
   void loadMemory(const ojson &mem);
   
   const ojson &test_input;
@@ -430,7 +430,7 @@ ConcreteVal *WorkerInterpreter::loadConcreteVal(const IR::Type &type,
 }
 
 
-ConcreteBlock WorkerInterpreter::loadConcreteBlock(const ojson &block, bool init) {
+ConcreteBlock WorkerInterpreter::loadConcreteBlock(const ojson &block) {
   ConcreteBlock c_block;
   c_block.size = block["size"].as_integer<uint64_t>();
   c_block.address = 0; // TODO where would this be used
@@ -441,29 +441,23 @@ ConcreteBlock WorkerInterpreter::loadConcreteBlock(const ojson &block, bool init
   }
   
   for (auto& json_byte : block["bytes"].array_range()) {
-    assert(json_byte.size() == 3 && "each byte contains 3 elements");
-    if (json_byte[0].is_null()) {
-      // cout << "default byte\n"; 
-      // TODO default bytes
-      break;
-    }
+    assert(json_byte.size() == 3 && "each byte must contains 3 elements");
+
     if (json_byte[2].is_int64()) { // value byte
-      // cout << "value byte\n";
-      uint64_t mem_offset = json_byte[0].as_integer<uint64_t>();
-      if (init) {
-        auto default_byte = ConcreteByte();
-        c_block.bytes.emplace(mem_offset, move(default_byte));
-      } 
+      if (json_byte[0].is_null()) {
+        c_block.default_byte.byte_val.first = json_byte[1].as_integer<uint8_t>();
+        c_block.default_byte.byte_val.second = json_byte[2].as_integer<uint8_t>();
+        break; // since we can't have another value byte in the block after the default byte
+      }
       else {
-        bool nonpoison_mask = json_byte[1].as_integer<uint8_t>();
-        DataByteVal byte_val(nonpoison_mask, json_byte[2].as_integer<uint8_t>());
-        auto cur_byte = ConcreteByte(move(byte_val));
-        c_block.bytes.emplace(mem_offset, move(cur_byte));
+        uint64_t mem_offset = json_byte[0].as_integer<uint64_t>();
+        auto init_byte = ConcreteByte();
+        c_block.bytes.emplace(mem_offset, move(init_byte));
       }
     }
     else if (json_byte[2].is_array()) { // ptr byte
-      assert(json_byte[2].size() == 3 && "each ptr value contains 3 elements");
-      cout << "pointer byte\n";
+      assert(json_byte[2].size() == 3 && "each ptr value must contain 3 elements");
+      // cout << "pointer byte\n";
       uint64_t mem_offset = json_byte[0].as_integer<uint64_t>();
       bool is_poison = json_byte[1].as_integer<uint64_t>() == 255 ? false : true;
       auto ptr_value = json_byte[2];
@@ -483,10 +477,10 @@ ConcreteBlock WorkerInterpreter::loadConcreteBlock(const ojson &block, bool init
 
 void WorkerInterpreter::loadMemory(const ojson &mem) {
   for (auto& mem_block : mem.array_range()) {
-    auto c_init_block = loadConcreteBlock(mem_block, true);
+    auto c_init_block = loadConcreteBlock(mem_block);
     mem_blocks.push_back(std::move(c_init_block));
   }
-  // for debug
+  // for debugging
   // printMemory(cout);
   
 }

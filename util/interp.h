@@ -30,6 +30,7 @@ struct ConcreteByte {
   int pointer_byte_offset;
   bool is_pointer;
 
+  // creates an uninitialized value byte i.e. [0, 0, 0]
   ConcreteByte()
       : byte_val(DataByteVal(0,0)), pointer_byte_offset(0), is_pointer(false) {}
 
@@ -37,7 +38,7 @@ struct ConcreteByte {
       : ptr_val(std::move(_value)), pointer_byte_offset(0), is_pointer(true) {}
 
   ConcreteByte(DataByteVal &&_value)
-      : byte_val(std::move(_value)), pointer_byte_offset(0) {}
+      : byte_val(std::move(_value)), pointer_byte_offset(0), is_pointer(false) {}
 
   auto &intValue() {
     assert(!is_pointer);

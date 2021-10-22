@@ -3630,8 +3630,6 @@ Load::concreteEval(Interpreter &interpreter) const {
     // todo handle multiple integer bitwidth
     return shared_ptr<ConcreteVal>(
         loadIntVal(interpreter, c_ptr, getType().bits()));
-    interpreter.setUnsupported("load a value unsupported type");
-    return nullptr;
   } else { // floating point, pointer, etc
     interpreter.setUnsupported("load a value unsupported type");
     return nullptr;
