@@ -443,33 +443,34 @@ ConcreteBlock WorkerInterpreter::loadConcreteBlock(const ojson &block) {
   for (auto& json_byte : block["bytes"].array_range()) {
     assert(json_byte.size() == 3 && "each byte must contains 3 elements");
 
+    ConcreteByte init_byte;
+    uint8_t nonpoison_bits = json_byte[1].as_integer<uint8_t>();
     if (json_byte[2].is_int64()) { // value byte
-      if (json_byte[0].is_null()) {
-        c_block.default_byte.byte_val.first = json_byte[1].as_integer<uint8_t>();
-        c_block.default_byte.byte_val.second = json_byte[2].as_integer<uint8_t>();
-        break; // since we can't have another value byte in the block after the default byte
-      }
-      else {
-        uint64_t mem_offset = json_byte[0].as_integer<uint64_t>();
-        auto init_byte = ConcreteByte();
-        c_block.bytes.emplace(mem_offset, move(init_byte));
-      }
+      uint8_t value = json_byte[2].as_integer<uint8_t>();
+      init_byte = DataByteVal(nonpoison_bits, value);
     }
     else if (json_byte[2].is_array()) { // ptr byte
       assert(json_byte[2].size() == 3 && "each ptr value must contain 3 elements");
       // cout << "pointer byte\n";
-      uint64_t mem_offset = json_byte[0].as_integer<uint64_t>();
-      bool is_poison = json_byte[1].as_integer<uint64_t>() == 255 ? false : true;
+      bool is_poison = nonpoison_bits == 255 ? false : true;
       auto ptr_value = json_byte[2];
       auto concrete_ptr = ConcreteValPointer(is_poison, 
                                              ptr_value[0].as_integer<uint64_t>(),
                                              ptr_value[1].as_integer<uint64_t>());
-      auto cur_ptr_byte = ConcreteByte(move(concrete_ptr));
-      cur_ptr_byte.pointer_byte_offset = ptr_value[2].as_integer<uint64_t>();
-      c_block.bytes.emplace(mem_offset, move(cur_ptr_byte));
+      init_byte = ConcreteByte(move(concrete_ptr));
+      init_byte.pointer_byte_offset = ptr_value[2].as_integer<uint64_t>();
     }
     else {
       UNREACHABLE();
+    }
+
+    if (json_byte[0].is_null()) {
+      c_block.default_byte = move(init_byte);
+      break; // since we can't have another value byte in the block after the
+             // default byte
+    } else {
+      uint64_t mem_offset = json_byte[0].as_integer<uint64_t>();
+      c_block.bytes.emplace(mem_offset, move(init_byte));
     }
   }
   return c_block;

@@ -1,4 +1,5 @@
-name: id_i1_-1
+---
+name: load_128
 func: alive.interpret
 args:
   - {}
@@ -19,4 +20,4 @@ args:
 expected:
   status: done
   undefined: false
-  return_value: poison
+  return_value: -128
