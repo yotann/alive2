@@ -354,7 +354,9 @@ public:
                                         const IR::Input &input) override;
 
   ConcreteVal *loadConcreteVal(const IR::Type &type, const ojson &val);
-
+  ConcreteBlock loadConcreteBlock(const ojson &block);
+  void loadMemory(const ojson &mem);
+  
   const ojson &test_input;
 };
 } // namespace
@@ -425,6 +427,62 @@ ConcreteVal *WorkerInterpreter::loadConcreteVal(const IR::Type &type,
   }
   setUnsupported("invalid data for this input type");
   return nullptr;
+}
+
+
+ConcreteBlock WorkerInterpreter::loadConcreteBlock(const ojson &block) {
+  ConcreteBlock c_block;
+  c_block.size = block["size"].as_integer<uint64_t>();
+  c_block.address = 0; // TODO where would this be used
+  c_block.align = block["align"].as_integer<uint64_t>();
+  
+  if (c_block.size == 0 || !block.contains("bytes")) {
+    return c_block;
+  }
+  
+  for (auto& json_byte : block["bytes"].array_range()) {
+    assert(json_byte.size() == 3 && "each byte must contains 3 elements");
+
+    if (json_byte[2].is_int64()) { // value byte
+      if (json_byte[0].is_null()) {
+        c_block.default_byte.byte_val.first = json_byte[1].as_integer<uint8_t>();
+        c_block.default_byte.byte_val.second = json_byte[2].as_integer<uint8_t>();
+        break; // since we can't have another value byte in the block after the default byte
+      }
+      else {
+        uint64_t mem_offset = json_byte[0].as_integer<uint64_t>();
+        auto init_byte = ConcreteByte();
+        c_block.bytes.emplace(mem_offset, move(init_byte));
+      }
+    }
+    else if (json_byte[2].is_array()) { // ptr byte
+      assert(json_byte[2].size() == 3 && "each ptr value must contain 3 elements");
+      // cout << "pointer byte\n";
+      uint64_t mem_offset = json_byte[0].as_integer<uint64_t>();
+      bool is_poison = json_byte[1].as_integer<uint64_t>() == 255 ? false : true;
+      auto ptr_value = json_byte[2];
+      auto concrete_ptr = ConcreteValPointer(is_poison, 
+                                             ptr_value[0].as_integer<uint64_t>(),
+                                             ptr_value[1].as_integer<uint64_t>());
+      auto cur_ptr_byte = ConcreteByte(move(concrete_ptr));
+      cur_ptr_byte.pointer_byte_offset = ptr_value[2].as_integer<uint64_t>();
+      c_block.bytes.emplace(mem_offset, move(cur_ptr_byte));
+    }
+    else {
+      UNREACHABLE();
+    }
+  }
+  return c_block;
+}
+
+void WorkerInterpreter::loadMemory(const ojson &mem) {
+  for (auto& mem_block : mem.array_range()) {
+    auto c_init_block = loadConcreteBlock(mem_block);
+    mem_blocks.push_back(std::move(c_init_block));
+  }
+  // for debugging
+  // printMemory(cout);
+  
 }
 
 static ojson storeConcreteVal(const IR::Type &type, const ConcreteVal *val) {
@@ -525,6 +583,8 @@ static ojson evaluateAliveInterpret(const ojson &options, const ojson &src,
   }
 
   WorkerInterpreter interpreter(test_input);
+  if (test_input.contains("memory"))
+    interpreter.loadMemory(test_input["memory"]);
   interpreter.start(*fn);
   interpreter.run(max_steps);
   if (interpreter.isUnsupported()) {
