@@ -85,3 +85,28 @@ args:
 expected:
   status: done
   undefined: true
+---
+name: store_replacing_pointer_byte
+func: alive.interpret
+args:
+  - {}
+  - !ir |
+    define void @tgt(i8* %p) {
+      store i8 0, i8* %p
+      ret void
+    }
+  - args: [[1,131052]]
+    memory:
+      - size: 0
+        align: 1
+      - size: 262144
+        align: 32
+        bytes:
+          # It's really weird to use a pointer byte as the default,
+          # but apparently alive.tv can generate this as a counterexample.
+          - [131064,255,49152]
+          - [null,0,[0,32,1]]
+expected:
+  status: done
+  undefined: false
+  return_value: null
