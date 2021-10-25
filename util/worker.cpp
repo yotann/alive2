@@ -215,18 +215,38 @@ static ojson memoryBlockToJSON(const IR::State &state, const smt::Model &m,
     ojson bytes(json_array_arg);
     smt::expr array = m[state.getMemory().getBlockInit(m.getUInt(p.getBid()))];
     smt::expr idx, val;
-    while (array.isStore(array, idx, val)) {
-      ojson tmp(json_array_arg, {m.getUInt(idx)});
+
+    auto add_byte = [&](ojson idx, smt::expr val) {
+      ojson tmp(json_array_arg, {idx});
       byteToJSON(tmp, IR::Byte(state.getMemory(), m[val]));
       bytes.emplace_back(move(tmp));
-    }
+    };
+
+    while (array.isStore(array, idx, val))
+      add_byte(m.getUInt(idx), val);
     if (array.isConstArray(val)) {
-      ojson tmp(json_array_arg, {nullptr});
-      byteToJSON(tmp, IR::Byte(state.getMemory(), m[val]));
-      bytes.emplace_back(move(tmp));
+      add_byte(nullptr, val);
+    } else if (array.isFuncAsArray(val)) {
+      if (m.hasFnModel(val)) {
+        // TODO: test this code.
+        auto fn = m.getFnModel(val);
+        unsigned num = fn.getNumEntries();
+        for (unsigned i = 0; i < num; ++i) {
+          idx = fn.getEntryArg(i, 0);
+          val = fn.getEntryValue(i);
+          add_byte(m.getUInt(idx), fn.getEntryValue(i));
+        }
+        add_byte(nullptr, fn.getElseValue());
+      } else {
+        // The values stored in memory are irrelevant.
+        ojson tmp(json_array_arg, {nullptr, 0, 0});
+        bytes.emplace_back(move(tmp));
+      }
     } else {
       // TODO: can this happen?
-      bytes.emplace_back(nullptr);
+      stringstream ss;
+      ss << "ERROR: unknown memory value " << array;
+      bytes.emplace_back(ss.str());
     }
     result["bytes"] = move(bytes);
   }
