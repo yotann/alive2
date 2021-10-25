@@ -187,6 +187,30 @@ static ojson yaml2json(llvm::yaml::Node &node) {
   }
 }
 
+bool results_equal(const ojson &expected, const ojson &actual) {
+  if (expected.is_object() && actual.is_object()) {
+    // Ignore keys in actual which are missing from expected.
+    // That way, tests can ignore some of an object's fields.
+    for (const auto &item : expected.object_range()) {
+      if (!actual.contains(item.key()))
+        return false;
+      if (!results_equal(item.value(), actual[item.key()]))
+        return false;
+    }
+    return true;
+  } else if (expected.is_array() && actual.is_array()) {
+    // Recurse into results_equal, in case there are nested objects.
+    if (expected.size() != actual.size())
+      return false;
+    for (size_t i = 0; i < expected.size(); ++i)
+      if (!results_equal(expected[i], actual[i]))
+        return false;
+    return true;
+  } else {
+    return expected == actual;
+  }
+}
+
 int main(int argc, char **argv) {
   llvm::sys::PrintStackTraceOnErrorSignal(argv[0]);
   llvm::PrettyStackTraceProgram X(argc, argv);
@@ -216,7 +240,7 @@ results are correct.
     ojson job = yaml2json(*document.getRoot());
     ojson actual = evaluateAliveFunc(job);
     const ojson &expected = job["expected"];
-    if (expected == actual) {
+    if (results_equal(expected, actual)) {
       cerr << "test " << job["name"] << " passed\n";
     } else {
       jsoncons::json_options options;
