@@ -1,11 +1,11 @@
 // Copyright (c) 2018-present The Alive2 Authors.
 // Distributed under the MIT license that can be found in the LICENSE file.
 
+#include "util/interp.h"
 #include "ir/function.h"
 #include "ir/state.h"
-#include "util/config.h"
-#include "util/interp.h"
 #include "util/concreteval.h"
+#include "util/config.h"
 #include "util/random.h"
 #include <iostream>
 
@@ -130,9 +130,30 @@ shared_ptr<ConcreteVal> Interpreter::getConstantValue(const Value &i) {
         UNREACHABLE();
       }
     } else if (auto string_float = const_ptr->getString()) {
-      (void)string_float;
-      setUnsupported("float constant represented with string");
-      return nullptr;
+      auto i = llvm::APInt(const_ptr->bits(), *string_float, 10);
+      const llvm::fltSemantics *semantics;
+      switch (const_ptr->getType().getAsFloatType()->getFpType()) {
+      case FloatType::Half:
+        semantics = &llvm::APFloat::IEEEhalf();
+        break;
+      case FloatType::Float:
+        semantics = &llvm::APFloat::IEEEsingle();
+        break;
+      case FloatType::Double:
+        semantics = &llvm::APFloat::IEEEdouble();
+        break;
+      case FloatType::Quad:
+        semantics = &llvm::APFloat::IEEEquad();
+        break;
+      case FloatType::BFloat:
+        semantics = &llvm::APFloat::BFloat();
+        break;
+      case FloatType::Unknown:
+      default:
+        setUnsupported("unknown float constant type");
+        return nullptr;
+      }
+      return make_shared<ConcreteValFloat>(false, llvm::APFloat(*semantics, i));
     } else {
       UNREACHABLE();
     }
@@ -278,11 +299,9 @@ void Interpreter::step() {
       concrete_vals[phi_ptr] = phi_val_concrete_I->second;
       break;
     }
-  }
-  else if (dynamic_cast<const Store *>(&i)) {
+  } else if (dynamic_cast<const Store *>(&i)) {
     i.concreteEval(*this);
-  }
-  else {
+  } else {
     auto res_val = i.concreteEval(*this);
     assert(res_val || unsupported_flag || UB_flag);
     concrete_vals[&i] = res_val;

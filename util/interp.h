@@ -10,6 +10,8 @@
 #include <vector>
 #include <utility>
 
+#include "util/concreteval.h"
+
 namespace IR {
 class BasicBlock;
 class Function;
