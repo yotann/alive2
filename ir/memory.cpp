@@ -27,10 +27,8 @@ using namespace util;
   //      num_globals_src + num_ptrinputs + 1 ~ num_nonlocals_src - 2:
   // 5. a block reserved for encoding the memory touched by calls:
   //      num_nonlocals_src - 1
-  // 6. global vars in target only:
-  //      num_nonlocals_src ~ num_nonlocals_src + num_extra_nonconst_tgt - 1
-  //            (non-constant globals in target only)
-  //      num_nonlocals_src + num_extra_nonconst_tgt ~ num_nonlocals - 1
+  // 6. constant global vars in target only:
+  //      num_nonlocals_src ~ num_nonlocals - 1
   //            (constant globals in target only)
 
 //--- Functions for non-local block analysis based on bid ---//
@@ -48,8 +46,7 @@ static bool is_constglb(unsigned bid) {
     // src constglb
     assert(is_globalvar(bid, false));
     return true;
-  } else if (num_nonlocals_src + num_extra_nonconst_tgt <= bid &&
-             bid < num_nonlocals) {
+  } else if (num_nonlocals_src <= bid && bid < num_nonlocals) {
     // tgt constglb
     assert(!is_globalvar(bid, false) &&
             is_globalvar(bid, true));
@@ -721,7 +718,7 @@ expr Memory::isBlockAlive(const expr &bid, bool local) const {
 }
 
 bool Memory::mayalias(bool local, unsigned bid0, const expr &offset0,
-                      unsigned bytes, unsigned align, bool write) const {
+                      unsigned bytes, uint64_t align, bool write) const {
   if (local && bid0 >= next_local_bid)
     return false;
 
@@ -763,7 +760,7 @@ bool Memory::mayalias(bool local, unsigned bid0, const expr &offset0,
 }
 
 Memory::AliasSet Memory::computeAliasing(const Pointer &ptr, unsigned bytes,
-                                         unsigned align, bool write) const {
+                                         uint64_t align, bool write) const {
   assert(bytes % (bits_byte/8) == 0);
 
   AliasSet aliasing(*this);
@@ -830,7 +827,7 @@ end:
 }
 
 template <typename Fn>
-void Memory::access(const Pointer &ptr, unsigned bytes, unsigned align,
+void Memory::access(const Pointer &ptr, unsigned bytes, uint64_t align,
                     bool write, Fn &fn) {
   auto aliasing = computeAliasing(ptr, bytes, align, write);
   unsigned has_local = aliasing.numMayAlias(true);
@@ -870,7 +867,7 @@ void Memory::access(const Pointer &ptr, unsigned bytes, unsigned align,
 }
 
 vector<Byte> Memory::load(const Pointer &ptr, unsigned bytes, set<expr> &undef,
-                          unsigned align, bool left2right, DataType type) {
+                          uint64_t align, bool left2right, DataType type) {
   if (bytes == 0)
     return {};
 
@@ -930,7 +927,7 @@ Memory::DataType Memory::data_type(const vector<pair<unsigned, expr>> &data,
 
 void Memory::store(const Pointer &ptr,
                    const vector<pair<unsigned, expr>> &data,
-                   const set<expr> &undef, unsigned align) {
+                   const set<expr> &undef, uint64_t align) {
   if (data.empty())
     return;
 
@@ -985,7 +982,7 @@ void Memory::store(const Pointer &ptr,
 
 void Memory::storeLambda(const Pointer &ptr, const expr &offset,
                          const expr &bytes, const expr &val,
-                         const set<expr> &undef, unsigned align) {
+                         const set<expr> &undef, uint64_t align) {
   assert(!state->isInitializationPhase());
   // offset in [ptr, ptr+sz)
   auto offset_cond = offset.uge(ptr.getShortOffset()) &&
@@ -1491,7 +1488,7 @@ void Memory::mkLocalDisjAddrAxioms(const expr &allocated, const expr &short_bid,
 }
 
 pair<expr, expr>
-Memory::alloc(const expr &size, unsigned align, BlockKind blockKind,
+Memory::alloc(const expr &size, uint64_t align, BlockKind blockKind,
               const expr &precond, const expr &nonnull,
               optional<unsigned> bidopt, unsigned *bid_out) {
   assert(!memory_unused());
@@ -1653,7 +1650,7 @@ void Memory::store(const StateValue &v, const Type &type, unsigned offset0,
 }
 
 void Memory::store(const expr &p, const StateValue &v, const Type &type,
-                   unsigned align, const set<expr> &undef_vars) {
+                   uint64_t align, const set<expr> &undef_vars) {
   assert(!memory_unused());
   Pointer ptr(*this, p);
 
@@ -1667,7 +1664,7 @@ void Memory::store(const expr &p, const StateValue &v, const Type &type,
 }
 
 StateValue Memory::load(const Pointer &ptr, const Type &type, set<expr> &undef,
-                        unsigned align) {
+                        uint64_t align) {
   unsigned bytecount = getStoreByteSize(type);
 
   auto aty = type.getAsAggregateType();
@@ -1711,9 +1708,7 @@ StateValue Memory::load(const Pointer &ptr, const Type &type, set<expr> &undef,
           for (unsigned i = num_nonlocals_src; i < numNonlocals(); ++i) {
             I->second.setMayAlias(false, i);
           }
-          state->addPre(!val.non_poison || islocal || bid.ule(*max_bid) ||
-                        (num_extra_nonconst_tgt ? bid.uge(num_nonlocals_src)
-                                                : false));
+          state->addPre(!val.non_poison || islocal || bid.ule(*max_bid));
         }
       }
     }
@@ -1723,7 +1718,7 @@ StateValue Memory::load(const Pointer &ptr, const Type &type, set<expr> &undef,
 }
 
 pair<StateValue, AndExpr>
-Memory::load(const expr &p, const Type &type, unsigned align) {
+Memory::load(const expr &p, const Type &type, uint64_t align) {
   assert(!memory_unused());
 
   Pointer ptr(*this, p);
@@ -1743,7 +1738,7 @@ Byte Memory::raw_load(const Pointer &p) {
 }
 
 void Memory::memset(const expr &p, const StateValue &val, const expr &bytesize,
-                    unsigned align, const set<expr> &undef_vars,
+                    uint64_t align, const set<expr> &undef_vars,
                     bool deref_check) {
   assert(!memory_unused());
   assert(!val.isValid() || val.bits() == 8);
@@ -1777,7 +1772,7 @@ void Memory::memset(const expr &p, const StateValue &val, const expr &bytesize,
 }
 
 void Memory::memcpy(const expr &d, const expr &s, const expr &bytesize,
-                    unsigned align_dst, unsigned align_src, bool is_move) {
+                    uint64_t align_dst, uint64_t align_src, bool is_move) {
   assert(!memory_unused());
   unsigned bytesz = bits_byte / 8;
 

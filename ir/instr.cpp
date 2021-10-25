@@ -259,8 +259,7 @@ void BinOp::print(ostream &os) const {
     os << "nuw ";
   if (flags & Exact)
     os << "exact ";
-  os << fmath
-     << print_type(getType()) << lhs->getName() << ", " << rhs->getName();
+  os << fmath << *lhs << ", " << rhs->getName();
 }
 
 static void div_ub(State &s, const expr &a, const expr &b, const expr &ap,
@@ -3184,7 +3183,7 @@ bool Malloc::canFree() const {
   return ptr != nullptr;
 }
 
-unsigned Malloc::getAlign() const {
+uint64_t Malloc::getAlign() const {
   return align ? align : heap_block_alignment;
 }
 
@@ -3284,7 +3283,7 @@ Calloc::ByteAccessInfo Calloc::getByteAccessInfo() const {
   return info;
 }
 
-unsigned Calloc::getAlign() const {
+uint64_t Calloc::getAlign() const {
   return align ? align : heap_block_alignment;
 }
 
@@ -3809,8 +3808,9 @@ StateValue Memset::toSMT(State &s) const {
   } else {
     auto &sv_ptr = s[*ptr];
     auto &sv_ptr2 = s[*ptr];
-    s.addUB((vbytes != 0).implies(
-        sv_ptr.non_poison && (sv_ptr.value == sv_ptr2.value)));
+    // can't be poison even if bytes=0 as address must be aligned regardless
+    s.addUB(sv_ptr.non_poison);
+    s.addUB((vbytes != 0).implies(sv_ptr.value == sv_ptr2.value));
     vptr = sv_ptr.value;
   }
   check_can_store(s, vptr);
@@ -4470,6 +4470,7 @@ const ConversionOp* isCast(ConversionOp::Op op, const Value &v) {
 
 bool hasNoSideEffects(const Instr &i) {
   return isNoOp(i) ||
+         dynamic_cast<const ExtractValue*>(&i) ||
          dynamic_cast<const GEP*>(&i) ||
          dynamic_cast<const ShuffleVector*>(&i);
 }

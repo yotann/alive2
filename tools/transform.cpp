@@ -407,14 +407,14 @@ check_refinement(Errors &errs, const Transform &t, const State &src_state,
                  const expr &fndom_a, const State::ValTy &ap,
                  const expr &fndom_b, const State::ValTy &bp,
                  bool check_each_var) {
-  if (src_state.sinkDomain().isTrue()) {
+  if (check_expr(!src_state.sinkDomain()).isUnsat()) {
     errs.add("The source program doesn't reach a return instruction.\n"
              "Consider increasing the unroll factor if it has loops", false);
     return;
   }
 
   auto sink_tgt = tgt_state.sinkDomain();
-  if (sink_tgt.isTrue()) {
+  if (check_expr(!sink_tgt).isUnsat()) {
     errs.add("The target program doesn't reach a return instruction.\n"
              "Consider increasing the unroll factor if it has loops", false);
     return;
@@ -775,7 +775,6 @@ static void calculateAndInitConstants(Transform &t) {
   heap_block_alignment = 8;
 
   num_consts_src = 0;
-  num_extra_nonconst_tgt = 0;
 
   for (auto GV : globals_src) {
     if (GV->isConst())
@@ -787,8 +786,6 @@ static void calculateAndInitConstants(Transform &t) {
       [GVT](auto *GV) -> bool { return GVT->getName() == GV->getName(); });
     if (I == globals_src.end()) {
       ++num_globals;
-      if (!GVT->isConst())
-        ++num_extra_nonconst_tgt;
     }
   }
 
@@ -1140,6 +1137,20 @@ void TransformVerify::verify(Errors &errs) const {
       return;
     }
   }
+  for (auto GVT : globals_tgt) {
+    auto I = find_if(globals_src.begin(), globals_src.end(),
+      [GVT](auto *GV) -> bool { return GVT->getName() == GV->getName(); });
+    if (I != globals_src.end())
+      continue;
+
+    if (!GVT->isConst()) {
+        string s = "Unsupported interprocedural transformation: non-constant "
+                   "global variable " + GVT->getName() + " is introduced in"
+                   " target";
+        errs.add(move(s), false);
+        return;
+    }
+  }
 
   try {
     auto [src_state, tgt_state] = exec();
@@ -1339,7 +1350,8 @@ static void optimize_ptrcmp(Function &f) {
     if (auto *gep = dynamic_cast<const GEP*>(&v))
       return gep->isInBounds();
 
-    return returns_local(v);
+    // noalias functions aren't required to return an inbounds ptr
+    return returns_local(v) && !dynamic_cast<const FnCall*>(&v);
   };
 
   for (auto &i : f.instrs()) {

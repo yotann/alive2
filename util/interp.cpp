@@ -133,10 +133,6 @@ shared_ptr<ConcreteVal> Interpreter::getConstantValue(const Value &i) {
       (void)string_float;
       setUnsupported("float constant represented with string");
       return nullptr;
-    } else if (auto int_float = const_ptr->getInt()) {
-      return make_shared<ConcreteValFloat>(
-          false, llvm::APFloat(llvm::APFloatBase::IEEEhalf(),
-                               llvm::APInt(16, *int_float)));
     } else {
       UNREACHABLE();
     }
