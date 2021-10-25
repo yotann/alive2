@@ -260,7 +260,7 @@ static ojson testInputToJSON(const IR::Function &f, const IR::State &state,
   ojson &args = result["args"] = ojson(json_array_arg);
   for (const auto &input : f.getInputs()) {
     const auto &var = state.at(input);
-    args.push_back(modelValToJSON(state, m, input.getType(), var.first));
+    args.push_back(modelValToJSON(state, m, input.getType(), var.val));
   }
   if (IR::Memory::getNumInitBlocks() > 0) {
     ojson &memory = result["memory"] = ojson(json_array_arg);
