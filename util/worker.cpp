@@ -556,6 +556,38 @@ static ojson storeConcreteVal(const IR::Type &type, const ConcreteVal *val) {
   }
 }
 
+static void storeConcreteByte(ojson &result, const ConcreteByte &byte) {
+  if (byte.is_pointer) {
+    result.emplace_back(byte.ptr_val.isPoison() ? 0 : 255);
+    ojson tmp(json_array_arg, {byte.ptr_val.getBid(), byte.ptr_val.getOffset(),
+                               byte.pointer_byte_offset});
+    result.emplace_back(move(tmp));
+  } else {
+    result.emplace_back(byte.byte_val.first);  // nonpoison bits
+    result.emplace_back(byte.byte_val.second); // value
+  }
+}
+
+static ojson storeConcreteBlock(const ConcreteBlock &block) {
+  ojson result(json_object_arg);
+  result["size"] = block.size;
+  result["address"] = block.address;
+  result["align"] = block.align;
+  ojson bytes(json_array_arg);
+  for (const auto &item : block.bytes) {
+    // if (item.second == block.default_byte)
+    //   continue;
+    ojson tmp(json_array_arg, {item.first});
+    storeConcreteByte(tmp, item.second);
+    bytes.emplace_back(move(tmp));
+  }
+  ojson tmp(json_array_arg, {nullptr});
+  storeConcreteByte(tmp, block.default_byte);
+  bytes.emplace_back(move(tmp));
+  result["bytes"] = move(bytes);
+  return result;
+}
+
 WorkerInterpreter::WorkerInterpreter(const ojson &test_input)
     : test_input(test_input) {}
 
@@ -619,6 +651,12 @@ static ojson evaluateAliveInterpret(const ojson &options, const ojson &src,
     result["undefined"] = false;
     result["return_value"] =
         storeConcreteVal(fn->getType(), interpreter.return_value);
+    if (!interpreter.mem_blocks.empty()) {
+      ojson tmp(json_array_arg);
+      for (const auto &block : interpreter.mem_blocks)
+        tmp.emplace_back(storeConcreteBlock(block));
+      result["memory"] = move(tmp);
+    }
   } else {
     result["status"] = "timeout";
   }

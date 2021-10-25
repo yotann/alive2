@@ -21,6 +21,14 @@ expected:
   status: done
   undefined: false
   return_value: null
+  memory:
+    - size: 0
+      align: 0
+    - size: 3
+      align: 32
+      bytes:
+        - [0, 255, 0]
+        - [null, 0, 0]
 ---
 name: store_before_block
 func: alive.interpret
@@ -110,3 +118,12 @@ expected:
   status: done
   undefined: false
   return_value: null
+  memory:
+    - size: 0
+      align: 1
+    - size: 262144
+      align: 32
+      bytes:
+        - [131052,255,0]
+        - [131064,255,0]
+        - [null,0,[0,32,1]]
