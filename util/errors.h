@@ -46,10 +46,6 @@ public:
   explicit operator bool() const { return !errs.empty(); }
   bool isUnsound() const;
 
-  void print_varval(std::ostream &os, const IR::State &st, const smt::Model &m,
-                    const IR::Value *var, const IR::Type &type,
-                    const IR::StateValue &val, unsigned child = 0);
-
   friend std::ostream& operator<<(std::ostream &os, const Errors &e);
 };
 

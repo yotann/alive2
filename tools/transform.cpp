@@ -38,6 +38,11 @@ static bool is_arbitrary(const expr &e) {
 static void print_single_varval(ostream &os, const State &st, const Model &m,
                                 const Value *var, const Type &type,
                                 const StateValue &val, unsigned child) {
+  if (dynamic_cast<const VoidType*>(&type)) {
+    os << "void";
+    return;
+  }
+
   if (!val.isValid()) {
     os << "(invalid expr)";
     return;
@@ -82,9 +87,9 @@ static void print_single_varval(ostream &os, const State &st, const Model &m,
   }
 }
 
-void Errors::print_varval(ostream &os, const State &st, const Model &m,
-                          const Value *var, const Type &type,
-                          const StateValue &val, unsigned child) {
+void tools::print_model_val(ostream &os, const State &st, const Model &m,
+                            const Value *var, const Type &type,
+                            const StateValue &val, unsigned child) {
   if (!type.isAggregateType()) {
     print_single_varval(os, st, m, var, type, val, child);
     return;
@@ -95,8 +100,8 @@ void Errors::print_varval(ostream &os, const State &st, const Model &m,
   for (unsigned i = 0, e = agg->numElementsConst(); i < e; ++i) {
     if (i != 0)
       os << ", ";
-    print_varval(os, st, m, var, agg->getChild(i), agg->extract(val, i),
-                 child + i);
+    tools::print_model_val(os, st, m, var, agg->getChild(i),
+                           agg->extract(val, i), child + i);
   }
   os << (type.isStructType() ? " }" : " >");
 }
@@ -183,7 +188,7 @@ bool Errors::addSolverSat(const IR::State &src_state,
         !dynamic_cast<const ConstantInput*>(var))
       continue;
     s << *var << " = ";
-    print_varval(s, src_state, m, var, var->getType(), val.val);
+    print_model_val(s, src_state, m, var, var->getType(), val.val);
     s << '\n';
   }
 
@@ -223,7 +228,7 @@ bool Errors::addSolverSat(const IR::State &src_state,
         if (jumped) {
           continue;
         } else {
-          s << "UB triggered on " << var->getName() << '\n';
+          s << "UB triggered on " << name << '\n';
           break;
         }
       }
@@ -238,7 +243,8 @@ bool Errors::addSolverSat(const IR::State &src_state,
         continue;
 
       s << *var << " = ";
-      print_varval(s, const_cast<State&>(*st), m, var, var->getType(), val.val);
+      print_model_val(s, const_cast<State&>(*st), m, var, var->getType(),
+                      val.val);
       s << '\n';
     }
 
@@ -512,9 +518,9 @@ check_refinement(Errors &errs, const Transform &t, const State &src_state,
   // 3. Check poison
   auto print_value = [&](ostream &s, const Model &m) {
     s << "Source value: ";
-    errs.print_varval(s, src_state, m, var, type, a);
+    print_model_val(s, src_state, m, var, type, a);
     s << "\nTarget value: ";
-    errs.print_varval(s, tgt_state, m, var, type, b);
+    print_model_val(s, tgt_state, m, var, type, b);
   };
 
   auto [poison_cnstr, value_cnstr] = type.refines(src_state, tgt_state, a, b);
