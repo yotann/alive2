@@ -979,6 +979,7 @@ void UnaryOp::print(ostream &os) const {
   case BSwap:       str = "bswap "; break;
   case Ctpop:       str = "ctpop "; break;
   case IsConstant:  str = "is.constant "; break;
+  case IsNaN:       str = "isnan "; break;
   case FAbs:        str = "fabs "; break;
   case FNeg:        str = "fneg "; break;
   case Ceil:        str = "ceil "; break;
@@ -990,8 +991,7 @@ void UnaryOp::print(ostream &os) const {
   case FFS:         str = "ffs "; break;
   }
 
-  os << getName() << " = " << str << fmath << print_type(getType())
-     << val->getName();
+  os << getName() << " = " << str << fmath << *val;
 }
 
 StateValue UnaryOp::toSMT(State &s) const {
@@ -1028,6 +1028,11 @@ StateValue UnaryOp::toSMT(State &s) const {
     s.addQuantVar(var);
     return { move(var), true };
   }
+  case IsNaN:
+    fn = [](auto v, auto np) -> StateValue {
+      return { v.isNaN().toBVBool(), expr(np) };
+    };
+    break;
   case FAbs:
     fn = [&](auto v, auto np) -> StateValue {
       return fm_poison(s, v, np, [](expr &v) { return v.fabs(); }, fmath, true);
@@ -1082,12 +1087,12 @@ StateValue UnaryOp::toSMT(State &s) const {
 
   if (getType().isVectorType()) {
     vector<StateValue> vals;
-    auto ty = getType().getAsAggregateType();
+    auto ty = val->getType().getAsAggregateType();
     for (unsigned i = 0, e = ty->numElementsConst(); i != e; ++i) {
       auto vi = ty->extract(v, i);
       vals.emplace_back(fn(vi.value, vi.non_poison));
     }
-    return ty->aggregateVals(vals);
+    return getType().getAsAggregateType()->aggregateVals(vals);
   }
   return fn(v.value, v.non_poison);
 }
@@ -1110,6 +1115,11 @@ expr UnaryOp::getTypeConstraints(const Function &f) const {
     break;
   case IsConstant:
     instrconstr = getType().enforceIntType(1);
+    break;
+  case IsNaN:
+    instrconstr = val->getType().enforceFloatOrVectorType() &&
+                  getType().enforceIntOrVectorType(1) &&
+                  getType().enforceVectorTypeIff(val->getType());
     break;
   case FAbs:
   case FNeg:
@@ -2110,20 +2120,20 @@ StateValue FnCall::toSMT(State &s) const {
       check_access();
   }
 
+  // Check attributes that calles must have if caller has them
+  auto check = [&](FnAttrs::Attribute attr) {
+    return s.getFn().getFnAttrs().has(attr) && !attrs.has(attr);
+  };
+
+  if (check(FnAttrs::NoFree) ||
+      check(FnAttrs::NoThrow) ||
+      check(FnAttrs::WillReturn))
+    s.addUB(expr(false));
+
   unsigned idx = 0;
   auto ret = s.addFnCall(fnName_mangled.str(), move(inputs), move(ptr_inputs),
                          out_types, attrs);
 
-  // Caller has nofree attribute, so callee must have it as well
-  if (s.getFn().getFnAttrs().has(FnAttrs::NoFree) &&
-      !attrs.has(FnAttrs::NoFree))
-    s.addUB(expr(false));
-
-  if (attrs.has(FnAttrs::NoReturn)) {
-    // TODO: Even if a function call doesn't have noreturn, it can possibly
-    // exit. Relevant bug: https://bugs.llvm.org/show_bug.cgi?id=27953
-    s.addNoReturn();
-  }
   return isVoid() ? StateValue() : pack_return(s, getType(), ret, attrs, idx);
 }
 
@@ -2139,6 +2149,12 @@ unique_ptr<Instr> FnCall::dup(const string &suffix) const {
   r->approx = approx;
   return r;
 }
+
+
+InlineAsm::InlineAsm(Type &type, string &&name, const string &asm_str,
+                     const string &constraints, FnAttrs &&attrs)
+  : FnCall(type, move(name), "asm " + asm_str + ", " + constraints,
+           move(attrs)) {}
 
 
 ICmp::ICmp(Type &type, string &&name, Cond cond, Value &a, Value &b)
@@ -3058,7 +3074,7 @@ static void check_can_load(State &s, const expr &p0) {
   Pointer p(s.getMemory(), p0);
 
   if (attrs.has(FnAttrs::NoRead))
-    s.addUB(p.isLocal());
+    s.addUB(p.isLocal() || p.isConstGlobal());
   else if (attrs.has(FnAttrs::ArgMemOnly))
     s.addUB(p.isLocal() || ptr_only_args(s, p));
 }
