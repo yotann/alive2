@@ -521,6 +521,13 @@ bool expr::isLoad(expr &array, expr &idx) const {
   return isBinOp(array, idx, Z3_OP_SELECT);
 }
 
+bool expr::isFuncAsArray(expr &val) const {
+  if (!Z3_is_as_array(ctx(), ast()))
+    return false;
+  val = Z3_func_decl_to_ast(ctx(), Z3_get_as_array_func_decl(ctx(), ast()));
+  return true;
+}
+
 bool expr::isFPAdd(expr &rounding, expr &lhs, expr &rhs) const {
   return isTernaryOp(rounding, lhs, rhs, Z3_OP_FPA_ADD);
 }

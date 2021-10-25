@@ -215,18 +215,38 @@ static ojson memoryBlockToJSON(const IR::State &state, const smt::Model &m,
     ojson bytes(json_array_arg);
     smt::expr array = m[state.getMemory().getBlockInit(m.getUInt(p.getBid()))];
     smt::expr idx, val;
-    while (array.isStore(array, idx, val)) {
-      ojson tmp(json_array_arg, {m.getUInt(idx)});
+
+    auto add_byte = [&](ojson idx, smt::expr val) {
+      ojson tmp(json_array_arg, {idx});
       byteToJSON(tmp, IR::Byte(state.getMemory(), m[val]));
       bytes.emplace_back(move(tmp));
-    }
+    };
+
+    while (array.isStore(array, idx, val))
+      add_byte(m.getUInt(idx), val);
     if (array.isConstArray(val)) {
-      ojson tmp(json_array_arg, {nullptr});
-      byteToJSON(tmp, IR::Byte(state.getMemory(), m[val]));
-      bytes.emplace_back(move(tmp));
+      add_byte(nullptr, val);
+    } else if (array.isFuncAsArray(val)) {
+      if (m.hasFnModel(val)) {
+        // TODO: test this code.
+        auto fn = m.getFnModel(val);
+        unsigned num = fn.getNumEntries();
+        for (unsigned i = 0; i < num; ++i) {
+          idx = fn.getEntryArg(i, 0);
+          val = fn.getEntryValue(i);
+          add_byte(m.getUInt(idx), fn.getEntryValue(i));
+        }
+        add_byte(nullptr, fn.getElseValue());
+      } else {
+        // The values stored in memory are irrelevant.
+        ojson tmp(json_array_arg, {nullptr, 0, 0});
+        bytes.emplace_back(move(tmp));
+      }
     } else {
       // TODO: can this happen?
-      bytes.emplace_back(nullptr);
+      stringstream ss;
+      ss << "ERROR: unknown memory value " << array;
+      bytes.emplace_back(ss.str());
     }
     result["bytes"] = move(bytes);
   }
@@ -443,33 +463,34 @@ ConcreteBlock WorkerInterpreter::loadConcreteBlock(const ojson &block) {
   for (auto& json_byte : block["bytes"].array_range()) {
     assert(json_byte.size() == 3 && "each byte must contains 3 elements");
 
+    ConcreteByte init_byte;
+    uint8_t nonpoison_bits = json_byte[1].as_integer<uint8_t>();
     if (json_byte[2].is_int64()) { // value byte
-      if (json_byte[0].is_null()) {
-        c_block.default_byte.byte_val.first = json_byte[1].as_integer<uint8_t>();
-        c_block.default_byte.byte_val.second = json_byte[2].as_integer<uint8_t>();
-        break; // since we can't have another value byte in the block after the default byte
-      }
-      else {
-        uint64_t mem_offset = json_byte[0].as_integer<uint64_t>();
-        auto init_byte = ConcreteByte();
-        c_block.bytes.emplace(mem_offset, move(init_byte));
-      }
+      uint8_t value = json_byte[2].as_integer<uint8_t>();
+      init_byte = DataByteVal(nonpoison_bits, value);
     }
     else if (json_byte[2].is_array()) { // ptr byte
       assert(json_byte[2].size() == 3 && "each ptr value must contain 3 elements");
       // cout << "pointer byte\n";
-      uint64_t mem_offset = json_byte[0].as_integer<uint64_t>();
-      bool is_poison = json_byte[1].as_integer<uint64_t>() == 255 ? false : true;
+      bool is_poison = nonpoison_bits == 255 ? false : true;
       auto ptr_value = json_byte[2];
       auto concrete_ptr = ConcreteValPointer(is_poison, 
                                              ptr_value[0].as_integer<uint64_t>(),
                                              ptr_value[1].as_integer<uint64_t>());
-      auto cur_ptr_byte = ConcreteByte(move(concrete_ptr));
-      cur_ptr_byte.pointer_byte_offset = ptr_value[2].as_integer<uint64_t>();
-      c_block.bytes.emplace(mem_offset, move(cur_ptr_byte));
+      init_byte = ConcreteByte(move(concrete_ptr));
+      init_byte.pointer_byte_offset = ptr_value[2].as_integer<uint64_t>();
     }
     else {
       UNREACHABLE();
+    }
+
+    if (json_byte[0].is_null()) {
+      c_block.default_byte = move(init_byte);
+      break; // since we can't have another value byte in the block after the
+             // default byte
+    } else {
+      uint64_t mem_offset = json_byte[0].as_integer<uint64_t>();
+      c_block.bytes.emplace(mem_offset, move(init_byte));
     }
   }
   return c_block;
@@ -535,6 +556,38 @@ static ojson storeConcreteVal(const IR::Type &type, const ConcreteVal *val) {
   }
 }
 
+static void storeConcreteByte(ojson &result, const ConcreteByte &byte) {
+  if (byte.is_pointer) {
+    result.emplace_back(byte.ptr_val.isPoison() ? 0 : 255);
+    ojson tmp(json_array_arg, {byte.ptr_val.getBid(), byte.ptr_val.getOffset(),
+                               byte.pointer_byte_offset});
+    result.emplace_back(move(tmp));
+  } else {
+    result.emplace_back(byte.byte_val.first);  // nonpoison bits
+    result.emplace_back(byte.byte_val.second); // value
+  }
+}
+
+static ojson storeConcreteBlock(const ConcreteBlock &block) {
+  ojson result(json_object_arg);
+  result["size"] = block.size;
+  result["address"] = block.address;
+  result["align"] = block.align;
+  ojson bytes(json_array_arg);
+  for (const auto &item : block.bytes) {
+    // if (item.second == block.default_byte)
+    //   continue;
+    ojson tmp(json_array_arg, {item.first});
+    storeConcreteByte(tmp, item.second);
+    bytes.emplace_back(move(tmp));
+  }
+  ojson tmp(json_array_arg, {nullptr});
+  storeConcreteByte(tmp, block.default_byte);
+  bytes.emplace_back(move(tmp));
+  result["bytes"] = move(bytes);
+  return result;
+}
+
 WorkerInterpreter::WorkerInterpreter(const ojson &test_input)
     : test_input(test_input) {}
 
@@ -598,6 +651,12 @@ static ojson evaluateAliveInterpret(const ojson &options, const ojson &src,
     result["undefined"] = false;
     result["return_value"] =
         storeConcreteVal(fn->getType(), interpreter.return_value);
+    if (!interpreter.mem_blocks.empty()) {
+      ojson tmp(json_array_arg);
+      for (const auto &block : interpreter.mem_blocks)
+        tmp.emplace_back(storeConcreteBlock(block));
+      result["memory"] = move(tmp);
+    }
   } else {
     result["status"] = "timeout";
   }

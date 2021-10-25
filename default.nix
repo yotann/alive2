@@ -47,4 +47,25 @@ rec {
   alive2 = callPackage nix/alive2 {
     inherit llvm z3;
   };
+
+
+  # Singularity container (to be run on HTCondor cluster)
+  alive-worker-singularity = singularity-tools.buildImage {
+    name = "alive-worker";
+    contents = [ pkgs.busybox ];
+    diskSize = 4096;
+    runScript = ''
+      #!/bin/sh
+      set +e
+      for i in $(seq 4); do
+        while true; do
+          echo starting worker...
+          ${alive2}/bin/alive-worker "$@"
+          echo exit code: $?
+        done &
+      done
+      sleep 7d
+      kill $(jobs -p)
+    '';
+  };
 }

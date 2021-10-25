@@ -3709,20 +3709,16 @@ static void storeIntVal(Interpreter &interpreter, util::ConcreteValPointer *ptr,
     num_bytes += 1;
   
   auto tgt_val = int_val->getVal();
-  bool is_ub = false;
   for (unsigned int i = 0; i < num_bytes; ++i) {
-    auto &cur_byte = cur_block.getByte(ptr->getOffset() + i, is_ub);
-    if (is_ub){
-      interpreter.UB_flag = true;
+    auto &cur_byte =
+        cur_block.getByte(ptr->getOffset() + i, interpreter.UB_flag);
+    if (interpreter.UB_flag)
       return;
-    }
 
-    assert(!cur_byte.is_pointer);
     // This will fail for types that are non multiples of 8
     auto tgt_byte = tgt_val.extractBits(8, i*8);
-    DataByteVal &cur_byte_val = cur_byte.intValue();
-    cur_byte_val.first = (int_val->isPoison()) ? 0 : 255;
-    cur_byte_val.second = tgt_byte.getZExtValue();
+    cur_byte = ConcreteByte(
+        DataByteVal(int_val->isPoison() ? 0 : 255, tgt_byte.getZExtValue()));
   }
 
 }

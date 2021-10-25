@@ -139,6 +139,7 @@ public:
   bool isConstArray(expr &val) const;
   bool isStore(expr &array, expr &idx, expr &val) const;
   bool isLoad(expr &array, expr &idx) const;
+  bool isFuncAsArray(expr &val) const;
 
   bool isFPAdd(expr &rounding, expr &lhs, expr &rhs) const;
   bool isFPSub(expr &rounding, expr &lhs, expr &rhs) const;
@@ -358,6 +359,7 @@ public:
 
   friend class Solver;
   friend class Model;
+  friend class FnModel;
 };
 
 

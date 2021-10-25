@@ -99,4 +99,4 @@ args:
   - args: []
 expected:
   status: unsupported
-  unsupported: null pointer constant
+  unsupported: assume.nonnull

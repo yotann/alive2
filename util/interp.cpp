@@ -288,7 +288,7 @@ void Interpreter::step() {
   }
   else {
     auto res_val = i.concreteEval(*this);
-    assert(res_val || unsupported_flag);
+    assert(res_val || unsupported_flag || UB_flag);
     concrete_vals[&i] = res_val;
   }
 }
