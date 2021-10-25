@@ -542,8 +542,8 @@ check_refinement(Errors &errs, const Transform &t, const State &src_state,
     set<expr> undef;
     Pointer p(src_mem, m[ptr_refinement()]);
     s << "\nMismatch in " << p
-      << "\nSource value: " << Byte(src_mem, m[src_mem.load(p, undef)()])
-      << "\nTarget value: " << Byte(tgt_mem, m[tgt_mem.load(p, undef)()]);
+      << "\nSource value: " << Byte(src_mem, m[src_mem.raw_load(p, undef)()])
+      << "\nTarget value: " << Byte(tgt_mem, m[tgt_mem.raw_load(p, undef)()]);
   };
 
   CHECK(dom && !(memory_cnstr0.isTrue() ? memory_cnstr0
@@ -577,10 +577,13 @@ static unsigned num_ptrs(const Type &ty) {
 }
 
 static bool returns_local(const Value &v) {
+  // no alias fns return local block
+  if (auto call = dynamic_cast<const FnCall*>(&v))
+    return call->getAttributes().has(FnAttrs::NoAlias);
+
   return dynamic_cast<const Alloc*>(&v) ||
          dynamic_cast<const Malloc*>(&v) ||
          dynamic_cast<const Calloc*>(&v);
-         // TODO: add noalias fn
 }
 
 static Value *get_base_ptr(Value *ptr) {
@@ -784,14 +787,18 @@ static void calculateAndInitConstants(Transform &t) {
   }
 
   num_ptrinputs = 0;
+  unsigned num_null_ptrinputs = 0;
   for (auto &arg : t.src.getInputs()) {
     auto n = num_ptrs(arg.getType());
     auto in = dynamic_cast<const Input*>(&arg);
     if (in && in->hasAttribute(ParamAttrs::ByVal)) {
       num_globals_src += n;
       num_globals += n;
-    } else
+    } else {
       num_ptrinputs += n;
+      if (!in || !in->hasAttribute(ParamAttrs::NonNull))
+        num_null_ptrinputs += n;
+    }
   }
 
   // The number of local blocks.
@@ -804,8 +811,8 @@ static void calculateAndInitConstants(Transform &t) {
   uint64_t min_global_size = UINT64_MAX;
 
   bool nullptr_is_used = false;
-  has_int2ptr      = false;
-  has_ptr2int      = false;
+  bool has_int2ptr     = false;
+  bool has_ptr2int     = false;
   has_alloca       = false;
   has_dead_allocas = false;
   has_malloc       = false;
@@ -815,6 +822,7 @@ static void calculateAndInitConstants(Transform &t) {
   does_ptr_store   = false;
   does_ptr_mem_access = false;
   does_int_mem_access = false;
+  observes_addresses  = false;
   bool does_any_byte_access = false;
 
   // Mininum access size (in bytes)
@@ -892,6 +900,7 @@ static void calculateAndInitConstants(Transform &t) {
         does_ptr_store       |= info.doesPtrStore;
         does_int_mem_access  |= info.hasIntByteAccess;
         does_mem_access      |= info.doesMemAccess();
+        observes_addresses   |= info.observesAddresses;
         min_access_size       = gcd(min_access_size, info.byteSize);
         if (info.doesMemAccess() && !info.hasIntByteAccess &&
             !info.doesPtrLoad && !info.doesPtrStore)
@@ -917,8 +926,8 @@ static void calculateAndInitConstants(Transform &t) {
         min_access_size = gcd(min_access_size, getCommonAccessSize(t));
 
       } else if (auto *ic = dynamic_cast<const ICmp*>(&i)) {
-        has_ptr2int |= ic->isPtrCmp() &&
-                       (ic->getPtrCmpMode() == ICmp::INTEGRAL);
+        observes_addresses |= ic->isPtrCmp() &&
+                              ic->getPtrCmpMode() == ICmp::INTEGRAL;
       }
     }
   }
@@ -948,7 +957,7 @@ static void calculateAndInitConstants(Transform &t) {
 
   // check if null block is needed
   // Global variables cannot be null pointers
-  has_null_block = num_ptrinputs > 0 || nullptr_is_used || has_malloc ||
+  has_null_block = num_null_ptrinputs > 0 || nullptr_is_used || has_malloc ||
                   has_ptr_load || has_fncall || has_int2ptr;
 
   num_nonlocals_src = num_globals_src + num_ptrinputs + num_nonlocals_inst_src +
@@ -958,6 +967,8 @@ static void calculateAndInitConstants(Transform &t) {
   num_nonlocals_src += has_fncall;
 
   num_nonlocals = num_nonlocals_src + num_globals - num_globals_src;
+
+  observes_addresses |= has_int2ptr || has_ptr2int;
 
   if (!does_int_mem_access && !does_ptr_mem_access && has_fncall)
     does_int_mem_access = true;
@@ -1040,8 +1051,7 @@ static void calculateAndInitConstants(Transform &t) {
                   << "\nmemcmp_unroll_cnt: " << memcmp_unroll_cnt
                   << "\nlittle_endian: " << little_endian
                   << "\nnullptr_is_used: " << nullptr_is_used
-                  << "\nhas_int2ptr: " << has_int2ptr
-                  << "\nhas_ptr2int: " << has_ptr2int
+                  << "\nobserves_addresses: " << observes_addresses
                   << "\nhas_malloc: " << has_malloc
                   << "\nhas_free: " << has_free
                   << "\nhas_null_block: " << has_null_block
@@ -1134,9 +1144,9 @@ void TransformVerify::verify(Errors &errs) const {
         if (name[0] != '%' || !dynamic_cast<const Instr*>(var))
           continue;
 
-        // TODO: add data-flow domain tracking for Alive, but not for TV
+        auto &val_tgt = tgt_state->at(*tgt_instrs.at(name));
         check_refinement(errs, t, *src_state, *tgt_state, var, var->getType(),
-                         true, val, true, tgt_state->at(*tgt_instrs.at(name)),
+                         val.domain, val, val_tgt.domain, val_tgt,
                          check_each_var);
         if (errs)
           return;

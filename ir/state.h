@@ -158,6 +158,7 @@ private:
     smt::expr ub;
     smt::expr noreturns;
     Memory::CallState callstate;
+    std::vector<Memory::FnRetData> ret_data;
 
     static FnCallOutput mkIf(const smt::expr &cond, const FnCallOutput &then,
                              const FnCallOutput &els);
@@ -223,6 +224,8 @@ public:
 
   StateValue rewriteUndef(StateValue &&val,
                           const std::set<smt::expr> &undef_vars);
+  smt::expr rewriteUndef(smt::expr &&val,
+                         const std::set<smt::expr> &undef_vars);
 
   bool isInitializationPhase() const { return is_initialization_phase; }
   void finishInitializer();
