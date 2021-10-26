@@ -208,7 +208,9 @@ public:
   ConcreteValPointer();
   ConcreteValPointer(bool poison, unsigned bid, std::int64_t offset);
   unsigned getBid() const;
+  void setBid(unsigned bid);
   std::int64_t getOffset() const;
+  void setOffset(std::int64_t offset);
   void print() override;
 };
 } // namespace util

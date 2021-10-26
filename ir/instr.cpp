@@ -3618,6 +3618,29 @@ static util::ConcreteVal *loadIntVal(Interpreter &interpreter,
   return res;
 }
 
+static util::ConcreteVal *loadPtrVal(Interpreter &interpreter,
+                              util::ConcreteValPointer *ptr,
+                              unsigned int bitwidth) {
+  if (bitwidth != 0) {// TODO investigate why this can be zero : bits_for_ptrattrs + bits_for_bid + bits_for_offset 
+    interpreter.setUnsupported("loadPtrVal unsupported ptr bitwidth");
+    return nullptr;
+  }
+
+  auto &cur_block = interpreter.getBlock(ptr->getBid());
+  bool is_ub = false;
+  auto &cur_ptr_byte = cur_block.getByte(ptr->getOffset(), is_ub);
+  
+  if (is_ub){
+    interpreter.UB_flag = true;
+    return nullptr;
+  }
+
+  assert(cur_ptr_byte.is_pointer && "loadPtrVal incorrect type of byte read from memory");
+  auto res = new ConcreteValPointer(cur_ptr_byte.pointerValue());
+  return res;
+}
+
+
 std::shared_ptr<util::ConcreteVal>
 Load::concreteEval(Interpreter &interpreter) const {
   auto ptr_I = interpreter.concrete_vals.find(ptr);
@@ -3630,7 +3653,12 @@ Load::concreteEval(Interpreter &interpreter) const {
     // todo handle multiple integer bitwidth
     return shared_ptr<ConcreteVal>(
         loadIntVal(interpreter, c_ptr, getType().bits()));
-  } else { // floating point, pointer, etc
+  }
+  else if (getType().isPtrType()) {
+    return shared_ptr<ConcreteVal>(
+        loadPtrVal(interpreter, c_ptr, getType().bits()));
+  } 
+  else { // floating point, etc
     interpreter.setUnsupported("load a value unsupported type");
     return nullptr;
   }

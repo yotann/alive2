@@ -1363,8 +1363,16 @@ namespace util{
     return bid;
   }
 
+  void ConcreteValPointer::setBid(unsigned bid) {
+    this->bid = bid;
+  }
+
   std::int64_t ConcreteValPointer::getOffset() const {
     return offset;
+  }
+
+  void ConcreteValPointer::setOffset(std::int64_t offset) {
+    this->offset = offset;
   }
 
   void ConcreteValPointer::print() {
