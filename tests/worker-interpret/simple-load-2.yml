@@ -1,0 +1,30 @@
+---
+name: load_ind_1
+func: alive.interpret
+args:
+  - {}
+  - !ir |
+    define i32 @src(i32**  %0) {
+      %2 = load i32*, i32** %0, align 8
+      store i32 42, i32* %2, align 4
+      %res = load i32, i32* %2
+      ret i32 %res
+    }
+  - args: [[1,0]]
+    memory:
+      - size: 0
+        align: 0
+      - size: 4
+        align: 32
+        bytes:
+          - [0, 255, [2, 0, 0]]
+          - [null, 0, 0]
+      - size: 4
+        align: 32
+        bytes:
+          - [0, 255, 42]
+          - [null, 0, 0]
+expected:
+  status: done
+  undefined: false
+  return_value: 42
