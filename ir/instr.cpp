@@ -2036,6 +2036,9 @@ static void unpack_inputs(State &s, Value &argv, Type &ty,
     value.non_poison = move(new_non_poison);
 
     if (ty.isPtrType()) {
+      // FIXME: This is definitely incorrect. If the *callee* has argmemonly,
+      // this checks whether the argument is one of the *caller's* arguments.
+      // https://github.com/AliveToolkit/alive2/issues/763
       if (argmemonly)
         value.non_poison
           &= ptr_only_args(s, Pointer(s.getMemory(), value.value));
@@ -2101,6 +2104,19 @@ StateValue FnCall::toSMT(State &s) const {
   vector<Memory::PtrInput> ptr_inputs;
   vector<Type*> out_types;
   bool argmemonly = attrs.has(FnAttrs::ArgMemOnly);
+  bool caller_argmemonly = s.getFn().getFnAttrs().has(FnAttrs::ArgMemOnly);
+
+  // There's at least one bug in argmemonly handling (see FIXME above) that can
+  // cause Alive2 to report unsound transformations as sound, and I suspect
+  // there are more.
+  if (argmemonly || caller_argmemonly) {
+    s.doesApproximation("argmemonly");
+    if (!s.isSource()) {
+      // Force the transformation to be unsound (assuming the source function
+      // doesn't always have undefined behavior).
+      s.addUB(expr(false));
+    }
+  }
 
   ostringstream fnName_mangled;
   fnName_mangled << fnName;
