@@ -22,7 +22,7 @@ expected:
       - size: 3
         align: 32
         bytes:
-          - [0, 255, 128]
+          - [0, 255, 254]
           - [null, 0, 0]
   status: unsound
   valid: false
