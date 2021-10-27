@@ -226,9 +226,9 @@ void Interpreter::step() {
   cout << "cur inst: ";
   i.print(cout);
   cout << '\n';
-  cout << "cur mem: \n";
-  printMemory(cout);
-  cout << "\n";
+  // cout << "cur mem: \n";
+  // printMemory(cout);
+  // cout << "\n";
   if (dynamic_cast<const Return *>(&i)) {
     auto v_op = i.operands();
     assert(v_op.size() == 1);

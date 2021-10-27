@@ -112,7 +112,7 @@ args:
         bytes:
           # It's really weird to use a pointer byte as the default,
           # but apparently alive.tv can generate this as a counterexample.
-          - [131064,255,49152]
+          - [131064,255,49]
           - [null,0,[0,32,1]]
 expected:
   status: done
@@ -125,5 +125,5 @@ expected:
       align: 32
       bytes:
         - [131052,255,0]
-        - [131064,255,0]
+        - [131064,255,49]
         - [null,0,[0,32,1]]
