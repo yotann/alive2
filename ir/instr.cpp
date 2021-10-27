@@ -3717,21 +3717,15 @@ unique_ptr<Instr> Store::dup(const string &suffix) const {
 
 static void storeIntVal(Interpreter &interpreter, util::ConcreteValPointer *ptr,
                  util::ConcreteValInt *int_val) {
-  // cout << "storeIntVal\n";
-  // cout << "ptr bid= " << ptr->getBid()
-  //     << ",offset=" << ptr->getOffset()
-  //     << ",poison=" << ptr->isPoison() << "\n";
-  // cout << "getting block\n";
+  //ptr->print();
   auto bitwidth = int_val->getVal().getBitWidth();
   if ((bitwidth % 8) != 0) { // FIXME relax this constraint
     interpreter.setUnsupported("storeIntVal unsupported bitwidth");
     return;
   }
+  
   auto &cur_block = interpreter.getBlock(ptr->getBid());
-  
-  
   auto num_bytes = bitwidth / 8;
-  
   
   if (bitwidth > (num_bytes * 8))
     num_bytes += 1;
@@ -3751,6 +3745,27 @@ static void storeIntVal(Interpreter &interpreter, util::ConcreteValPointer *ptr,
 
 }
 
+static void storePtrVal(Interpreter &interpreter, util::ConcreteValPointer *ptr_dst,
+                 util::ConcreteValPointer *ptr_val) {
+  
+  auto &dst_block = interpreter.getBlock(ptr_dst->getBid());
+  bool is_ub = false;
+  auto &dst_deref_byte = dst_block.getByte(ptr_dst->getOffset(), is_ub);
+  
+  if (is_ub) {
+    interpreter.UB_flag = true;
+    return;
+  }
+  
+  dst_deref_byte.is_pointer = true;
+  dst_deref_byte.pointerValue().setBid(ptr_val->getBid());
+  dst_deref_byte.pointerValue().setOffset(ptr_val->getOffset());
+  dst_deref_byte.pointerValue().setPoison(ptr_val->isPoison());
+  
+  return;
+  
+}
+
 std::shared_ptr<util::ConcreteVal>
 Store::concreteEval(Interpreter &interpreter) const {
   auto ptr_I = interpreter.concrete_vals.find(ptr);
@@ -3762,18 +3777,16 @@ Store::concreteEval(Interpreter &interpreter) const {
   auto concrete_store_val = val_I->second.get();
 
   if (val->getType().isPtrType()) {
-    interpreter.setUnsupported("store to pointer");
-    return nullptr;
+    auto c_ptr_val = dynamic_cast<ConcreteValPointer *>(concrete_store_val);
+    storePtrVal(interpreter, c_ptr, c_ptr_val);
   } else if (val->getType().isIntType()) {
     auto c_int_val = dynamic_cast<ConcreteValInt *>(concrete_store_val);
     storeIntVal(interpreter, c_ptr, c_int_val);
-    return nullptr;
   } else {
     interpreter.setUnsupported("store to value");
-    return nullptr;
   }
-
-  UNREACHABLE();
+  
+  return nullptr;
 }
 
 

@@ -1376,6 +1376,6 @@ namespace util{
   }
 
   void ConcreteValPointer::print() {
-    cout << "pointer(block_id=" << bid << ", offset=" << offset << ")\n";
+    cout << "pointer(poison=" << isPoison() << ", block_id=" << bid << ", offset=" << offset << ")\n";
   }
 }
