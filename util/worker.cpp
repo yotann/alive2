@@ -501,9 +501,11 @@ void WorkerInterpreter::loadMemory(const ojson &mem) {
     auto c_init_block = loadConcreteBlock(mem_block);
     mem_blocks.push_back(std::move(c_init_block));
   }
-  // for debugging
+
+  // For debugging
+  // cout << "Initial state of memory: \n";
   // printMemory(cout);
-  
+  // cout << "\n";
 }
 
 static ojson storeConcreteVal(const IR::Type &type, const ConcreteVal *val) {

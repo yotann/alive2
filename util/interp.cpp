@@ -222,9 +222,13 @@ void Interpreter::step() {
   if (isFinished())
     return;
   auto &i = *(cur_block->instrs().begin() + pos_in_block++);
+  // TODO need to print only when in verbose mode
   cout << "cur inst: ";
   i.print(cout);
   cout << '\n';
+  cout << "cur mem: \n";
+  printMemory(cout);
+  cout << "\n";
   if (dynamic_cast<const Return *>(&i)) {
     auto v_op = i.operands();
     assert(v_op.size() == 1);
