@@ -1,0 +1,31 @@
+---
+name: nocapture
+func: alive.tv_v2
+args:
+  - disable_undef_input: true
+    disable_poison_input: true
+  - !ir |
+    define i32 @src(i32**  %0) {
+      %2 = load i32*, i32** %0, align 8
+      store i32 42, i32* %2, align 4
+      %res = load i32, i32* %2
+      ret i32 %res
+    }
+  - !ir |
+    define i32 @tgt(i32**  %0) {
+      ret i32 42
+    }
+expected:
+  test_input:
+    args: [[2, 0]]
+    memory:
+      - size: 0
+        align: 0
+      - size: 3
+        align: 32
+        bytes:
+          - [0, 255, 128]
+          - [null, 0, 0]
+  status: unsound
+  valid: false
+  errs: "ERROR: Mismatch in memory\n"
