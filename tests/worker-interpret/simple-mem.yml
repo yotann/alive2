@@ -17,7 +17,6 @@ args:
         bytes:
           - [0, 255, 128]
           - [null, 0, 0]
-
 expected:
   status: done
   undefined: false

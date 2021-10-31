@@ -1,0 +1,26 @@
+name: gep_1
+func: alive.interpret
+args:
+  - {}
+  - !ir |
+    define i8 @tgt(i8* %in) {
+      %ind = getelementptr inbounds i8, i8* %in, i64 3
+      %res = load i8, i8* %ind
+      ret i8 %res
+    }
+  - args: [[1,0]]
+    memory:
+      - size: 0
+        align: 0
+      - size: 6
+        align: 1
+        bytes:
+          - [0, 255, 128]
+          - [1, 255, 129]
+          - [2, 255, 130]
+          - [3, 255, 131]
+          - [null, 0, 0]
+expected:
+  status: done
+  undefined: false
+  return_value: 130

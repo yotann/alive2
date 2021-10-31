@@ -19,6 +19,7 @@
 
 #include <cstdlib>
 #include <iostream>
+#include <numeric>
 #include <optional>
 #include <sstream>
 #include <string>
@@ -599,9 +600,33 @@ WorkerInterpreter::getInputValue(unsigned index, const IR::Input &input) {
       loadConcreteVal(input.getType(), test_input["args"][index]));
 }
 
+// Need this function for the interpreter since calculateAndInitConstants
+// from transform.cpp is not initializing the constants required for 
+// the interpreter
+static void initMemoryConstantsInterpret(IR::Function& fn) {
+  // Mininum access size (in bytes)
+  uint64_t min_access_size = 8;
+
+  for (auto &i : fn.instrs()) {
+    if (auto *mi = dynamic_cast<const IR::MemInstr *>(&i)) {
+      auto info = mi->getByteAccessInfo();
+      min_access_size = std::gcd(min_access_size, info.byteSize);
+      // mi->print(cout);
+    }
+    else if  (auto *bc = isCast(IR::ConversionOp::BitCast, i)) {
+      auto &t = bc->getType();
+      min_access_size = gcd(min_access_size, getCommonAccessSize(t));
+    }
+  }
+  cout << "min_access_size= " << min_access_size << "\n";
+  IR::bits_program_pointer = fn.bitsPointers();
+  IR::bits_byte = 8 * (unsigned)min_access_size ;
+  
+}
+
 static ojson evaluateAliveInterpret(const ojson &options, const ojson &src,
                                     const ojson &test_input) {
-  // TODO: it it better to use max_steps or use a timeout?
+  // TODO: is it better to use max_steps or use a timeout?
   uint64_t max_steps =
       options.get_with_default<uint64_t>("max_steps", uint64_t(1024));
 
@@ -610,6 +635,13 @@ static ojson evaluateAliveInterpret(const ojson &options, const ojson &src,
     return llvm::StringRef(reinterpret_cast<const char *>(bytes.data()),
                            bytes.size());
   };
+
+  // need this because of initMemoryConstantsInterpret
+  // alternatively, we can passthe required value in a json file from alive-tv
+  if (smt_init)
+    smt_init->reset();
+  else
+    smt_init.emplace();
 
   llvm::LLVMContext context;
   auto m_or_err = llvm::parseBitcodeFile(
@@ -629,7 +661,7 @@ static ojson evaluateAliveInterpret(const ojson &options, const ojson &src,
   // TODO: include contents of out.str() in the response.
 
   auto &f = getSoleDefinition(*m);
-  auto fn = llvm2alive(f, tli.getTLI(f));
+  auto fn = llvm2alive(f, tli.getTLI(f));  
   ojson result(json_object_arg);
   if (!fn) {
     result["status"] = "unsupported";
@@ -638,8 +670,13 @@ static ojson evaluateAliveInterpret(const ojson &options, const ojson &src,
   }
 
   WorkerInterpreter interpreter(test_input);
-  if (test_input.contains("memory"))
+  if (test_input.contains("memory")) {
+    initMemoryConstantsInterpret(*fn);
+    cout << "bits_program_pointer = " << IR::bits_program_pointer << "\n";
+    cout << "bits_byte = " << IR::bits_byte << "\n";
     interpreter.loadMemory(test_input["memory"]);
+  }
+    
   interpreter.start(*fn);
   interpreter.run(max_steps);
   if (interpreter.isUnsupported()) {
