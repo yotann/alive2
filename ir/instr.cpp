@@ -3534,6 +3534,34 @@ unique_ptr<Instr> GEP::dup(const string &suffix) const {
   return dup;
 }
 
+shared_ptr<ConcreteVal>
+GEP::concreteEval(Interpreter &interpreter) const {
+  assert(interpreter.concrete_vals.contains(ptr));
+  auto ptr_val = interpreter.concrete_vals[ptr].get();
+  auto c_ptr_val = dynamic_cast<ConcreteValPointer*>(ptr_val);
+  assert(c_ptr_val);
+  
+  // if (inbounds) { //TODO
+  //   interpreter.setUnsupported("GEP inbounds not unsupported");
+  //   return nullptr;
+  // } 
+  
+  for (auto &[size, val]: idxs) {
+    assert(interpreter.concrete_vals.contains(val));
+    auto i_val = interpreter.concrete_vals[val].get();
+    auto i_val_int = dynamic_cast<ConcreteValInt*>(i_val);
+    assert(i_val_int);
+    cout << "GEP::concreteEval index size=" << size << "\n";
+    i_val_int->print();
+  //   cout << "extractValue::concreteEval agg.size=" << agg.size() << "\n";
+  //   assert(idx < agg.size());
+  //   v = agg[idx];
+  }
+  interpreter.setUnsupported("GEP not unsupported yet");
+  return nullptr;
+  
+}
+
 
 DEFINE_AS_RETZEROALIGN(Load, getMaxAllocSize);
 DEFINE_AS_RETZERO(Load, getMaxGEPOffset);
@@ -3620,23 +3648,38 @@ static util::ConcreteVal *loadIntVal(Interpreter &interpreter,
 
 static util::ConcreteVal *loadPtrVal(Interpreter &interpreter,
                               util::ConcreteValPointer *ptr,
-                              unsigned int bitwidth) {
-  if (bitwidth != 0) {// TODO investigate why this can be zero : bits_for_ptrattrs + bits_for_bid + bits_for_offset 
-    interpreter.setUnsupported("loadPtrVal unsupported ptr bitwidth");
-    return nullptr;
-  }
-
+                              unsigned int bytes_per_ptr) {
+  
+  assert(bytes_per_ptr != 0 && "bytes_per_ptr must be non-zero");
+  
+  cout << "bytes_per_ptr = " << bytes_per_ptr << "\n";
+  
   auto &cur_block = interpreter.getBlock(ptr->getBid());
   bool is_ub = false;
-  auto &cur_ptr_byte = cur_block.getByte(ptr->getOffset(), is_ub);
-  
-  if (is_ub){
+  auto first_byte_ptr = cur_block.getByte(ptr->getOffset(), is_ub);
+  // is this considered UB or it should just not happen when the 
+  // memory is initialized properly and the program is valid llvm-ir?
+  if (!first_byte_ptr.is_pointer) { 
     interpreter.UB_flag = true;
     return nullptr;
   }
+  // assert(first_byte_ptr.is_pointer && "loadPtrVal incorrect type of byte read from memory");
+  assert(first_byte_ptr.pointer_byte_offset == 0 && "loadPtrVal first byte incorrect pointer byte offset");
 
-  assert(cur_ptr_byte.is_pointer && "loadPtrVal incorrect type of byte read from memory");
-  auto res = new ConcreteValPointer(cur_ptr_byte.pointerValue());
+  for (unsigned int i = 1; i < bytes_per_ptr; ++i) {
+    auto &cur_ptr_byte = cur_block.getByte(ptr->getOffset() + i, is_ub);
+    
+    if (is_ub || !cur_ptr_byte.is_pointer 
+        || cur_ptr_byte.pointerValue() != first_byte_ptr.pointerValue()) {
+      interpreter.UB_flag = true;
+      return nullptr;
+    }
+    assert (cur_ptr_byte.pointer_byte_offset == i && "loadPtrVal incorrect pointer byte offset");
+    
+    
+  }
+  
+  auto res = new ConcreteValPointer(first_byte_ptr.pointerValue());
   return res;
 }
 
@@ -3656,7 +3699,7 @@ Load::concreteEval(Interpreter &interpreter) const {
   }
   else if (getType().isPtrType()) {
     return shared_ptr<ConcreteVal>(
-        loadPtrVal(interpreter, c_ptr, getType().bits()));
+        loadPtrVal(interpreter, c_ptr, bits_program_pointer / bits_byte));
   } 
   else { // floating point, etc
     interpreter.setUnsupported("load a value unsupported type");

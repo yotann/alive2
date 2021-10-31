@@ -205,8 +205,6 @@ void Interpreter::start(Function &f) {
 
   // TODO add stack for alloca
 
-  // TODO add support for noninteger types
-
   for (auto &bb : f.getBBs()) {
     if (&f.getFirstBB() == bb) {
       cur_block = bb;
