@@ -14,7 +14,7 @@ args:
     }
   - !ir |
     @x = global i8* null
-    
+
     define void @tgt(i8* nocapture %p) {
       store i8* %p, i8** @x
       ret void
@@ -24,12 +24,13 @@ expected:
     args: [[2, 0]]
     memory:
       - size: 0
-        align: 0
-      - size: 3
-        align: 32
+        align: 3
+      - size: 8
+        align: 3
         bytes:
-          - [0, 255, 128]
-          - [null, 0, 0]
+          - [null,0,[0,0,0]]
+      - size: 0
+        align: 32
   status: unsound
   valid: false
-  errs: "ERROR: Mismatch in memory\n"
+  errs: "ERROR: Source is more defined than target\n"
