@@ -3536,27 +3536,27 @@ unique_ptr<Instr> GEP::dup(const string &suffix) const {
 
 shared_ptr<ConcreteVal>
 GEP::concreteEval(Interpreter &interpreter) const {
-  assert(interpreter.concrete_vals.contains(ptr));
-  auto ptr_val = interpreter.concrete_vals[ptr].get();
-  auto c_ptr_val = dynamic_cast<ConcreteValPointer*>(ptr_val);
-  assert(c_ptr_val);
+  //assert(interpreter.concrete_vals.contains(ptr));
+  //auto ptr_val = interpreter.concrete_vals[ptr].get();
+  //auto c_ptr_val = dynamic_cast<ConcreteValPointer*>(ptr_val);
+  //assert(c_ptr_val);
   
   // if (inbounds) { //TODO
   //   interpreter.setUnsupported("GEP inbounds not unsupported");
   //   return nullptr;
   // } 
   
-  for (auto &[size, val]: idxs) {
-    assert(interpreter.concrete_vals.contains(val));
-    auto i_val = interpreter.concrete_vals[val].get();
-    auto i_val_int = dynamic_cast<ConcreteValInt*>(i_val);
-    assert(i_val_int);
-    cout << "GEP::concreteEval index size=" << size << "\n";
-    i_val_int->print();
-  //   cout << "extractValue::concreteEval agg.size=" << agg.size() << "\n";
-  //   assert(idx < agg.size());
-  //   v = agg[idx];
-  }
+  // for (auto &[size, val]: idxs) {
+  //   assert(interpreter.concrete_vals.contains(val));
+  //   auto i_val = interpreter.concrete_vals[val].get();
+  //   auto i_val_int = dynamic_cast<ConcreteValInt*>(i_val);
+  //   assert(i_val_int);
+  //   cout << "GEP::concreteEval index size=" << size << "\n";
+  //   i_val_int->print();
+  ////   cout << "extractValue::concreteEval agg.size=" << agg.size() << "\n";
+  ////   assert(idx < agg.size());
+  ////   v = agg[idx];
+  //}
   interpreter.setUnsupported("GEP not unsupported yet");
   return nullptr;
   
