@@ -618,7 +618,7 @@ static void initMemoryConstantsInterpret(IR::Function& fn) {
       min_access_size = gcd(min_access_size, getCommonAccessSize(t));
     }
   }
-  cout << "min_access_size= " << min_access_size << "\n";
+  // cout << "min_access_size= " << min_access_size << "\n";
   IR::bits_program_pointer = fn.bitsPointers();
   IR::bits_byte = 8 * (unsigned)min_access_size ;
   
@@ -672,8 +672,8 @@ static ojson evaluateAliveInterpret(const ojson &options, const ojson &src,
   WorkerInterpreter interpreter(test_input);
   if (test_input.contains("memory")) {
     initMemoryConstantsInterpret(*fn);
-    cout << "bits_program_pointer = " << IR::bits_program_pointer << "\n";
-    cout << "bits_byte = " << IR::bits_byte << "\n";
+    // cout << "bits_program_pointer = " << IR::bits_program_pointer << "\n";
+    // cout << "bits_byte = " << IR::bits_byte << "\n";
     interpreter.loadMemory(test_input["memory"]);
   }
     
