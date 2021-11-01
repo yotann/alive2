@@ -18,6 +18,7 @@ args:
         align: 32
         bytes:
           - [0, 255, [2, 4, 0]]
+          - [1, 255, [2, 4, 1]]
           - [null, 0, 0]
       - size: 8
         align: 32
@@ -35,6 +36,7 @@ expected:
         align: 32
         bytes:
           - [0, 255, [2, 4, 0]]
+          - [1, 255, [2, 4, 1]]
           - [null, 0, 0]
       - size: 8
         align: 32

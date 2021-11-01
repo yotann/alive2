@@ -1,5 +1,5 @@
 ---
-name: nocapture
+name: memory_ind_1
 func: alive.tv_v2
 args:
   - disable_undef_input: true
@@ -17,14 +17,16 @@ args:
     }
 expected:
   test_input:
-    args: [[2, 0]]
+    args: [[1, 8]]
     memory:
       - size: 0
-        align: 0
-      - size: 3
+        align: 2
+      - size: 66
         align: 32
         bytes:
-          - [0, 255, 128]
+          - [8,255,[1,0,0]]
+          - [9,255,[1,0,1]]
+          - [0,0,[0,0,0]]
           - [null, 0, 0]
   status: unsound
   valid: false
