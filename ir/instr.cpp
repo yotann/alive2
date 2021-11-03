@@ -3696,14 +3696,14 @@ static util::ConcreteVal *loadPtrVal(Interpreter &interpreter,
   auto first_byte_ptr = cur_block.getByte(ptr->getOffset(), interpreter.UB_flag);
   if (interpreter.UB_flag)
     return nullptr;
-  if (first_byte_ptr.pointer_byte_offset != 0) {
-    interpreter.UB_flag = true;
-    return nullptr;
-  }
   if (!first_byte_ptr.is_pointer) {
     // It's possible the program could have run ptrtoint and stored the result
     // to memory, so we need to do inttoptr now. But it isn't implemented yet.
     interpreter.setUnsupported("load an integer as a pointer");
+    return nullptr;
+  }
+  if (first_byte_ptr.pointer_byte_offset != 0) {
+    interpreter.UB_flag = true;
     return nullptr;
   }
 
