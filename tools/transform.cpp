@@ -1022,7 +1022,14 @@ static void calculateAndInitConstants(Transform &t) {
   bits_ptr_address = min(max(bits_size_t, bits_ptr_address + has_local_bit),
                          bits_program_pointer);
 
-  bits_byte = 8 * (does_mem_access ?  (unsigned)min_access_size : 1);
+  if (false) {
+    // FIXME: make the interpreter support bits_byte > 8, so we can go back to
+    // this original, more efficient code. The tricky part is handling default
+    // values for memory blocks, which could consist of multiple bytes.
+    bits_byte = 8 * (does_mem_access ?  (unsigned)min_access_size : 1);
+  } else {
+    bits_byte = 8;
+  }
 
   bits_poison_per_byte = 1;
   if (min_vect_elem_sz > 0)
