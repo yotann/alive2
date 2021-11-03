@@ -169,9 +169,9 @@ static void byteToJSON(ojson &array, const IR::Byte &byte) {
     auto ptr = byte.ptr();
     uint64_t bid;
     int64_t offset;
-    int64_t byte_offset;
+    uint64_t byte_offset;
     if (ptr.getBid().isUInt(bid) && ptr.getShortOffset().isInt(offset) &&
-        byte.ptrByteoffset().isInt(byte_offset)) {
+        byte.ptrByteoffset().isUInt(byte_offset)) {
       array.emplace_back(byte.ptrNonpoison().isTrue() ? 0xff : 0x00);
       ojson tmp(json_array_arg);
       tmp.emplace_back(bid);

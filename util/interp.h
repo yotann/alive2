@@ -29,7 +29,7 @@ struct ConcreteByte {
 
   DataByteVal byte_val;
   ConcreteValPointer ptr_val;
-  int pointer_byte_offset;
+  unsigned pointer_byte_offset;
   bool is_pointer;
 
   // creates an uninitialized value byte i.e. [0, 0, 0]
