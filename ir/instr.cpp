@@ -3659,11 +3659,14 @@ static util::ConcreteVal *loadIntVal(Interpreter &interpreter,
     num_bytes += 1;
 
   auto res = new ConcreteValInt(false, llvm::APInt(bitwidth, 0));
-  bool is_ub = false;
   for (unsigned int i = 0; i < num_bytes; ++i) {
-    auto &cur_byte = cur_block.getByte(ptr->getOffset() + i, is_ub);
-    if (is_ub) {
-      interpreter.UB_flag = true;
+    auto &cur_byte = cur_block.getByte(ptr->getOffset() + i, interpreter.UB_flag);
+    if (interpreter.UB_flag)
+      return nullptr;
+    if (cur_byte.is_pointer) {
+      // We should do ptrtoint here and extract the bits we need, but it isn't
+      // implemented yet.
+      interpreter.setUnsupported("load pointer as integer");
       return nullptr;
     }
 
@@ -3693,27 +3696,30 @@ static util::ConcreteVal *loadPtrVal(Interpreter &interpreter,
   auto first_byte_ptr = cur_block.getByte(ptr->getOffset(), interpreter.UB_flag);
   if (interpreter.UB_flag)
     return nullptr;
-  // is this considered UB or it should just not happen when the
-  // memory is initialized properly and the program is valid llvm-ir?
-  if (!first_byte_ptr.is_pointer) {
+  if (first_byte_ptr.pointer_byte_offset != 0) {
     interpreter.UB_flag = true;
     return nullptr;
   }
-  // assert(first_byte_ptr.is_pointer && "loadPtrVal incorrect type of byte read
-  // from memory");
-  assert(first_byte_ptr.pointer_byte_offset == 0 &&
-         "loadPtrVal first byte incorrect pointer byte offset");
+  if (!first_byte_ptr.is_pointer) {
+    // It's possible the program could have run ptrtoint and stored the result
+    // to memory, so we need to do inttoptr now. But it isn't implemented yet.
+    interpreter.setUnsupported("load an integer as a pointer");
+    return nullptr;
+  }
 
   for (unsigned int i = 1; i < bytes_per_ptr; ++i) {
     auto &cur_ptr_byte = cur_block.getByte(ptr->getOffset() + i, interpreter.UB_flag);
 
     if (interpreter.UB_flag || !cur_ptr_byte.is_pointer ||
-        cur_ptr_byte.pointerValue() != first_byte_ptr.pointerValue()) {
+        cur_ptr_byte.pointerValue() != first_byte_ptr.pointerValue() ||
+        cur_ptr_byte.pointer_byte_offset != i) {
+      // Technically, I'm not sure if this is UB if the program stored one copy
+      // of a pointer directly and one copy using ptrtoint and mixed up the
+      // bytes of both. But that's such a rare case that we shouldn't worry
+      // about it.
       interpreter.UB_flag = true;
       return nullptr;
     }
-    assert(cur_ptr_byte.pointer_byte_offset == i &&
-           "loadPtrVal incorrect pointer byte offset");
   }
 
   auto res = new ConcreteValPointer(first_byte_ptr.pointerValue());
