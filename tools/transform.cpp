@@ -1368,6 +1368,8 @@ static void optimize_ptrcmp(Function &f) {
 
     auto cond = icmp->getCond();
     bool is_eq = cond == ICmp::EQ || cond == ICmp::NE;
+    bool is_signed_cmp = cond == ICmp::SLE || cond == ICmp::SLT ||
+                         cond == ICmp::SGE || cond == ICmp::SGT;
 
     auto ops = icmp->operands();
     auto *op0 = ops[0];
@@ -1384,7 +1386,10 @@ static void optimize_ptrcmp(Function &f) {
     if (base0 && base0 == base1) {
       if (is_eq)
         const_cast<ICmp*>(icmp)->setPtrCmpMode(ICmp::PROVENANCE);
-      else if (is_inbounds(*op0) && is_inbounds(*op1))
+      else if (is_inbounds(*op0) && is_inbounds(*op1) && !is_signed_cmp)
+        // Even if op0 and op1 are inbounds, 'icmp slt op0, op1' must
+        // compare underlying addresses because it is possible for the block
+        // to span across [a, b] where a >s 0 && b <s 0.
         const_cast<ICmp*>(icmp)->setPtrCmpMode(ICmp::OFFSETONLY);
     }
   }
