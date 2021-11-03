@@ -3690,8 +3690,9 @@ static util::ConcreteVal *loadPtrVal(Interpreter &interpreter,
   cout << "bytes_per_ptr = " << bytes_per_ptr << "\n";
 
   auto &cur_block = interpreter.getBlock(ptr->getBid());
-  bool is_ub = false;
-  auto first_byte_ptr = cur_block.getByte(ptr->getOffset(), is_ub);
+  auto first_byte_ptr = cur_block.getByte(ptr->getOffset(), interpreter.UB_flag);
+  if (interpreter.UB_flag)
+    return nullptr;
   // is this considered UB or it should just not happen when the
   // memory is initialized properly and the program is valid llvm-ir?
   if (!first_byte_ptr.is_pointer) {
@@ -3704,9 +3705,9 @@ static util::ConcreteVal *loadPtrVal(Interpreter &interpreter,
          "loadPtrVal first byte incorrect pointer byte offset");
 
   for (unsigned int i = 1; i < bytes_per_ptr; ++i) {
-    auto &cur_ptr_byte = cur_block.getByte(ptr->getOffset() + i, is_ub);
+    auto &cur_ptr_byte = cur_block.getByte(ptr->getOffset() + i, interpreter.UB_flag);
 
-    if (is_ub || !cur_ptr_byte.is_pointer ||
+    if (interpreter.UB_flag || !cur_ptr_byte.is_pointer ||
         cur_ptr_byte.pointerValue() != first_byte_ptr.pointerValue()) {
       interpreter.UB_flag = true;
       return nullptr;
