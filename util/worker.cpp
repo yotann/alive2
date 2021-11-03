@@ -600,30 +600,6 @@ WorkerInterpreter::getInputValue(unsigned index, const IR::Input &input) {
       loadConcreteVal(input.getType(), test_input["args"][index]));
 }
 
-// Need this function for the interpreter since calculateAndInitConstants
-// from transform.cpp is not initializing the constants required for 
-// the interpreter
-static void initMemoryConstantsInterpret(IR::Function& fn) {
-  // Mininum access size (in bytes)
-  uint64_t min_access_size = 8;
-
-  for (auto &i : fn.instrs()) {
-    if (auto *mi = dynamic_cast<const IR::MemInstr *>(&i)) {
-      auto info = mi->getByteAccessInfo();
-      min_access_size = std::gcd(min_access_size, info.byteSize);
-      // mi->print(cout);
-    }
-    else if  (auto *bc = isCast(IR::ConversionOp::BitCast, i)) {
-      auto &t = bc->getType();
-      min_access_size = gcd(min_access_size, getCommonAccessSize(t));
-    }
-  }
-  // cout << "min_access_size= " << min_access_size << "\n";
-  IR::bits_program_pointer = fn.bitsPointers();
-  IR::bits_byte = 8 * (unsigned)min_access_size ;
-  
-}
-
 static ojson evaluateAliveInterpret(const ojson &options, const ojson &src,
                                     const ojson &test_input) {
   // TODO: is it better to use max_steps or use a timeout?
