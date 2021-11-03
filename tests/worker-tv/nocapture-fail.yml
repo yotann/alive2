@@ -21,10 +21,10 @@ args:
     }
 expected:
   test_input:
-    args: [[2, 0]]
+    args: [[0, 0]]
     memory:
       - size: 0
-        align: 3
+        align: 0
       - size: 8
         align: 3
         bytes:
