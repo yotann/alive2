@@ -3693,6 +3693,7 @@ static util::ConcreteVal *loadPtrVal(Interpreter &interpreter,
   cout << "bytes_per_ptr = " << bytes_per_ptr << "\n";
 
   auto &cur_block = interpreter.getBlock(ptr->getBid());
+
   auto first_byte_ptr = cur_block.getByte(ptr->getOffset(), interpreter.UB_flag);
   if (interpreter.UB_flag)
     return nullptr;
@@ -3826,6 +3827,7 @@ static void storeIntVal(Interpreter &interpreter, util::ConcreteValPointer *ptr,
         DataByteVal(int_val->isPoison() ? 0 : 255, tgt_byte.getZExtValue()));
   }
 }
+
 
 static void storePtrVal(Interpreter &interpreter,
                         util::ConcreteValPointer *ptr_dst,
