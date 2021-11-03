@@ -76,7 +76,7 @@ static bool is_power2(const expr &e, unsigned &log) {
 
 namespace smt {
 
-expr::expr(Z3_ast ast) : ptr((uintptr_t)ast) {
+expr::expr(Z3_ast ast) noexcept : ptr((uintptr_t)ast) {
   static_assert(sizeof(Z3_ast) == sizeof(uintptr_t));
   assert(isZ3Ast() && isValid());
   incRef();
@@ -100,7 +100,7 @@ Z3_ast expr::ast() const {
   return 0;
 }
 
-expr::expr(const expr &other) {
+expr::expr(const expr &other) noexcept {
   if (!other.isValid()) {
     ptr = 0;
   } else if (other.isZ3Ast()) {
@@ -111,7 +111,7 @@ expr::expr(const expr &other) {
   }
 }
 
-expr::~expr() {
+expr::~expr() noexcept {
   if (isValid()) {
     if (isZ3Ast()) {
       decRef();
@@ -227,6 +227,14 @@ expr expr::mkHalf(float n) {
   return Z3_mk_fpa_numeral_float(ctx(), n, Z3_mk_fpa_sort_half(ctx()));
 }
 
+static Z3_sort mk_bfloat_sort() {
+  return Z3_mk_fpa_sort(ctx(), 8, 8);
+}
+
+expr expr::mkBFloat(float n) {
+  return Z3_mk_fpa_numeral_float(ctx(), n, mk_bfloat_sort());
+}
+
 expr expr::mkFloat(float n) {
   return Z3_mk_fpa_numeral_float(ctx(), n, Z3_mk_fpa_sort_single(ctx()));
 }
@@ -297,6 +305,10 @@ expr expr::mkBoolVar(const char *name) {
 
 expr expr::mkHalfVar(const char *name) {
   return ::mkVar(name, Z3_mk_fpa_sort_half(ctx()));
+}
+
+expr expr::mkBFloatVar(const char *name) {
+  return ::mkVar(name, mk_bfloat_sort());
 }
 
 expr expr::mkFloatVar(const char *name) {
@@ -568,6 +580,13 @@ unsigned expr::min_leading_zeros() const {
   } else if (isUInt(n)) {
     return countl_zero(n) - (64 - bits());
   }
+  return 0;
+}
+
+unsigned expr::min_trailing_ones() const {
+  uint64_t n;
+  if (isUInt(n))
+    return countr_one(n);
   return 0;
 }
 
@@ -1443,6 +1462,10 @@ expr expr::ule(const expr &rhs) const {
     return true;
   if (rhs.isZero() || isAllOnes())
     return *this == rhs;
+
+  // 00... <= ..111 -> true
+  if (min_leading_zeros() + rhs.min_trailing_ones() >= bits())
+    return true;
 
   return binop_fold(rhs, Z3_mk_bvule);
 }

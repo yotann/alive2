@@ -11,6 +11,7 @@
 #include "llvm/IR/CFG.h"
 #include "llvm/IR/GetElementPtrTypeIterator.h"
 #include "llvm/IR/GlobalVariable.h"
+#include "llvm/IR/InlineAsm.h"
 #include "llvm/IR/InstVisitor.h"
 #include "llvm/IR/Operator.h"
 #include <unordered_map>
@@ -84,13 +85,13 @@ class llvm2alive_ : public llvm::InstVisitor<llvm2alive_, unique_ptr<Instr>> {
   auto DL() const { return f.getParent()->getDataLayout(); }
 
   template <typename T>
-  unsigned alignment(T &i, llvm::Type *ty) const {
+  uint64_t alignment(T &i, llvm::Type *ty) const {
     auto a = i.getAlignment();
     return a != 0 ? a : DL().getABITypeAlignment(ty);
   }
 
   template <typename T>
-  unsigned pref_alignment(T &i, llvm::Type *ty) const {
+  uint64_t pref_alignment(T &i, llvm::Type *ty) const {
     auto a = i.getAlignment();
     return a != 0 ? a : DL().getPrefTypeAlignment(ty);
   }
@@ -241,19 +242,30 @@ public:
       approx      = get<3>(known);
     }
 
-    auto fn = i.getCalledFunction();
-    if (!fn) // TODO: support indirect calls
-      return error(i);
-
     auto ty = llvm_type2alive(i.getType());
     if (!ty)
       return error(i);
 
-    if (fn->getName().substr(0, 15) == "__llvm_profile_")
-      return NOP(i);
+    unique_ptr<FnCall> call;
+    auto fn = i.getCalledFunction();
+
+    if (auto *iasm = dyn_cast<llvm::InlineAsm>(i.getCalledOperand())) {
+      assert(!approx);
+      if (!iasm->canThrow())
+        attrs.set(FnAttrs::NoThrow);
+      call = make_unique<InlineAsm>(*ty, value_name(i), iasm->getAsmString(),
+                                    iasm->getConstraintString(), move(attrs));
+    } else {
+      if (!fn) // TODO: support indirect calls
+        return error(i);
+
+      if (fn->getName().substr(0, 15) == "__llvm_profile_")
+        return NOP(i);
+    }
 
     llvm::AttributeList attrs_callsite = i.getAttributes();
-    llvm::AttributeList attrs_fndef = fn->getAttributes();
+    llvm::AttributeList attrs_fndef = fn ? fn->getAttributes()
+                                         : llvm::AttributeList();
     const auto &ret = llvm::AttributeList::ReturnIndex;
     const auto &fnidx = llvm::AttributeList::FunctionIndex;
 
@@ -267,8 +279,9 @@ public:
         attrs.set(FnAttrs::NNaN);
     }
 
-    auto call = make_unique<FnCall>(*ty, value_name(i),
-                                    '@' + fn->getName().str(), move(attrs));
+    if (fn)
+      call = make_unique<FnCall>(*ty, value_name(i),
+                                 '@' + fn->getName().str(), move(attrs));
     unique_ptr<Instr> ret_val;
 
     for (uint64_t argidx = 0, nargs = i.arg_size(); argidx < nargs; ++argidx) {
@@ -279,7 +292,7 @@ public:
       unsigned attr_argidx = llvm::AttributeList::FirstArgIndex + argidx;
       approx |= !handleParamAttrs(attrs_callsite.getAttributes(attr_argidx),
                                   pattr, true);
-      if (argidx < fn->arg_size())
+      if (fn && argidx < fn->arg_size())
         approx |= !handleParamAttrs(attrs_fndef.getAttributes(attr_argidx),
                                     pattr, true);
 
@@ -287,7 +300,11 @@ public:
         if (i.getArgOperand(argidx)->getType()->isAggregateType())
           // TODO: noundef aggregate should be supported; it can have undef
           // padding
+#if LLVM_VERSION_MAJOR >= 14
+          return errorAttr(i.getAttributeAtIndex(argidx, llvm::Attribute::NoUndef));
+#else
           return errorAttr(i.getAttribute(argidx, llvm::Attribute::NoUndef));
+#endif
       }
 
       if (i.paramHasAttr(argidx, llvm::Attribute::Returned)) {
@@ -806,6 +823,7 @@ public:
     case llvm::Intrinsic::fabs:
     case llvm::Intrinsic::floor:
     case llvm::Intrinsic::is_constant:
+    //case llvm::Intrinsic::isnan:
     case llvm::Intrinsic::round:
     case llvm::Intrinsic::roundeven:
     case llvm::Intrinsic::sqrt:
@@ -823,6 +841,7 @@ public:
       case llvm::Intrinsic::fabs:        op = UnaryOp::FAbs; break;
       case llvm::Intrinsic::floor:       op = UnaryOp::Floor; break;
       case llvm::Intrinsic::is_constant: op = UnaryOp::IsConstant; break;
+      ///case llvm::Intrinsic::isnan:       op = UnaryOp::IsNaN; break;
       case llvm::Intrinsic::round:       op = UnaryOp::Round; break;
       case llvm::Intrinsic::roundeven:   op = UnaryOp::RoundEven; break;
       case llvm::Intrinsic::sqrt:        op = UnaryOp::Sqrt; break;
@@ -1083,11 +1102,11 @@ public:
       case llvm::Attribute::ByVal: {
         attrs.set(ParamAttrs::ByVal);
         auto ty = aset.getByValType();
-        unsigned asz = DL().getTypeAllocSize(ty);
-        attrs.blockSize = max(attrs.blockSize, asz);
+        auto asz = DL().getTypeAllocSize(ty);
+        attrs.blockSize = max(attrs.blockSize, asz.getKnownMinSize());
 
         attrs.set(ParamAttrs::Align);
-        attrs.align = max(attrs.align, DL().getABITypeAlignment(ty));
+        attrs.align = max(attrs.align, static_cast<uint64_t>(DL().getABITypeAlignment(ty)));
         continue;
       }
 
@@ -1131,8 +1150,7 @@ public:
 
       case llvm::Attribute::Alignment:
         attrs.set(ParamAttrs::Align);
-        attrs.align = max(attrs.align,
-                          (unsigned)llvmattr.getAlignment()->value());
+        attrs.align = max(attrs.align, llvmattr.getAlignment()->value());
         continue;
 
       case llvm::Attribute::NoUndef:
@@ -1160,6 +1178,7 @@ public:
         continue;
 
       switch (llvmattr.getKindAsEnum()) {
+      case llvm::Attribute::NoAlias: attrs.set(FnAttrs::NoAlias); break;
       case llvm::Attribute::NonNull: attrs.set(FnAttrs::NonNull); break;
       case llvm::Attribute::NoUndef: attrs.set(FnAttrs::NoUndef); break;
 
@@ -1217,6 +1236,10 @@ public:
 
       case llvm::Attribute::NoReturn:
         attrs.set(FnAttrs::NoReturn);
+        break;
+
+      case llvm::Attribute::WillReturn:
+        attrs.set(FnAttrs::WillReturn);
         break;
 
       default:

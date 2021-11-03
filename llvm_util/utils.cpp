@@ -32,6 +32,7 @@ FloatType half_type("half", FloatType::Half);
 FloatType float_type("float", FloatType::Float);
 FloatType double_type("double", FloatType::Double);
 FloatType quad_type("fp128", FloatType::Quad);
+FloatType bfloat_type("bfloat", FloatType::BFloat);
 
 // cache complex types
 unordered_map<const llvm::Type*, unique_ptr<Type>> type_cache;
@@ -126,6 +127,8 @@ Type* llvm_type2alive(const llvm::Type *ty) {
     return &double_type;
   case llvm::Type::FP128TyID:
     return &quad_type;
+  case llvm::Type::BFloatTyID:
+    return &bfloat_type;
 
   case llvm::Type::PointerTyID: {
     // TODO: support for non-64 bits pointers
@@ -235,15 +238,6 @@ Value* make_intconst(uint64_t val, int bits) {
     return val_cpy;                                 \
   } while (0)
 
-#if LLVM_VERSION_MAJOR <= 12
-static std::string toString(const llvm::APInt &I, unsigned Radix, bool Signed,
-                            bool formatAsCLiteral = false) {
-  llvm::SmallString<40> S;
-  I.toString(S, Radix, Signed, formatAsCLiteral);
-  return std::string(S.str());
-}
-#endif
-
 Value* get_operand(llvm::Value *v,
                    function<Value*(llvm::ConstantExpr*)> constexpr_conv,
                    function<Value*(AggregateValue*)> copy_inserter) {
@@ -270,19 +264,18 @@ Value* get_operand(llvm::Value *v,
     auto &apfloat = cnst->getValueAPF();
     unique_ptr<FloatConst> c;
     switch (ty->getAsFloatType()->getFpType()) {
-    case FloatType::Half:
-      c = make_unique<FloatConst>(*ty,
-                                  apfloat.bitcastToAPInt().getLimitedValue());
-      break;
     case FloatType::Float:
+    case FloatType::BFloat:
       c = make_unique<FloatConst>(*ty, apfloat.convertToFloat());
       break;
     case FloatType::Double:
       c = make_unique<FloatConst>(*ty, apfloat.convertToDouble());
       break;
+    case FloatType::Half:
     case FloatType::Quad:
       c = make_unique<FloatConst>(*ty,
-                                  toString(apfloat.bitcastToAPInt(), 10, true));
+                                  toString(apfloat.bitcastToAPInt(), 10, false),
+                                  true);
       break;
     case FloatType::Unknown:
       UNREACHABLE();

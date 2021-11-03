@@ -28,8 +28,111 @@ using namespace std;
 using util::config::dbg;
 
 
+static bool is_arbitrary(const expr &e) {
+  if (e.isConst())
+    return false;
+  return check_expr(expr::mkForAll(e.vars(), expr::mkVar("#someval", e) != e)).
+           isUnsat();
+}
+
+static void print_single_varval(ostream &os, const State &st, const Model &m,
+                                const Value *var, const Type &type,
+                                const StateValue &val, unsigned child) {
+  if (dynamic_cast<const VoidType*>(&type)) {
+    os << "void";
+    return;
+  }
+
+  if (!val.isValid()) {
+    os << "(invalid expr)";
+    return;
+  }
+
+  // Best effort detection of poison if model is partial
+  if (auto v = m.eval(val.non_poison);
+      (v.isFalse() || check_expr(!v).isSat())) {
+    os << "poison";
+    return;
+  }
+
+  if (auto *in = dynamic_cast<const Input*>(var)) {
+    auto var = in->getUndefVar(type, child);
+    if (var.isValid() && m.eval(var, false).isAllOnes()) {
+      os << "undef";
+      return;
+    }
+  }
+
+  // TODO: detect undef bits (total or partial) with an SMT query
+
+  expr partial = m.eval(val.value);
+  if (is_arbitrary(partial)) {
+    os << "any";
+    return;
+  }
+
+  type.printVal(os, st, m.eval(val.value, true));
+
+  // undef variables may not have a model since each read uses a copy
+  // TODO: add intervals of possible values for ints at least?
+  if (!partial.isConst()) {
+    // some functions / vars may not have an interpretation because it's not
+    // needed, not because it's undef
+    for (auto &var : partial.vars()) {
+      if (isUndef(var)) {
+        os << "\t[based on undef value]";
+        break;
+      }
+    }
+  }
+}
+
+void tools::print_model_val(ostream &os, const State &st, const Model &m,
+                            const Value *var, const Type &type,
+                            const StateValue &val, unsigned child) {
+  if (!type.isAggregateType()) {
+    print_single_varval(os, st, m, var, type, val, child);
+    return;
+  }
+
+  os << (type.isStructType() ? "{ " : "< ");
+  auto agg = type.getAsAggregateType();
+  for (unsigned i = 0, e = agg->numElementsConst(); i < e; ++i) {
+    if (i != 0)
+      os << ", ";
+    tools::print_model_val(os, st, m, var, agg->getChild(i),
+                           agg->extract(val, i), child + i);
+  }
+  os << (type.isStructType() ? " }" : " >");
+}
 
 using print_var_val_ty = function<void(ostream&, const Model&)>;
+
+bool Errors::addSolverError(const Result &r) {
+  Errors &errs = *this;
+
+  if (r.isInvalid()) {
+    errs.add("Invalid expr", false);
+    return true;
+  }
+
+  if (r.isTimeout()) {
+    errs.add("Timeout", false);
+    return false;
+  }
+
+  if (r.isError()) {
+    errs.add("SMT Error: " + r.getReason(), false);
+    return false;
+  }
+
+  if (r.isSkip()) {
+    errs.add("Skip", false);
+    return true;
+  }
+
+  UNREACHABLE();
+}
 
 static bool error(Errors &errs, const State &src_state, const State &tgt_state,
                   const Result &r, const Value *var,
@@ -64,6 +167,93 @@ static bool error(Errors &errs, const State &src_state, const State &tgt_state,
   print_var_val(s, m);
   return errs.addSolverSat(src_state, tgt_state, r, var, msg, check_each_var,
                            s.str());
+}
+
+bool Errors::addSolverSat(const IR::State &src_state,
+                          const IR::State &tgt_state, const smt::Result &r,
+                          const IR::Value *var, const std::string &msg,
+                          bool check_each_var, const std::string &post_msg) {
+  stringstream s;
+  string empty;
+  auto &var_name = var ? var->getName() : empty;
+  auto &m = r.getModel();
+
+  s << msg;
+  if (!var_name.empty())
+    s << " for " << *var;
+  s << "\n\nExample:\n";
+
+  for (auto &[var, val] : src_state.getValues()) {
+    if (!dynamic_cast<const Input*>(var) &&
+        !dynamic_cast<const ConstantInput*>(var))
+      continue;
+    s << *var << " = ";
+    print_model_val(s, src_state, m, var, var->getType(), val.val);
+    s << '\n';
+  }
+
+  set<string> seen_vars;
+  for (auto st : { &src_state, &tgt_state }) {
+    if (!check_each_var) {
+      if (st->isSource()) {
+        s << "\nSource:\n";
+      } else {
+        s << "\nTarget:\n";
+      }
+    }
+
+    auto *bb = &st->getFn().getFirstBB();
+
+    for (auto &[var, val] : st->getValues()) {
+      auto &name = var->getName();
+      if (name == var_name)
+        break;
+
+      auto *i = dynamic_cast<const Instr*>(var);
+      if (!i || &st->getFn().bbOf(*i) != bb ||
+          (check_each_var && !seen_vars.insert(name).second))
+        continue;
+
+      if (auto *jmp = dynamic_cast<const JumpInstr*>(var)) {
+        bool jumped = false;
+        for (auto &dst : jmp->targets()) {
+          const expr &cond = st->getJumpCond(*bb, dst);
+          if ((jumped = !m.eval(cond).isFalse())) {
+            s << "  >> Jump to " << dst.getName() << '\n';
+            bb = &dst;
+            break;
+          }
+        }
+
+        if (jumped) {
+          continue;
+        } else {
+          s << "UB triggered on " << name << '\n';
+          break;
+        }
+      }
+
+      if (!dynamic_cast<const Return*>(var) && // domain always false after exec
+          !m.eval(val.domain).isTrue()) {
+        s << *var << " = UB triggered!\n";
+        break;
+      }
+
+      if (name[0] != '%')
+        continue;
+
+      s << *var << " = ";
+      print_model_val(s, const_cast<State&>(*st), m, var, var->getType(),
+                      val.val);
+      s << '\n';
+    }
+
+    st->getMemory().print(s, m);
+  }
+
+  s << post_msg;
+  add(s.str(), true);
+  return false;
 }
 
 
@@ -195,47 +385,49 @@ static expr encode_undef_refinement(const Type &type, const State::ValTy &a,
 
   if (dynamic_cast<const VoidType *>(&type))
     return false;
-  if (b.second.empty())
+  if (b.undef_vars.empty())
     // target is never undef
     return false;
 
   auto subst = [](const auto &val) {
     vector<pair<expr, expr>> repls;
-    for (auto &v : val.second) {
+    for (auto &v : val.undef_vars) {
       repls.emplace_back(v, expr::some(v));
     }
-    return val.first.value.subst(repls);
+    return val.val.value.subst(repls);
   };
 
-  return encode_undef_refinement_per_elem(type, a.first, subst(a),
-                                          expr(b.first.value), subst(b));
+  return encode_undef_refinement_per_elem(type, a.val, subst(a),
+                                          expr(b.val.value), subst(b));
 }
 
 static void
 check_refinement(Errors &errs, const Transform &t, const State &src_state,
                  const State &tgt_state, const Value *var, const Type &type,
-                 const expr &dom_a, const expr &fndom_a, const State::ValTy &ap,
-                 const expr &dom_b, const expr &fndom_b, const State::ValTy &bp,
+                 const expr &fndom_a, const State::ValTy &ap,
+                 const expr &fndom_b, const State::ValTy &bp,
                  bool check_each_var) {
-  if (src_state.sinkDomain().isTrue()) {
+  if (check_expr(!src_state.sinkDomain()).isUnsat()) {
     errs.add("The source program doesn't reach a return instruction.\n"
              "Consider increasing the unroll factor if it has loops", false);
     return;
   }
 
   auto sink_tgt = tgt_state.sinkDomain();
-  if (sink_tgt.isTrue()) {
+  if (check_expr(!sink_tgt).isUnsat()) {
     errs.add("The target program doesn't reach a return instruction.\n"
              "Consider increasing the unroll factor if it has loops", false);
     return;
   }
 
-  auto &a = ap.first;
-  auto &b = bp.first;
+  auto &dom_a = ap.domain;
+  auto &dom_b = bp.domain;
+  auto &a = ap.val;
+  auto &b = bp.val;
 
-  auto &uvars = ap.second;
+  auto &uvars = ap.undef_vars;
   auto qvars = src_state.getQuantVars();
-  qvars.insert(ap.second.begin(), ap.second.end());
+  qvars.insert(ap.undef_vars.begin(), ap.undef_vars.end());
   auto &fn_qvars = tgt_state.getFnQuantVars();
   qvars.insert(fn_qvars.begin(), fn_qvars.end());
 
@@ -291,7 +483,7 @@ check_refinement(Errors &errs, const Transform &t, const State &src_state,
             preprocess(t, qvars, uvars, pre && pre_src_forall.implies(refines));
   };
 
-  auto check = [&](expr &&e, auto &&printer, const char *msg) -> bool{
+  auto check = [&](expr &&e, auto &&printer, const char *msg) {
     e = mk_fml(move(e));
     auto res = check_expr(e);
     if (!res.isUnsat() &&
@@ -326,9 +518,9 @@ check_refinement(Errors &errs, const Transform &t, const State &src_state,
   // 3. Check poison
   auto print_value = [&](ostream &s, const Model &m) {
     s << "Source value: ";
-    errs.print_varval(s, src_state, m, var, type, a);
+    print_model_val(s, src_state, m, var, type, a);
     s << "\nTarget value: ";
-    errs.print_varval(s, tgt_state, m, var, type, b);
+    print_model_val(s, tgt_state, m, var, type, b);
   };
 
   auto [poison_cnstr, value_cnstr] = type.refines(src_state, tgt_state, a, b);
@@ -356,8 +548,8 @@ check_refinement(Errors &errs, const Transform &t, const State &src_state,
     set<expr> undef;
     Pointer p(src_mem, m[ptr_refinement()]);
     s << "\nMismatch in " << p
-      << "\nSource value: " << Byte(src_mem, m[src_mem.load(p, undef)()])
-      << "\nTarget value: " << Byte(tgt_mem, m[tgt_mem.load(p, undef)()]);
+      << "\nSource value: " << Byte(src_mem, m[src_mem.raw_load(p, undef)()])
+      << "\nTarget value: " << Byte(tgt_mem, m[tgt_mem.raw_load(p, undef)()]);
   };
 
   CHECK(dom && !(memory_cnstr0.isTrue() ? memory_cnstr0
@@ -391,10 +583,13 @@ static unsigned num_ptrs(const Type &ty) {
 }
 
 static bool returns_local(const Value &v) {
+  // no alias fns return local block
+  if (auto call = dynamic_cast<const FnCall*>(&v))
+    return call->getAttributes().has(FnAttrs::NoAlias);
+
   return dynamic_cast<const Alloc*>(&v) ||
          dynamic_cast<const Malloc*>(&v) ||
          dynamic_cast<const Calloc*>(&v);
-         // TODO: add noalias fn
 }
 
 static Value *get_base_ptr(Value *ptr) {
@@ -580,7 +775,6 @@ static void calculateAndInitConstants(Transform &t) {
   heap_block_alignment = 8;
 
   num_consts_src = 0;
-  num_extra_nonconst_tgt = 0;
 
   for (auto GV : globals_src) {
     if (GV->isConst())
@@ -592,20 +786,22 @@ static void calculateAndInitConstants(Transform &t) {
       [GVT](auto *GV) -> bool { return GVT->getName() == GV->getName(); });
     if (I == globals_src.end()) {
       ++num_globals;
-      if (!GVT->isConst())
-        ++num_extra_nonconst_tgt;
     }
   }
 
   num_ptrinputs = 0;
+  unsigned num_null_ptrinputs = 0;
   for (auto &arg : t.src.getInputs()) {
     auto n = num_ptrs(arg.getType());
     auto in = dynamic_cast<const Input*>(&arg);
     if (in && in->hasAttribute(ParamAttrs::ByVal)) {
       num_globals_src += n;
       num_globals += n;
-    } else
+    } else {
       num_ptrinputs += n;
+      if (!in || !in->hasAttribute(ParamAttrs::NonNull))
+        num_null_ptrinputs += n;
+    }
   }
 
   // The number of local blocks.
@@ -618,8 +814,8 @@ static void calculateAndInitConstants(Transform &t) {
   uint64_t min_global_size = UINT64_MAX;
 
   bool nullptr_is_used = false;
-  has_int2ptr      = false;
-  has_ptr2int      = false;
+  bool has_int2ptr     = false;
+  bool has_ptr2int     = false;
   has_alloca       = false;
   has_dead_allocas = false;
   has_malloc       = false;
@@ -629,6 +825,7 @@ static void calculateAndInitConstants(Transform &t) {
   does_ptr_store   = false;
   does_ptr_mem_access = false;
   does_int_mem_access = false;
+  observes_addresses  = false;
   bool does_any_byte_access = false;
 
   // Mininum access size (in bytes)
@@ -706,6 +903,7 @@ static void calculateAndInitConstants(Transform &t) {
         does_ptr_store       |= info.doesPtrStore;
         does_int_mem_access  |= info.hasIntByteAccess;
         does_mem_access      |= info.doesMemAccess();
+        observes_addresses   |= info.observesAddresses;
         min_access_size       = gcd(min_access_size, info.byteSize);
         if (info.doesMemAccess() && !info.hasIntByteAccess &&
             !info.doesPtrLoad && !info.doesPtrStore)
@@ -731,8 +929,8 @@ static void calculateAndInitConstants(Transform &t) {
         min_access_size = gcd(min_access_size, getCommonAccessSize(t));
 
       } else if (auto *ic = dynamic_cast<const ICmp*>(&i)) {
-        has_ptr2int |= ic->isPtrCmp() &&
-                       (ic->getPtrCmpMode() == ICmp::INTEGRAL);
+        observes_addresses |= ic->isPtrCmp() &&
+                              ic->getPtrCmpMode() == ICmp::INTEGRAL;
       }
     }
   }
@@ -762,7 +960,7 @@ static void calculateAndInitConstants(Transform &t) {
 
   // check if null block is needed
   // Global variables cannot be null pointers
-  has_null_block = num_ptrinputs > 0 || nullptr_is_used || has_malloc ||
+  has_null_block = num_null_ptrinputs > 0 || nullptr_is_used || has_malloc ||
                   has_ptr_load || has_fncall || has_int2ptr;
 
   num_nonlocals_src = num_globals_src + num_ptrinputs + num_nonlocals_inst_src +
@@ -772,6 +970,8 @@ static void calculateAndInitConstants(Transform &t) {
   num_nonlocals_src += has_fncall;
 
   num_nonlocals = num_nonlocals_src + num_globals - num_globals_src;
+
+  observes_addresses |= has_int2ptr || has_ptr2int;
 
   if (!does_int_mem_access && !does_ptr_mem_access && has_fncall)
     does_int_mem_access = true;
@@ -822,7 +1022,14 @@ static void calculateAndInitConstants(Transform &t) {
   bits_ptr_address = min(max(bits_size_t, bits_ptr_address + has_local_bit),
                          bits_program_pointer);
 
-  bits_byte = 8 * (does_mem_access ?  (unsigned)min_access_size : 1);
+  if (false) {
+    // FIXME: make the interpreter support bits_byte > 8, so we can go back to
+    // this original, more efficient code. The tricky part is handling default
+    // values for memory blocks, which could consist of multiple bytes.
+    bits_byte = 8 * (does_mem_access ?  (unsigned)min_access_size : 1);
+  } else {
+    bits_byte = 8;
+  }
 
   bits_poison_per_byte = 1;
   if (min_vect_elem_sz > 0)
@@ -854,8 +1061,7 @@ static void calculateAndInitConstants(Transform &t) {
                   << "\nmemcmp_unroll_cnt: " << memcmp_unroll_cnt
                   << "\nlittle_endian: " << little_endian
                   << "\nnullptr_is_used: " << nullptr_is_used
-                  << "\nhas_int2ptr: " << has_int2ptr
-                  << "\nhas_ptr2int: " << has_ptr2int
+                  << "\nobserves_addresses: " << observes_addresses
                   << "\nhas_malloc: " << has_malloc
                   << "\nhas_free: " << has_free
                   << "\nhas_null_block: " << has_null_block
@@ -938,6 +1144,20 @@ void TransformVerify::verify(Errors &errs) const {
       return;
     }
   }
+  for (auto GVT : globals_tgt) {
+    auto I = find_if(globals_src.begin(), globals_src.end(),
+      [GVT](auto *GV) -> bool { return GVT->getName() == GV->getName(); });
+    if (I != globals_src.end())
+      continue;
+
+    if (!GVT->isConst()) {
+        string s = "Unsupported interprocedural transformation: non-constant "
+                   "global variable " + GVT->getName() + " is introduced in"
+                   " target";
+        errs.add(move(s), false);
+        return;
+    }
+  }
 
   try {
     auto [src_state, tgt_state] = exec();
@@ -948,10 +1168,9 @@ void TransformVerify::verify(Errors &errs) const {
         if (name[0] != '%' || !dynamic_cast<const Instr*>(var))
           continue;
 
-        // TODO: add data-flow domain tracking for Alive, but not for TV
+        auto &val_tgt = tgt_state->at(*tgt_instrs.at(name));
         check_refinement(errs, t, *src_state, *tgt_state, var, var->getType(),
-                         true, true, val,
-                         true, true, tgt_state->at(*tgt_instrs.at(name)),
+                         val.domain, val, val_tgt.domain, val_tgt,
                          check_each_var);
         if (errs)
           return;
@@ -959,15 +1178,14 @@ void TransformVerify::verify(Errors &errs) const {
     }
 
     check_refinement(errs, t, *src_state, *tgt_state, nullptr, t.src.getType(),
-                     src_state->returnDomain()(), src_state->functionDomain()(),
-                     src_state->returnVal(),
-                     tgt_state->returnDomain()(), tgt_state->functionDomain()(),
-                     tgt_state->returnVal(),
+                     src_state->functionDomain()(), src_state->returnVal(),
+                     tgt_state->functionDomain()(), tgt_state->returnVal(),
                      check_each_var);
   } catch (AliveException e) {
     errs.add(move(e));
   }
 }
+
 
 TypingAssignments::TypingAssignments(const expr &e) : s(true), sneg(true) {
   if (e.isTrue()) {
@@ -1139,7 +1357,8 @@ static void optimize_ptrcmp(Function &f) {
     if (auto *gep = dynamic_cast<const GEP*>(&v))
       return gep->isInBounds();
 
-    return returns_local(v);
+    // noalias functions aren't required to return an inbounds ptr
+    return returns_local(v) && !dynamic_cast<const FnCall*>(&v);
   };
 
   for (auto &i : f.instrs()) {
@@ -1149,6 +1368,8 @@ static void optimize_ptrcmp(Function &f) {
 
     auto cond = icmp->getCond();
     bool is_eq = cond == ICmp::EQ || cond == ICmp::NE;
+    bool is_signed_cmp = cond == ICmp::SLE || cond == ICmp::SLT ||
+                         cond == ICmp::SGE || cond == ICmp::SGT;
 
     auto ops = icmp->operands();
     auto *op0 = ops[0];
@@ -1165,7 +1386,10 @@ static void optimize_ptrcmp(Function &f) {
     if (base0 && base0 == base1) {
       if (is_eq)
         const_cast<ICmp*>(icmp)->setPtrCmpMode(ICmp::PROVENANCE);
-      else if (is_inbounds(*op0) && is_inbounds(*op1))
+      else if (is_inbounds(*op0) && is_inbounds(*op1) && !is_signed_cmp)
+        // Even if op0 and op1 are inbounds, 'icmp slt op0, op1' must
+        // compare underlying addresses because it is possible for the block
+        // to span across [a, b] where a >s 0 && b <s 0.
         const_cast<ICmp*>(icmp)->setPtrCmpMode(ICmp::OFFSETONLY);
     }
   }

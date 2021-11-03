@@ -170,9 +170,9 @@ static void byteToJSON(ojson &array, const IR::Byte &byte) {
     auto ptr = byte.ptr();
     uint64_t bid;
     int64_t offset;
-    int64_t byte_offset;
+    uint64_t byte_offset;
     if (ptr.getBid().isUInt(bid) && ptr.getShortOffset().isInt(offset) &&
-        byte.ptrByteoffset().isInt(byte_offset)) {
+        byte.ptrByteoffset().isUInt(byte_offset)) {
       array.emplace_back(byte.ptrNonpoison().isTrue() ? 0xff : 0x00);
       ojson tmp(json_array_arg);
       tmp.emplace_back(bid);
@@ -261,7 +261,7 @@ static ojson testInputToJSON(const IR::Function &f, const IR::State &state,
   ojson &args = result["args"] = ojson(json_array_arg);
   for (const auto &input : f.getInputs()) {
     const auto &var = state.at(input);
-    args.push_back(modelValToJSON(state, m, input.getType(), var.first));
+    args.push_back(modelValToJSON(state, m, input.getType(), var.val));
   }
   if (IR::Memory::getNumInitBlocks() > 0) {
     ojson &memory = result["memory"] = ojson(json_array_arg);
@@ -671,12 +671,10 @@ static ojson evaluateAliveInterpret(const ojson &options, const ojson &src,
 
   WorkerInterpreter interpreter(test_input);
   if (test_input.contains("memory")) {
-    initMemoryConstantsInterpret(*fn);
-    // cout << "bits_program_pointer = " << IR::bits_program_pointer << "\n";
-    // cout << "bits_byte = " << IR::bits_byte << "\n";
+    IR::bits_program_pointer = fn->bitsPointers();
+    IR::bits_byte = 8; // interpreter doesn't support larger values
     interpreter.loadMemory(test_input["memory"]);
   }
-    
   interpreter.start(*fn);
   interpreter.run(max_steps);
   if (interpreter.isUnsupported()) {

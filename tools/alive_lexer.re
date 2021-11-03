@@ -153,23 +153,14 @@ space+ {
   return CONSTANT;
 }
 
-"=" {
-  return EQUALS;
-}
-
-"," {
-  return COMMA;
-}
-
-"=>" {
-  return ARROW;
-}
-
 [a-zA-Z]+ ":" {
   COPY_STR_RTRIM(1);
   return LABEL;
 }
 
+"=" { return EQUALS; }
+"," { return COMMA; }
+"=>" { return ARROW; }
 "("  { return LPAREN; }
 ")"  { return RPAREN; }
 "+"  { return PLUS; }
@@ -184,6 +175,8 @@ space+ {
 "<u" { return CULT; }
 "]"  { return RSQBRACKET; }
 "["  { return LSQBRACKET; }
+"}"  { return RBRACE; }
+"{"  { return LBRACE; }
 
 "true" { return TRUE; }
 "false" { return FALSE; }
@@ -232,6 +225,8 @@ space+ {
 "call" { return CALL; }
 "noread" { return NOREAD; }
 "nowrite" { return NOWRITE; }
+"noreturn" { return NORETURN; }
+"willreturn" { return WILLRETURN; }
 "freeze" { return FREEZE; }
 "malloc" { return MALLOC; }
 "free" { return FREE; }

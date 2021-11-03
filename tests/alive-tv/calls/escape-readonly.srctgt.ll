@@ -16,4 +16,4 @@ define i8 @tgt() {
 
 ; SKIP-IDENTITY
 ; ERROR: Value mismatch
-; XFAIL: call with escaped locals
+; XFAIL: argmemonly

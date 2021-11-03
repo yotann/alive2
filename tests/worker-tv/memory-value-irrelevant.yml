@@ -28,7 +28,7 @@ args:
     }
 expected:
   test_input:
-    args: [[1,0]]
+    args: [[1,262112]]
     memory:
       - size: 0
         align: 0

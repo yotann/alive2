@@ -2,15 +2,15 @@ let
   default_nixpkgs = (import <nixpkgs> {}).fetchFromGitHub {
     owner = "NixOS";
     repo = "nixpkgs";
-    rev = "13f10e9fe84dda019bd83201ac1e5e2c846e3840";
-    sha256 = "01bsghmz2ankv51izxhvv953mgxk4s0zlk5i1qzj6pc9jkbhig6h";
+    rev = "248936ea5700b25cfa9b7eaf8abe13a11fe15617";
+    sha256 = "1hsmyzd0194l279pm8ahz2lp0lfmaza05j7cjmlz7ryji15zvcyx";
   };
 in
 { nixpkgs ? default_nixpkgs }:
 
 with import nixpkgs {};
 rec {
-  llvm = (llvmPackages_12.libllvm.override {
+  llvm = (llvmPackages_13.libllvm.override {
     debugVersion = true;
   }).overrideAttrs (o: {
     # Alive2 requires LLVM to have RTTI and exception support, which aren't
@@ -20,25 +20,15 @@ rec {
       "-DLLVM_ENABLE_EH=ON"
     ];
     doCheck = false; # reduce build time
-
-    #src = fetchFromGitHub {
-    #  # LLVM 12.0 pre-release
-    #  owner = "llvm";
-    #  repo = "llvm-project";
-    #  rev = "8e464dd76befbc4a39a1d21968a3d5f543e29312";
-    #  sha256 = "17qlpq8gy6kqnnsbq264wgsylim55v2s17v306acvmmcr8h4gcg3";
-    #};
-    #unpackPhase = null;
-    #sourceRoot = "source/llvm";
   });
 
   z3 = (import nixpkgs {}).z3.overrideAttrs (o: {
     src = fetchFromGitHub {
-      # 2021-08-02
+      # 2021-10-24
       owner  = "Z3Prover";
       repo   = "z3";
-      rev    = "d3194bb8a8263e7a69459838b2100924fb441f9a";
-      sha256 = "10vwx4ahnzyacr1hia3jdqvn8n9m5gzv7jrrrfb1wxm9mzmcjww9";
+      rev    = "3a3cef8fcef58f31e9ec6495346eb065b816b155";
+      sha256 = "1zg4mym7iiwyq1pddqmahsfr2yzd1j2c2vjizpk0v9805g8y4xk0";
     };
   });
 

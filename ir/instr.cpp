@@ -72,18 +72,16 @@ struct LoopLikeFunctionApproximator {
     auto ub = ub_i();
     prefix.add(ub_i);
 
-    if (is_last) {
+    if (is_last)
       s.addPre(prefix().implies(!continue_i));
-      return { move(res_i), move(np_i), move(ub) };
-    }
 
-    if (continue_i.isFalse() || ub.isFalse())
+    if (is_last || continue_i.isFalse() || ub.isFalse())
       return { move(res_i), move(np_i), move(ub) };
 
     prefix.add(continue_i);
     auto [val_next, np_next, ub_next] = _loop(s, prefix, i + 1, unroll_cnt);
     return { expr::mkIf(continue_i, move(val_next), move(res_i)),
-             expr::mkIf(continue_i, move(np_next), move(np_i)),
+             np_i && continue_i.implies(np_next),
              ub && continue_i.implies(ub_next) };
   }
 };
@@ -261,8 +259,7 @@ void BinOp::print(ostream &os) const {
     os << "nuw ";
   if (flags & Exact)
     os << "exact ";
-  os << fmath
-     << print_type(getType()) << lhs->getName() << ", " << rhs->getName();
+  os << fmath << *lhs << ", " << rhs->getName();
 }
 
 static void div_ub(State &s, const expr &a, const expr &b, const expr &ap,
@@ -979,6 +976,7 @@ void UnaryOp::print(ostream &os) const {
   case BSwap:       str = "bswap "; break;
   case Ctpop:       str = "ctpop "; break;
   case IsConstant:  str = "is.constant "; break;
+  case IsNaN:       str = "isnan "; break;
   case FAbs:        str = "fabs "; break;
   case FNeg:        str = "fneg "; break;
   case Ceil:        str = "ceil "; break;
@@ -990,8 +988,7 @@ void UnaryOp::print(ostream &os) const {
   case FFS:         str = "ffs "; break;
   }
 
-  os << getName() << " = " << str << fmath << print_type(getType())
-     << val->getName();
+  os << getName() << " = " << str << fmath << *val;
 }
 
 StateValue UnaryOp::toSMT(State &s) const {
@@ -1028,6 +1025,11 @@ StateValue UnaryOp::toSMT(State &s) const {
     s.addQuantVar(var);
     return { move(var), true };
   }
+  case IsNaN:
+    fn = [](auto v, auto np) -> StateValue {
+      return { v.isNaN().toBVBool(), expr(np) };
+    };
+    break;
   case FAbs:
     fn = [&](auto v, auto np) -> StateValue {
       return fm_poison(s, v, np, [](expr &v) { return v.fabs(); }, fmath, true);
@@ -1082,12 +1084,12 @@ StateValue UnaryOp::toSMT(State &s) const {
 
   if (getType().isVectorType()) {
     vector<StateValue> vals;
-    auto ty = getType().getAsAggregateType();
+    auto ty = val->getType().getAsAggregateType();
     for (unsigned i = 0, e = ty->numElementsConst(); i != e; ++i) {
       auto vi = ty->extract(v, i);
       vals.emplace_back(fn(vi.value, vi.non_poison));
     }
-    return ty->aggregateVals(vals);
+    return getType().getAsAggregateType()->aggregateVals(vals);
   }
   return fn(v.value, v.non_poison);
 }
@@ -1110,6 +1112,11 @@ expr UnaryOp::getTypeConstraints(const Function &f) const {
     break;
   case IsConstant:
     instrconstr = getType().enforceIntType(1);
+    break;
+  case IsNaN:
+    instrconstr = val->getType().enforceFloatOrVectorType() &&
+                  getType().enforceIntOrVectorType(1) &&
+                  getType().enforceVectorTypeIff(val->getType());
     break;
   case FAbs:
   case FNeg:
@@ -1983,14 +1990,42 @@ void FnCall::print(ostream &os) const {
   os << ')' << attrs;
 }
 
+static void eq_bids(OrExpr &acc, Memory &m, const Type &t,
+                    const StateValue &val, const expr &bid) {
+  if (auto agg = t.getAsAggregateType()) {
+    for (unsigned i = 0, e = agg->numElementsConst(); i != e; ++i) {
+      eq_bids(acc, m, agg->getChild(i), agg->extract(val, i), bid);
+    }
+    return;
+  }
+
+  if (t.isPtrType()) {
+    acc.add(val.non_poison && Pointer(m, val.value).getBid() == bid);
+  }
+}
+
+static expr ptr_only_args(State &s, const Pointer &p) {
+  expr bid = p.getBid();
+  auto &m  = s.getMemory();
+
+  OrExpr e;
+  for (auto &in : s.getFn().getInputs()) {
+    if (hasPtr(in.getType()))
+      eq_bids(e, m, in.getType(), s[in], bid);
+  }
+  return e();
+}
+
 static void unpack_inputs(State &s, Value &argv, Type &ty,
-                          const ParamAttrs &argflag, StateValue value,
-                          StateValue value2, vector<StateValue> &inputs,
+                          const ParamAttrs &argflag, bool argmemonly,
+                          StateValue value, StateValue value2,
+                          vector<StateValue> &inputs,
                           vector<Memory::PtrInput> &ptr_inputs) {
   if (auto agg = ty.getAsAggregateType()) {
     for (unsigned i = 0, e = agg->numElementsConst(); i != e; ++i) {
-      unpack_inputs(s, argv, agg->getChild(i), argflag, agg->extract(value, i),
-                    agg->extract(value2, i), inputs, ptr_inputs);
+      unpack_inputs(s, argv, agg->getChild(i), argflag, argmemonly,
+                    agg->extract(value, i), agg->extract(value2, i), inputs,
+                    ptr_inputs);
     }
     return;
   }
@@ -2001,6 +2036,13 @@ static void unpack_inputs(State &s, Value &argv, Type &ty,
     value.non_poison = move(new_non_poison);
 
     if (ty.isPtrType()) {
+      // FIXME: This is definitely incorrect. If the *callee* has argmemonly,
+      // this checks whether the argument is one of the *caller's* arguments.
+      // https://github.com/AliveToolkit/alive2/issues/763
+      if (argmemonly)
+        value.non_poison
+          &= ptr_only_args(s, Pointer(s.getMemory(), value.value));
+
       ptr_inputs.emplace_back(move(value),
                               argflag.blockSize,
                               argflag.has(ParamAttrs::NoCapture));
@@ -2061,6 +2103,20 @@ StateValue FnCall::toSMT(State &s) const {
   vector<StateValue> inputs;
   vector<Memory::PtrInput> ptr_inputs;
   vector<Type*> out_types;
+  bool argmemonly = attrs.has(FnAttrs::ArgMemOnly);
+  bool caller_argmemonly = s.getFn().getFnAttrs().has(FnAttrs::ArgMemOnly);
+
+  // There's at least one bug in argmemonly handling (see FIXME above) that can
+  // cause Alive2 to report unsound transformations as sound, and I suspect
+  // there are more.
+  if (argmemonly || caller_argmemonly) {
+    s.doesApproximation("argmemonly");
+    if (!s.isSource()) {
+      // Force the transformation to be unsound (assuming the source function
+      // doesn't always have undefined behavior).
+      s.addUB(expr(false));
+    }
+  }
 
   ostringstream fnName_mangled;
   fnName_mangled << fnName;
@@ -2079,8 +2135,8 @@ StateValue FnCall::toSMT(State &s) const {
       sv2 = s[*arg];
     }
 
-    unpack_inputs(s, *arg, arg->getType(), flags, move(sv), move(sv2), inputs,
-                  ptr_inputs);
+    unpack_inputs(s, *arg, arg->getType(), flags, argmemonly, move(sv),
+                  move(sv2), inputs, ptr_inputs);
     fnName_mangled << '#' << arg->getType();
   }
   fnName_mangled << '!' << getType();
@@ -2088,7 +2144,7 @@ StateValue FnCall::toSMT(State &s) const {
     unpack_ret_ty(out_types, getType());
 
   auto check_access = [&]() {
-    if (attrs.has(FnAttrs::ArgMemOnly)) {
+    if (argmemonly) {
       for (auto &p : ptr_inputs) {
         if (!p.byval) {
           Pointer ptr(s.getMemory(), p.val.value);
@@ -2110,20 +2166,21 @@ StateValue FnCall::toSMT(State &s) const {
       check_access();
   }
 
+  // Check attributes that calles must have if caller has them
+  auto check = [&](FnAttrs::Attribute attr) {
+    return s.getFn().getFnAttrs().has(attr) && !attrs.has(attr);
+  };
+
+  if (check(FnAttrs::ArgMemOnly) ||
+      check(FnAttrs::NoFree) ||
+      check(FnAttrs::NoThrow) ||
+      check(FnAttrs::WillReturn))
+    s.addUB(expr(false));
+
   unsigned idx = 0;
   auto ret = s.addFnCall(fnName_mangled.str(), move(inputs), move(ptr_inputs),
                          out_types, attrs);
 
-  // Caller has nofree attribute, so callee must have it as well
-  if (s.getFn().getFnAttrs().has(FnAttrs::NoFree) &&
-      !attrs.has(FnAttrs::NoFree))
-    s.addUB(expr(false));
-
-  if (attrs.has(FnAttrs::NoReturn)) {
-    // TODO: Even if a function call doesn't have noreturn, it can possibly
-    // exit. Relevant bug: https://bugs.llvm.org/show_bug.cgi?id=27953
-    s.addNoReturn();
-  }
   return isVoid() ? StateValue() : pack_return(s, getType(), ret, attrs, idx);
 }
 
@@ -2139,6 +2196,12 @@ unique_ptr<Instr> FnCall::dup(const string &suffix) const {
   r->approx = approx;
   return r;
 }
+
+
+InlineAsm::InlineAsm(Type &type, string &&name, const string &asm_str,
+                     const string &constraints, FnAttrs &&attrs)
+  : FnCall(type, move(name), "asm " + asm_str + ", " + constraints,
+           move(attrs)) {}
 
 
 ICmp::ICmp(Type &type, string &&name, Cond cond, Value &a, Value &b)
@@ -2664,10 +2727,10 @@ unique_ptr<Instr> Phi::dup(const string &suffix) const {
 
 
 const BasicBlock& JumpInstr::target_iterator::operator*() const {
-  if (auto br = dynamic_cast<Branch*>(instr))
+  if (auto br = dynamic_cast<const Branch*>(instr))
     return idx == 0 ? br->getTrue() : *br->getFalse();
 
-  if (auto sw = dynamic_cast<Switch*>(instr))
+  if (auto sw = dynamic_cast<const Switch*>(instr))
     return idx == 0 ? *sw->getDefault() : *sw->getTarget(idx-1).second;
 
   UNREACHABLE();
@@ -2677,9 +2740,9 @@ JumpInstr::target_iterator JumpInstr::it_helper::end() const {
   unsigned idx;
   if (!instr) {
     idx = 0;
-  } else if (auto br = dynamic_cast<Branch*>(instr)) {
+  } else if (auto br = dynamic_cast<const Branch*>(instr)) {
     idx = br->getFalse() ? 2 : 1;
-  } else if (auto sw = dynamic_cast<Switch*>(instr)) {
+  } else if (auto sw = dynamic_cast<const Switch*>(instr)) {
     idx = sw->getNumTargets() + 1;
   } else {
     UNREACHABLE();
@@ -2996,16 +3059,14 @@ Assume::concreteEval(util::Interpreter &interpreter) const {
   return make_shared<ConcreteValVoid>();
 }
 
-MemInstr::ByteAccessInfo
-MemInstr::ByteAccessInfo::intOnly(unsigned bytesz) {
+MemInstr::ByteAccessInfo MemInstr::ByteAccessInfo::intOnly(unsigned bytesz) {
   ByteAccessInfo info;
   info.byteSize = bytesz;
   info.hasIntByteAccess = true;
   return info;
 }
 
-MemInstr::ByteAccessInfo
-MemInstr::ByteAccessInfo::anyType(unsigned bytesz) {
+MemInstr::ByteAccessInfo MemInstr::ByteAccessInfo::anyType(unsigned bytesz) {
   ByteAccessInfo info;
   info.byteSize = bytesz;
   return info;
@@ -3022,43 +3083,17 @@ MemInstr::ByteAccessInfo::get(const Type &t, bool store, unsigned align) {
   return info;
 }
 
-MemInstr::ByteAccessInfo
-MemInstr::ByteAccessInfo::full(unsigned byteSize) {
-  return { true, true, true, byteSize };
+MemInstr::ByteAccessInfo MemInstr::ByteAccessInfo::full(unsigned byteSize) {
+  return { true, true, true, true, byteSize };
 }
 
-static void eq_bids(OrExpr &acc, Memory &m, const Type &t,
-                    const StateValue &val, const expr &bid) {
-  if (auto agg = t.getAsAggregateType()) {
-    for (unsigned i = 0, e = agg->numElementsConst(); i != e; ++i) {
-      eq_bids(acc, m, agg->getChild(i), agg->extract(val, i), bid);
-    }
-    return;
-  }
-
-  if (t.isPtrType()) {
-    acc.add(val.non_poison && Pointer(m, val.value).getBid() == bid);
-  }
-}
-
-static expr ptr_only_args(State &s, const Pointer &p) {
-  expr bid = p.getBid();
-  auto &m  = s.getMemory();
-
-  OrExpr e;
-  for (auto &in : s.getFn().getInputs()) {
-    if (hasPtr(in.getType()))
-      eq_bids(e, m, in.getType(), s[in], bid);
-  }
-  return e();
-}
 
 static void check_can_load(State &s, const expr &p0) {
   auto &attrs = s.getFn().getFnAttrs();
   Pointer p(s.getMemory(), p0);
 
   if (attrs.has(FnAttrs::NoRead))
-    s.addUB(p.isLocal());
+    s.addUB(p.isLocal() || p.isConstGlobal());
   else if (attrs.has(FnAttrs::ArgMemOnly))
     s.addUB(p.isLocal() || ptr_only_args(s, p));
 }
@@ -3164,7 +3199,7 @@ bool Malloc::canFree() const {
   return ptr != nullptr;
 }
 
-unsigned Malloc::getAlign() const {
+uint64_t Malloc::getAlign() const {
   return align ? align : heap_block_alignment;
 }
 
@@ -3264,7 +3299,7 @@ Calloc::ByteAccessInfo Calloc::getByteAccessInfo() const {
   return info;
 }
 
-unsigned Calloc::getAlign() const {
+uint64_t Calloc::getAlign() const {
   return align ? align : heap_block_alignment;
 }
 
@@ -3624,11 +3659,14 @@ static util::ConcreteVal *loadIntVal(Interpreter &interpreter,
     num_bytes += 1;
 
   auto res = new ConcreteValInt(false, llvm::APInt(bitwidth, 0));
-  bool is_ub = false;
   for (unsigned int i = 0; i < num_bytes; ++i) {
-    auto &cur_byte = cur_block.getByte(ptr->getOffset() + i, is_ub);
-    if (is_ub) {
-      interpreter.UB_flag = true;
+    auto &cur_byte = cur_block.getByte(ptr->getOffset() + i, interpreter.UB_flag);
+    if (interpreter.UB_flag)
+      return nullptr;
+    if (cur_byte.is_pointer) {
+      // We should do ptrtoint here and extract the bits we need, but it isn't
+      // implemented yet.
+      interpreter.setUnsupported("load pointer as integer");
       return nullptr;
     }
 
@@ -3655,29 +3693,34 @@ static util::ConcreteVal *loadPtrVal(Interpreter &interpreter,
   cout << "bytes_per_ptr = " << bytes_per_ptr << "\n";
 
   auto &cur_block = interpreter.getBlock(ptr->getBid());
-  bool is_ub = false;
-  auto first_byte_ptr = cur_block.getByte(ptr->getOffset(), is_ub);
-  // is this considered UB or it should just not happen when the
-  // memory is initialized properly and the program is valid llvm-ir?
+
+  auto first_byte_ptr = cur_block.getByte(ptr->getOffset(), interpreter.UB_flag);
+  if (interpreter.UB_flag)
+    return nullptr;
   if (!first_byte_ptr.is_pointer) {
+    // It's possible the program could have run ptrtoint and stored the result
+    // to memory, so we need to do inttoptr now. But it isn't implemented yet.
+    interpreter.setUnsupported("load an integer as a pointer");
+    return nullptr;
+  }
+  if (first_byte_ptr.pointer_byte_offset != 0) {
     interpreter.UB_flag = true;
     return nullptr;
   }
-  // assert(first_byte_ptr.is_pointer && "loadPtrVal incorrect type of byte read
-  // from memory");
-  assert(first_byte_ptr.pointer_byte_offset == 0 &&
-         "loadPtrVal first byte incorrect pointer byte offset");
 
   for (unsigned int i = 1; i < bytes_per_ptr; ++i) {
-    auto &cur_ptr_byte = cur_block.getByte(ptr->getOffset() + i, is_ub);
+    auto &cur_ptr_byte = cur_block.getByte(ptr->getOffset() + i, interpreter.UB_flag);
 
-    if (is_ub || !cur_ptr_byte.is_pointer ||
-        cur_ptr_byte.pointerValue() != first_byte_ptr.pointerValue()) {
+    if (interpreter.UB_flag || !cur_ptr_byte.is_pointer ||
+        cur_ptr_byte.pointerValue() != first_byte_ptr.pointerValue() ||
+        cur_ptr_byte.pointer_byte_offset != i) {
+      // Technically, I'm not sure if this is UB if the program stored one copy
+      // of a pointer directly and one copy using ptrtoint and mixed up the
+      // bytes of both. But that's such a rare case that we shouldn't worry
+      // about it.
       interpreter.UB_flag = true;
       return nullptr;
     }
-    assert(cur_ptr_byte.pointer_byte_offset == i &&
-           "loadPtrVal incorrect pointer byte offset");
   }
 
   auto res = new ConcreteValPointer(first_byte_ptr.pointerValue());
@@ -3785,6 +3828,7 @@ static void storeIntVal(Interpreter &interpreter, util::ConcreteValPointer *ptr,
   }
 }
 
+
 static void storePtrVal(Interpreter &interpreter,
                         util::ConcreteValPointer *ptr_dst,
                         util::ConcreteValPointer *ptr_val,
@@ -3873,8 +3917,9 @@ StateValue Memset::toSMT(State &s) const {
   } else {
     auto &sv_ptr = s[*ptr];
     auto &sv_ptr2 = s[*ptr];
-    s.addUB((vbytes != 0).implies(
-        sv_ptr.non_poison && (sv_ptr.value == sv_ptr2.value)));
+    // can't be poison even if bytes=0 as address must be aligned regardless
+    s.addUB(sv_ptr.non_poison);
+    s.addUB((vbytes != 0).implies(sv_ptr.value == sv_ptr2.value));
     vptr = sv_ptr.value;
   }
   check_can_store(s, vptr);
@@ -3943,7 +3988,6 @@ uint64_t Memcpy::getMaxAccessSize() const {
 }
 
 Memcpy::ByteAccessInfo Memcpy::getByteAccessInfo() const {
-  unsigned byteSize = 1;
 #if 0
   if (auto bytes = get_int(i->getBytes()))
     byteSize = gcd(gcd(i->getSrcAlign(), i->getDstAlign()), *bytes);
@@ -3951,7 +3995,9 @@ Memcpy::ByteAccessInfo Memcpy::getByteAccessInfo() const {
   // FIXME: memcpy doesn't have multi-byte support
   // Memcpy does not have sub-byte access, unless the sub-byte type appears
   // at other instructions
-  return ByteAccessInfo::full(byteSize);
+  auto info = ByteAccessInfo::full(1);
+  info.observesAddresses = false;
+  return info;
 }
 
 vector<Value*> Memcpy::operands() const {
@@ -4019,7 +4065,9 @@ uint64_t Memcmp::getMaxAccessSize() const {
 }
 
 Memcmp::ByteAccessInfo Memcmp::getByteAccessInfo() const {
-  return ByteAccessInfo::intOnly(1); /* memcmp raises UB on ptr bytes */
+  auto info = ByteAccessInfo::anyType(1);
+  info.observesAddresses = true;
+  return info;
 }
 
 vector<Value*> Memcmp::operands() const {
@@ -4053,7 +4101,6 @@ StateValue Memcmp::toSMT(State &s) const {
   s.addUB(p2.isDereferenceable(vnum, 1, false));
 
   expr zero = expr::mkUInt(0, 32);
-  auto &vn = vnum;
 
   expr result_var, result_var_neg;
   if (is_bcmp) {
@@ -4074,30 +4121,41 @@ StateValue Memcmp::toSMT(State &s) const {
 
   auto ith_exec =
       [&, this](unsigned i, bool is_last) -> tuple<expr, expr, AndExpr, expr> {
-    auto [val1, ub1] = s.getMemory().load((p1 + i)(), IntType("i8", 8), 1);
-    auto [val2, ub2] = s.getMemory().load((p2 + i)(), IntType("i8", 8), 1);
-
-    AndExpr ub_and;
-    ub_and.add(move(ub1));
-    ub_and.add(move(ub2));
+    assert(bits_byte == 8); // TODO: remove constraint
+    auto val1 = s.getMemory().raw_load(p1 + i);
+    auto val2 = s.getMemory().raw_load(p2 + i);
+    expr is_ptr1 = val1.isPtr();
+    expr is_ptr2 = val2.isPtr();
 
     expr result_neq;
     if (is_bcmp) {
       result_neq = result_var;
     } else {
-      auto pos = val1.value.uge(val2.value);
+      expr pos
+        = mkIf_fold(is_ptr1,
+                    val1.ptr().getAddress().uge(val2.ptr().getAddress()),
+                    val1.nonptrValue().uge(val2.nonptrValue()));
       result_neq = expr::mkIf(pos, result_var, result_var_neg);
     }
 
-    auto val_eq = val1.value == val2.value;
+    // allow null <-> 0 comparison
+    expr val_eq =
+      (is_ptr1 == is_ptr2 &&
+       mkIf_fold(is_ptr1,
+                 val1.ptr().getAddress() == val2.ptr().getAddress(),
+                 val1.nonptrValue() == val2.nonptrValue())) ||
+      (val1.isZero() && val2.isZero());
+
+    expr np
+      = (is_ptr1 == is_ptr2 || val1.isZero() || val2.isZero()) &&
+        !val1.isPoison() && !val2.isPoison();
+
     return { expr::mkIf(val_eq, zero, result_neq),
-             val1.non_poison && val2.non_poison,
-             move(ub_and),
-             val_eq && vn.uge(i + 2) };
+             move(np), {},
+             val_eq && vnum.uge(i + 2) };
   };
   auto [val, np, ub]
     = LoopLikeFunctionApproximator(ith_exec).encode(s, memcmp_unroll_cnt);
-  s.addUB((vnum != 0).implies(move(ub)));
   return { expr::mkIf(vnum == 0, zero, move(val)), (vnum != 0).implies(np) };
 }
 
@@ -4521,6 +4579,7 @@ const ConversionOp* isCast(ConversionOp::Op op, const Value &v) {
 
 bool hasNoSideEffects(const Instr &i) {
   return isNoOp(i) ||
+         dynamic_cast<const ExtractValue*>(&i) ||
          dynamic_cast<const GEP*>(&i) ||
          dynamic_cast<const ShuffleVector*>(&i);
 }
