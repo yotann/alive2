@@ -3569,34 +3569,45 @@ unique_ptr<Instr> GEP::dup(const string &suffix) const {
   return dup;
 }
 
-shared_ptr<ConcreteVal>
-GEP::concreteEval(Interpreter &interpreter) const {
-  //assert(interpreter.concrete_vals.contains(ptr));
-  //auto ptr_val = interpreter.concrete_vals[ptr].get();
-  //auto c_ptr_val = dynamic_cast<ConcreteValPointer*>(ptr_val);
-  //assert(c_ptr_val);
-  
+shared_ptr<ConcreteVal> GEP::concreteEval(Interpreter &interpreter) const {
+  assert(interpreter.concrete_vals.contains(ptr));
+  auto ptr_val = interpreter.concrete_vals[ptr].get();
+  auto c_ptr_val = dynamic_cast<ConcreteValPointer *>(ptr_val);
+  assert(c_ptr_val);
+
+  // check that the base pointer is inbounds. i.e points to an allocated object
+  // or to its end. How can the interpreter check this?
+  // the only in bounds address for null ptr is itself. i.e. (0,0)
+
   // if (inbounds) { //TODO
   //   interpreter.setUnsupported("GEP inbounds not unsupported");
   //   return nullptr;
-  // } 
-  
-  // for (auto &[size, val]: idxs) {
-  //   assert(interpreter.concrete_vals.contains(val));
-  //   auto i_val = interpreter.concrete_vals[val].get();
-  //   auto i_val_int = dynamic_cast<ConcreteValInt*>(i_val);
-  //   assert(i_val_int);
-  //   cout << "GEP::concreteEval index size=" << size << "\n";
-  //   i_val_int->print();
-  ////   cout << "extractValue::concreteEval agg.size=" << agg.size() << "\n";
-  ////   assert(idx < agg.size());
-  ////   v = agg[idx];
-  //}
-  interpreter.setUnsupported("GEP not unsupported yet");
-  return nullptr;
-  
-}
+  // }
+  // FIXME for now we just assume the pointer is inbounds.
 
+  auto res = new ConcreteValPointer(*c_ptr_val);
+  // If the inbounds keyword is not present, the offsets are added to the base
+  // address with silently-wrapping two’s complement arithmetic. If the offsets
+  // have a different width from the pointer, they are sign-extended or
+  // truncated to the width of the pointer.
+  uint64_t base = res->getOffset();
+  uint64_t off = 0;
+  for (auto &[size, val] : idxs) {
+    assert(interpreter.concrete_vals.contains(val));
+    auto i_val = interpreter.concrete_vals[val].get();
+    auto i_val_int = dynamic_cast<ConcreteValInt *>(i_val);
+    assert(i_val_int);
+    // will this ever overflow?
+    auto cur_int_index = i_val_int->getVal().getSExtValue();
+    // cout << "GEP::concreteEval index size=" << size << "\n";
+    // i_val_int->print();
+    // cout << "cur_int_index = " << cur_int_index << "\n";
+    off += cur_int_index * size;
+  }
+
+  res->setOffset(base + off);
+  return shared_ptr<ConcreteVal>(res);
+}
 
 DEFINE_AS_RETZEROALIGN(Load, getMaxAllocSize);
 DEFINE_AS_RETZERO(Load, getMaxGEPOffset);
