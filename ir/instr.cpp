@@ -3569,6 +3569,34 @@ unique_ptr<Instr> GEP::dup(const string &suffix) const {
   return dup;
 }
 
+shared_ptr<ConcreteVal>
+GEP::concreteEval(Interpreter &interpreter) const {
+  //assert(interpreter.concrete_vals.contains(ptr));
+  //auto ptr_val = interpreter.concrete_vals[ptr].get();
+  //auto c_ptr_val = dynamic_cast<ConcreteValPointer*>(ptr_val);
+  //assert(c_ptr_val);
+  
+  // if (inbounds) { //TODO
+  //   interpreter.setUnsupported("GEP inbounds not unsupported");
+  //   return nullptr;
+  // } 
+  
+  // for (auto &[size, val]: idxs) {
+  //   assert(interpreter.concrete_vals.contains(val));
+  //   auto i_val = interpreter.concrete_vals[val].get();
+  //   auto i_val_int = dynamic_cast<ConcreteValInt*>(i_val);
+  //   assert(i_val_int);
+  //   cout << "GEP::concreteEval index size=" << size << "\n";
+  //   i_val_int->print();
+  ////   cout << "extractValue::concreteEval agg.size=" << agg.size() << "\n";
+  ////   assert(idx < agg.size());
+  ////   v = agg[idx];
+  //}
+  interpreter.setUnsupported("GEP not unsupported yet");
+  return nullptr;
+  
+}
+
 
 DEFINE_AS_RETZEROALIGN(Load, getMaxAllocSize);
 DEFINE_AS_RETZERO(Load, getMaxGEPOffset);
@@ -3613,8 +3641,8 @@ unique_ptr<Instr> Load::dup(const string &suffix) const {
 }
 
 static util::ConcreteVal *loadIntVal(Interpreter &interpreter,
-                              util::ConcreteValPointer *ptr,
-                              unsigned int bitwidth) {
+                                     util::ConcreteValPointer *ptr,
+                                     unsigned int bitwidth) {
   if ((bitwidth < 8) || ((bitwidth % 8) != 0)) { // TODO Relax this constraint
     interpreter.setUnsupported("loadIntVal unsupported int bitwidth");
     return nullptr;
@@ -3629,27 +3657,65 @@ static util::ConcreteVal *loadIntVal(Interpreter &interpreter,
   auto num_bytes = bitwidth / 8;
   if (bitwidth > (num_bytes * 8))
     num_bytes += 1;
-  
+
   auto res = new ConcreteValInt(false, llvm::APInt(bitwidth, 0));
   bool is_ub = false;
   for (unsigned int i = 0; i < num_bytes; ++i) {
     auto &cur_byte = cur_block.getByte(ptr->getOffset() + i, is_ub);
-    if (is_ub){
+    if (is_ub) {
       interpreter.UB_flag = true;
       return nullptr;
     }
 
     if (cur_byte.intValue().first == 0) {
-    // if (cur_byte == cur_block.default_byte || cur_byte.intValue().isPoison()) {
-      // cout << "encountered default byte\n";
+      // if (cur_byte == cur_block.default_byte ||
+      // cur_byte.intValue().isPoison()) { cout << "encountered default byte\n";
       res->setPoison(true);
       return res;
     } else {
       auto byte_val_int = llvm::APInt(bitwidth, cur_byte.intValue().second);
-      byte_val_int<<=(i*8);
+      byte_val_int <<= (i * 8);
       res->setVal(res->getVal() += byte_val_int);
     }
   }
+  return res;
+}
+
+static util::ConcreteVal *loadPtrVal(Interpreter &interpreter,
+                                     util::ConcreteValPointer *ptr,
+                                     unsigned int bytes_per_ptr) {
+
+  assert(bytes_per_ptr != 0 && "bytes_per_ptr must be non-zero");
+
+  cout << "bytes_per_ptr = " << bytes_per_ptr << "\n";
+
+  auto &cur_block = interpreter.getBlock(ptr->getBid());
+  bool is_ub = false;
+  auto first_byte_ptr = cur_block.getByte(ptr->getOffset(), is_ub);
+  // is this considered UB or it should just not happen when the
+  // memory is initialized properly and the program is valid llvm-ir?
+  if (!first_byte_ptr.is_pointer) {
+    interpreter.UB_flag = true;
+    return nullptr;
+  }
+  // assert(first_byte_ptr.is_pointer && "loadPtrVal incorrect type of byte read
+  // from memory");
+  assert(first_byte_ptr.pointer_byte_offset == 0 &&
+         "loadPtrVal first byte incorrect pointer byte offset");
+
+  for (unsigned int i = 1; i < bytes_per_ptr; ++i) {
+    auto &cur_ptr_byte = cur_block.getByte(ptr->getOffset() + i, is_ub);
+
+    if (is_ub || !cur_ptr_byte.is_pointer ||
+        cur_ptr_byte.pointerValue() != first_byte_ptr.pointerValue()) {
+      interpreter.UB_flag = true;
+      return nullptr;
+    }
+    assert(cur_ptr_byte.pointer_byte_offset == i &&
+           "loadPtrVal incorrect pointer byte offset");
+  }
+
+  auto res = new ConcreteValPointer(first_byte_ptr.pointerValue());
   return res;
 }
 
@@ -3665,7 +3731,10 @@ Load::concreteEval(Interpreter &interpreter) const {
     // todo handle multiple integer bitwidth
     return shared_ptr<ConcreteVal>(
         loadIntVal(interpreter, c_ptr, getType().bits()));
-  } else { // floating point, pointer, etc
+  } else if (getType().isPtrType()) {
+    return shared_ptr<ConcreteVal>(
+        loadPtrVal(interpreter, c_ptr, bits_program_pointer / bits_byte));
+  } else { // floating point, etc
     interpreter.setUnsupported("load a value unsupported type");
     return nullptr;
   }
@@ -3723,26 +3792,20 @@ unique_ptr<Instr> Store::dup(const string &suffix) const {
 }
 
 static void storeIntVal(Interpreter &interpreter, util::ConcreteValPointer *ptr,
-                 util::ConcreteValInt *int_val) {
-  // cout << "storeIntVal\n";
-  // cout << "ptr bid= " << ptr->getBid()
-  //     << ",offset=" << ptr->getOffset()
-  //     << ",poison=" << ptr->isPoison() << "\n";
-  // cout << "getting block\n";
+                        util::ConcreteValInt *int_val) {
+  // ptr->print();
   auto bitwidth = int_val->getVal().getBitWidth();
   if ((bitwidth % 8) != 0) { // FIXME relax this constraint
     interpreter.setUnsupported("storeIntVal unsupported bitwidth");
     return;
   }
+
   auto &cur_block = interpreter.getBlock(ptr->getBid());
-  
-  
   auto num_bytes = bitwidth / 8;
-  
-  
+
   if (bitwidth > (num_bytes * 8))
     num_bytes += 1;
-  
+
   auto tgt_val = int_val->getVal();
   for (unsigned int i = 0; i < num_bytes; ++i) {
     auto &cur_byte =
@@ -3751,11 +3814,34 @@ static void storeIntVal(Interpreter &interpreter, util::ConcreteValPointer *ptr,
       return;
 
     // This will fail for types that are non multiples of 8
-    auto tgt_byte = tgt_val.extractBits(8, i*8);
+    auto tgt_byte = tgt_val.extractBits(8, i * 8);
     cur_byte = ConcreteByte(
         DataByteVal(int_val->isPoison() ? 0 : 255, tgt_byte.getZExtValue()));
   }
+}
 
+static void storePtrVal(Interpreter &interpreter,
+                        util::ConcreteValPointer *ptr_dst,
+                        util::ConcreteValPointer *ptr_val,
+                        unsigned int bytes_per_ptr) {
+
+  auto &dst_block = interpreter.getBlock(ptr_dst->getBid());
+  // cout << "storePtrVal bytes_per_ptr= " << bytes_per_ptr << "\n";
+  
+  for (unsigned int i = 0; i < bytes_per_ptr; ++i) {
+    auto &dst_deref_byte =
+        dst_block.getByte(ptr_dst->getOffset() + i, interpreter.UB_flag);
+
+    if (interpreter.UB_flag)
+      return;
+    dst_deref_byte.is_pointer = true;
+    dst_deref_byte.pointer_byte_offset = i;
+    dst_deref_byte.pointerValue().setBid(ptr_val->getBid());
+    dst_deref_byte.pointerValue().setOffset(ptr_val->getOffset());
+    dst_deref_byte.pointerValue().setPoison(ptr_val->isPoison());
+  }
+
+  return;
 }
 
 std::shared_ptr<util::ConcreteVal>
@@ -3769,20 +3855,18 @@ Store::concreteEval(Interpreter &interpreter) const {
   auto concrete_store_val = val_I->second.get();
 
   if (val->getType().isPtrType()) {
-    interpreter.setUnsupported("store to pointer");
-    return nullptr;
+    auto c_ptr_val = dynamic_cast<ConcreteValPointer *>(concrete_store_val);
+    storePtrVal(interpreter, c_ptr, c_ptr_val,
+                bits_program_pointer / bits_byte);
   } else if (val->getType().isIntType()) {
     auto c_int_val = dynamic_cast<ConcreteValInt *>(concrete_store_val);
     storeIntVal(interpreter, c_ptr, c_int_val);
-    return nullptr;
   } else {
     interpreter.setUnsupported("store to value");
-    return nullptr;
   }
 
-  UNREACHABLE();
+  return nullptr;
 }
-
 
 DEFINE_AS_RETZEROALIGN(Memset, getMaxAllocSize);
 DEFINE_AS_RETZERO(Memset, getMaxGEPOffset);

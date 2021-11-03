@@ -74,7 +74,7 @@ struct ConcreteByte {
       os << nonpoison_mask << ",[" << ptr_bid << "," << ptr_offset << ","
          << pointer_byte_offset << "]";
     } else 
-      os << byte_val.first << "," << byte_val.second << "]";
+      os << (uint64_t)byte_val.first << "," << (uint64_t)byte_val.second << "]";
   }
 
 };

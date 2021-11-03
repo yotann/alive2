@@ -222,8 +222,6 @@ void Interpreter::start(Function &f) {
 
   // TODO add stack for alloca
 
-  // TODO add support for noninteger types
-
   for (auto &bb : f.getBBs()) {
     if (&f.getFirstBB() == bb) {
       cur_block = bb;
@@ -239,9 +237,13 @@ void Interpreter::step() {
   if (isFinished())
     return;
   auto &i = *(cur_block->instrs().begin() + pos_in_block++);
+  // TODO need to print only when in verbose mode
   cout << "cur inst: ";
   i.print(cout);
   cout << '\n';
+  // cout << "cur mem: \n";
+  // printMemory(cout);
+  // cout << "\n";
   if (dynamic_cast<const Return *>(&i)) {
     auto v_op = i.operands();
     assert(v_op.size() == 1);
