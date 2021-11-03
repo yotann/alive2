@@ -19,7 +19,6 @@
 
 #include <cstdlib>
 #include <iostream>
-#include <numeric>
 #include <optional>
 #include <sstream>
 #include <string>
@@ -612,13 +611,6 @@ static ojson evaluateAliveInterpret(const ojson &options, const ojson &src,
                            bytes.size());
   };
 
-  // need this because of initMemoryConstantsInterpret
-  // alternatively, we can passthe required value in a json file from alive-tv
-  if (smt_init)
-    smt_init->reset();
-  else
-    smt_init.emplace();
-
   llvm::LLVMContext context;
   auto m_or_err = llvm::parseBitcodeFile(
       llvm::MemoryBufferRef(to_stringref(src), "src"), context);
@@ -637,7 +629,7 @@ static ojson evaluateAliveInterpret(const ojson &options, const ojson &src,
   // TODO: include contents of out.str() in the response.
 
   auto &f = getSoleDefinition(*m);
-  auto fn = llvm2alive(f, tli.getTLI(f));  
+  auto fn = llvm2alive(f, tli.getTLI(f)); 
   ojson result(json_object_arg);
   if (!fn) {
     result["status"] = "unsupported";
