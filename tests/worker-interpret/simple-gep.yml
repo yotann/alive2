@@ -33,12 +33,40 @@ args:
     %struct.ST = type { i32, double, %struct.RT }
     %struct.RT = type { i8, [10 x [20 x i32]], i8 }
     
-    define dso_local nonnull i32* @bar(%struct.ST* %0) {
+    define i32* @bar(%struct.ST* %0) {
       %2 = getelementptr inbounds %struct.ST, %struct.ST* %0, i64 0, i32 2, i32 1, i64 5, i64 13
       ret i32* %2
     }
-  - args: [[2,0]]
+  - args: [[1,0]]
+    memory:
+      - size: 0
+        align: 0
+      - size: 65536
+        align: 1024
 expected:
   status: done
   undefined: false
-  return_value: [2,472]
+  return_value: [1,472]
+---
+name: gep_3
+func: alive.interpret
+args:
+  - {}
+  - !ir |
+    %struct.ST = type { i32, double, %struct.RT }
+    %struct.RT = type { i8, [10 x [20 x i32]], i8 }
+    
+    define i32* @bar(%struct.ST* %0) {
+      %2 = getelementptr inbounds %struct.ST, %struct.ST* %0, i64 1, i32 2, i32 1, i64 5, i64 13
+      ret i32* %2
+    }
+  - args: [[1,0]]
+    memory:
+      - size: 0
+        align: 0
+      - size: 65536
+        align: 1024
+expected:
+  status: done
+  undefined: false
+  return_value: poison

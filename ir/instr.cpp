@@ -3186,6 +3186,29 @@ unique_ptr<Instr> Alloc::dup(const string &suffix) const {
   return a;
 }
 
+shared_ptr<ConcreteVal> Alloc::concreteEval(Interpreter &interpreter) const {
+  // Value *size, *mul;
+  // uint64_t align;
+  // bool initially_dead = false;
+  uint64_t num_elems = 1;
+  assert(interpreter.concrete_vals.contains(size));
+  if (interpreter.concrete_vals.contains(mul)) {
+    auto mul_c_val = interpreter.concrete_vals[mul].get();
+    auto mul_int_val = dynamic_cast<ConcreteValInt *>(mul_c_val);
+    num_elems = mul_int_val->getVal().getZExtValue();  
+  }
+  auto size_c_val = interpreter.concrete_vals[size].get();  
+  auto size_int_val = dynamic_cast<ConcreteValInt *>(size_c_val);  
+  
+  cout << "size of alloc = " << size_int_val->getVal().getZExtValue() << "\n";
+  cout << "# of elem = " << num_elems << "\n";
+  if (size->getType().isIntType()) {
+    cout << "allocing an int, bitwidth = " << size->getType().bits() << "\n";
+  }
+    
+  interpreter.setUnsupported("Alloca not unsupported still");
+  return nullptr;
+}
 
 DEFINE_AS_RETZERO(Malloc, getMaxAccessSize);
 DEFINE_AS_RETZERO(Malloc, getMaxGEPOffset);
@@ -3576,14 +3599,12 @@ shared_ptr<ConcreteVal> GEP::concreteEval(Interpreter &interpreter) const {
   assert(c_ptr_val);
 
   // check that the base pointer is inbounds. i.e points to an allocated object
-  // or to its end. How can the interpreter check this?
-  // the only in bounds address for null ptr is itself. i.e. (0,0)
+  // or to its end. How can the interpreter check whether it's pointing to an
+  // allocated object?
 
-  // if (inbounds) { //TODO
-  //   interpreter.setUnsupported("GEP inbounds not unsupported");
-  //   return nullptr;
-  // }
-  // FIXME for now we just assume the pointer is inbounds.
+  uint64_t max_access_size =
+      0; // FIXME: don't think this is the right way to go about this
+  max_access_size = idxs[0].first;
 
   auto res = new ConcreteValPointer(*c_ptr_val);
   // If the inbounds keyword is not present, the offsets are added to the base
@@ -3592,20 +3613,62 @@ shared_ptr<ConcreteVal> GEP::concreteEval(Interpreter &interpreter) const {
   // truncated to the width of the pointer.
   uint64_t base = res->getOffset();
   uint64_t off = 0;
+  unsigned long inbounds_off = 0;
   for (auto &[size, val] : idxs) {
     assert(interpreter.concrete_vals.contains(val));
     auto i_val = interpreter.concrete_vals[val].get();
     auto i_val_int = dynamic_cast<ConcreteValInt *>(i_val);
     assert(i_val_int);
-    // will this ever overflow?
     auto cur_int_index = i_val_int->getVal().getSExtValue();
     // cout << "GEP::concreteEval index size=" << size << "\n";
     // i_val_int->print();
     // cout << "cur_int_index = " << cur_int_index << "\n";
     off += cur_int_index * size;
+    if (inbounds) {
+      unsigned long mul_res = 0;
+      if (size != 0) {
+        bool mul_ov = __builtin_umull_overflow(cur_int_index, size, &mul_res);
+        if (mul_ov) {
+          res->setPoison(true);
+          return shared_ptr<ConcreteVal>(res);
+        }
+      }
+
+      bool add_ov =
+          __builtin_uaddl_overflow(inbounds_off, mul_res, &inbounds_off);
+      if (add_ov) {
+        res->setPoison(true);
+        return shared_ptr<ConcreteVal>(res);
+      }
+    }
   }
 
   res->setOffset(base + off);
+
+  // check if the resulting pointer is inbounds based on its block size
+  if (inbounds) {
+    auto block_size = interpreter.getBlock(c_ptr_val->getBid()).size;
+    if (((uint64_t)res->getOffset()) >=
+        block_size) { // FIXME: I think ConcreteValPointer offset should be
+                      // unsigned
+      res->setPoison(true);
+      return shared_ptr<ConcreteVal>(res);
+    }
+
+    if (((uint64_t)res->getOffset()) > max_access_size) {
+      res->setPoison(true);
+      return shared_ptr<ConcreteVal>(res);
+    }
+
+    // the only in bounds address for null ptr is itself. i.e. (0,0)
+    if (c_ptr_val->getBid() == 0 && c_ptr_val->getOffset() == 0) {
+      if (res->getOffset() != 0) {
+        res->setPoison(true);
+        return shared_ptr<ConcreteVal>(res);
+      }
+    }
+  }
+  
   return shared_ptr<ConcreteVal>(res);
 }
 
