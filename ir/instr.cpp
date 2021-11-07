@@ -3187,27 +3187,38 @@ unique_ptr<Instr> Alloc::dup(const string &suffix) const {
 }
 
 shared_ptr<ConcreteVal> Alloc::concreteEval(Interpreter &interpreter) const {
-  // Value *size, *mul;
-  // uint64_t align;
-  // bool initially_dead = false;
+
+  // alloc in alive always has an int type
+  assert(size->getType().isIntType());
+
+  // while langref allows allocas with size 0, I don't think alive-tv allows it
+  // hence we don't handle it here
   uint64_t num_elems = 1;
   assert(interpreter.concrete_vals.contains(size));
   if (interpreter.concrete_vals.contains(mul)) {
     auto mul_c_val = interpreter.concrete_vals[mul].get();
     auto mul_int_val = dynamic_cast<ConcreteValInt *>(mul_c_val);
-    num_elems = mul_int_val->getVal().getZExtValue();  
+    num_elems = mul_int_val->getVal().getZExtValue();
   }
-  auto size_c_val = interpreter.concrete_vals[size].get();  
-  auto size_int_val = dynamic_cast<ConcreteValInt *>(size_c_val);  
-  
-  cout << "size of alloc = " << size_int_val->getVal().getZExtValue() << "\n";
-  cout << "# of elem = " << num_elems << "\n";
-  if (size->getType().isIntType()) {
-    cout << "allocing an int, bitwidth = " << size->getType().bits() << "\n";
-  }
-    
-  interpreter.setUnsupported("Alloca not unsupported still");
-  return nullptr;
+
+  auto size_c_val = interpreter.concrete_vals[size].get();
+  auto size_int_val = dynamic_cast<ConcreteValInt *>(size_c_val);
+  uint64_t size_w_padding =
+      round_up(size_int_val->getVal().getZExtValue(), align);
+  auto elem_in_bytes = size->getType().bits() / 8;
+  assert(size_w_padding >= elem_in_bytes);
+  // cout << "size of alloc = " << size_int_val->getVal().getZExtValue() << "\n";
+  // cout << "size of alloc with padding = " << size_w_padding << "\n";
+  // cout << "allocing an int, bitwidth = " << size->getType().bits() << "\n";
+  // cout << "align = " << align << "\n";
+  ConcreteBlock new_block;
+  new_block.align = align;
+  new_block.size = size_w_padding * num_elems;
+  auto res =
+      new ConcreteValPointer(false, interpreter.local_mem_blocks.size(), 0);
+  res->setIsLocal(true);
+  interpreter.local_mem_blocks.push_back(std::move(new_block));
+  return shared_ptr<ConcreteVal>(res);
 }
 
 DEFINE_AS_RETZERO(Malloc, getMaxAccessSize);
@@ -3647,7 +3658,7 @@ shared_ptr<ConcreteVal> GEP::concreteEval(Interpreter &interpreter) const {
 
   // check if the resulting pointer is inbounds based on its block size
   if (inbounds) {
-    auto block_size = interpreter.getBlock(c_ptr_val->getBid()).size;
+    auto block_size = interpreter.getBlock(c_ptr_val->getBid(), c_ptr_val->getIsLocal()).size;
     if (((uint64_t)res->getOffset()) >=
         block_size) { // FIXME: I think ConcreteValPointer offset should be
                       // unsigned
@@ -3668,7 +3679,7 @@ shared_ptr<ConcreteVal> GEP::concreteEval(Interpreter &interpreter) const {
       }
     }
   }
-  
+
   return shared_ptr<ConcreteVal>(res);
 }
 
@@ -3726,7 +3737,7 @@ static util::ConcreteVal *loadIntVal(Interpreter &interpreter,
   //      << ",offset=" << ptr->getOffset()
   //      << ",poison=" << ptr->isPoison() << "\n";
   // cout << "getting block\n";
-  auto &cur_block = interpreter.getBlock(ptr->getBid());
+  auto &cur_block = interpreter.getBlock(ptr->getBid(), ptr->getIsLocal());
   // cur_block.print(cout);
   auto num_bytes = bitwidth / 8;
   if (bitwidth > (num_bytes * 8))
@@ -3766,7 +3777,7 @@ static util::ConcreteVal *loadPtrVal(Interpreter &interpreter,
 
   cout << "bytes_per_ptr = " << bytes_per_ptr << "\n";
 
-  auto &cur_block = interpreter.getBlock(ptr->getBid());
+  auto &cur_block = interpreter.getBlock(ptr->getBid(), ptr->getIsLocal());
 
   auto first_byte_ptr = cur_block.getByte(ptr->getOffset(), interpreter.UB_flag);
   if (interpreter.UB_flag)
@@ -3882,7 +3893,7 @@ static void storeIntVal(Interpreter &interpreter, util::ConcreteValPointer *ptr,
     return;
   }
 
-  auto &cur_block = interpreter.getBlock(ptr->getBid());
+  auto &cur_block = interpreter.getBlock(ptr->getBid(), ptr->getIsLocal());
   auto num_bytes = bitwidth / 8;
 
   if (bitwidth > (num_bytes * 8))
@@ -3908,7 +3919,7 @@ static void storePtrVal(Interpreter &interpreter,
                         util::ConcreteValPointer *ptr_val,
                         unsigned int bytes_per_ptr) {
 
-  auto &dst_block = interpreter.getBlock(ptr_dst->getBid());
+  auto &dst_block = interpreter.getBlock(ptr_dst->getBid(), ptr_dst->getIsLocal());
   // cout << "storePtrVal bytes_per_ptr= " << bytes_per_ptr << "\n";
   
   for (unsigned int i = 0; i < bytes_per_ptr; ++i) {

@@ -629,7 +629,7 @@ static ojson evaluateAliveInterpret(const ojson &options, const ojson &src,
   // TODO: include contents of out.str() in the response.
 
   auto &f = getSoleDefinition(*m);
-  auto fn = llvm2alive(f, tli.getTLI(f)); 
+  auto fn = llvm2alive(f, tli.getTLI(f));
   ojson result(json_object_arg);
   if (!fn) {
     result["status"] = "unsupported";
@@ -641,6 +641,8 @@ static ojson evaluateAliveInterpret(const ojson &options, const ojson &src,
   if (test_input.contains("memory")) {
     IR::bits_program_pointer = fn->bitsPointers();
     IR::bits_byte = 8; // interpreter doesn't support larger values
+    // TODO: I think we need to set IR::bits_for_offset and 
+    // probably need to compute max_access_size to completely handle geps with inbound
     interpreter.loadMemory(test_input["memory"]);
   }
   interpreter.start(*fn);
