@@ -207,11 +207,9 @@ protected:
 
 public:
   ConcreteValPointer();
-  ConcreteValPointer(bool poison, unsigned bid, std::int64_t offset);
+  ConcreteValPointer(bool poison, unsigned bid, std::int64_t offset, bool is_local);
   unsigned getBid() const;
   bool getIsLocal() const;
-  void setBid(unsigned bid);
-  void setIsLocal(bool is_local);
   std::int64_t getOffset() const;
   void setOffset(std::int64_t offset);
   void print() override;

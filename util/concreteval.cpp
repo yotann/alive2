@@ -1356,8 +1356,8 @@ namespace util{
       : ConcreteVal(false), bid(0), offset(0) {}
 
   ConcreteValPointer::ConcreteValPointer(bool poison, unsigned bid,
-                                         std::int64_t offset)
-      : ConcreteVal(poison), bid(bid), offset(offset) {}
+                                         std::int64_t offset, bool is_local)
+      : ConcreteVal(poison), bid(bid), offset(offset), is_local(is_local) {}
 
   unsigned ConcreteValPointer::getBid() const {
     return bid;
@@ -1365,14 +1365,6 @@ namespace util{
 
   bool ConcreteValPointer::getIsLocal() const {
     return is_local;
-  }
-
-  void ConcreteValPointer::setBid(unsigned bid) {
-    this->bid = bid;
-  }
-
-  void ConcreteValPointer::setIsLocal(bool is_local) {
-    this->is_local = is_local;
   }
 
   std::int64_t ConcreteValPointer::getOffset() const {
@@ -1384,6 +1376,6 @@ namespace util{
   }
 
   void ConcreteValPointer::print() {
-    cout << "pointer(poison=" << isPoison() << ", block_id=" << bid << ", offset=" << offset << ")\n";
+    cout << "pointer(poison=" << isPoison() << ", block_id=" << bid << ", offset=" << offset << ", is_local=" << is_local << ")\n";
   }
 }

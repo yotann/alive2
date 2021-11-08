@@ -3215,8 +3215,7 @@ shared_ptr<ConcreteVal> Alloc::concreteEval(Interpreter &interpreter) const {
   new_block.align_bits = ilog2(align);
   new_block.size = size_w_padding * num_elems;
   auto res =
-      new ConcreteValPointer(false, interpreter.local_mem_blocks.size(), 0);
-  res->setIsLocal(true);
+      new ConcreteValPointer(false, interpreter.local_mem_blocks.size(), 0, true);
   interpreter.local_mem_blocks.push_back(std::move(new_block));
   return shared_ptr<ConcreteVal>(res);
 }
@@ -3931,9 +3930,7 @@ static void storePtrVal(Interpreter &interpreter,
       return;
     dst_deref_byte.is_pointer = true;
     dst_deref_byte.pointer_byte_offset = i;
-    dst_deref_byte.pointerValue().setBid(ptr_val->getBid());
-    dst_deref_byte.pointerValue().setOffset(ptr_val->getOffset());
-    dst_deref_byte.pointerValue().setPoison(ptr_val->isPoison());
+    dst_deref_byte.pointerValue() = *ptr_val;
   }
 
   return;

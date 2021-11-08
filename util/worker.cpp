@@ -439,7 +439,7 @@ ConcreteVal *WorkerInterpreter::loadConcreteVal(const IR::Type &type,
   } else if (type.isPtrType()) {
     if (val.is_array() && val.size() == 2) {
       return new ConcreteValPointer(false, val[0].as<unsigned>(),
-                                    val[1].as<int64_t>());
+                                    val[1].as<int64_t>(), false);
     }
   } else {
     setUnsupported("unknown input type");
@@ -474,9 +474,10 @@ ConcreteBlock WorkerInterpreter::loadConcreteBlock(const ojson &block) {
       // cout << "pointer byte\n";
       bool is_poison = nonpoison_bits == 255 ? false : true;
       auto ptr_value = json_byte[2];
-      auto concrete_ptr = ConcreteValPointer(is_poison, 
+      auto concrete_ptr = ConcreteValPointer(is_poison,
                                              ptr_value[0].as_integer<uint64_t>(),
-                                             ptr_value[1].as_integer<uint64_t>());
+                                             ptr_value[1].as_integer<uint64_t>(),
+                                             false);
       init_byte = ConcreteByte(move(concrete_ptr));
       init_byte.pointer_byte_offset = ptr_value[2].as_integer<uint64_t>();
     }
