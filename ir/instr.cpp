@@ -3186,6 +3186,40 @@ unique_ptr<Instr> Alloc::dup(const string &suffix) const {
   return a;
 }
 
+shared_ptr<ConcreteVal> Alloc::concreteEval(Interpreter &interpreter) const {
+
+  // alloc in alive always has an int type
+  assert(size->getType().isIntType());
+
+  // while langref allows allocas with size 0, I don't think alive-tv allows it
+  // hence we don't handle it here
+  uint64_t num_elems = 1;
+  assert(interpreter.concrete_vals.contains(size));
+  if (interpreter.concrete_vals.contains(mul)) {
+    auto mul_c_val = interpreter.concrete_vals[mul].get();
+    auto mul_int_val = dynamic_cast<ConcreteValInt *>(mul_c_val);
+    num_elems = mul_int_val->getVal().getZExtValue();
+  }
+
+  auto size_c_val = interpreter.concrete_vals[size].get();
+  auto size_int_val = dynamic_cast<ConcreteValInt *>(size_c_val);
+  uint64_t size_w_padding =
+      round_up(size_int_val->getVal().getZExtValue(), align);
+  auto elem_in_bytes = size->getType().bits() / 8;
+  assert(size_w_padding >= elem_in_bytes);
+  // cout << "size of alloc = " << size_int_val->getVal().getZExtValue() << "\n";
+  // cout << "size of alloc with padding = " << size_w_padding << "\n";
+  // cout << "allocing an int, bitwidth = " << size->getType().bits() << "\n";
+  // cout << "align = " << align << "\n";
+  ConcreteBlock new_block;
+  new_block.align = align;
+  new_block.size = size_w_padding * num_elems;
+  auto res =
+      new ConcreteValPointer(false, interpreter.local_mem_blocks.size(), 0);
+  res->setIsLocal(true);
+  interpreter.local_mem_blocks.push_back(std::move(new_block));
+  return shared_ptr<ConcreteVal>(res);
+}
 
 DEFINE_AS_RETZERO(Malloc, getMaxAccessSize);
 DEFINE_AS_RETZERO(Malloc, getMaxGEPOffset);
@@ -3569,34 +3603,85 @@ unique_ptr<Instr> GEP::dup(const string &suffix) const {
   return dup;
 }
 
-shared_ptr<ConcreteVal>
-GEP::concreteEval(Interpreter &interpreter) const {
-  //assert(interpreter.concrete_vals.contains(ptr));
-  //auto ptr_val = interpreter.concrete_vals[ptr].get();
-  //auto c_ptr_val = dynamic_cast<ConcreteValPointer*>(ptr_val);
-  //assert(c_ptr_val);
-  
-  // if (inbounds) { //TODO
-  //   interpreter.setUnsupported("GEP inbounds not unsupported");
-  //   return nullptr;
-  // } 
-  
-  // for (auto &[size, val]: idxs) {
-  //   assert(interpreter.concrete_vals.contains(val));
-  //   auto i_val = interpreter.concrete_vals[val].get();
-  //   auto i_val_int = dynamic_cast<ConcreteValInt*>(i_val);
-  //   assert(i_val_int);
-  //   cout << "GEP::concreteEval index size=" << size << "\n";
-  //   i_val_int->print();
-  ////   cout << "extractValue::concreteEval agg.size=" << agg.size() << "\n";
-  ////   assert(idx < agg.size());
-  ////   v = agg[idx];
-  //}
-  interpreter.setUnsupported("GEP not unsupported yet");
-  return nullptr;
-  
-}
+shared_ptr<ConcreteVal> GEP::concreteEval(Interpreter &interpreter) const {
+  assert(interpreter.concrete_vals.contains(ptr));
+  auto ptr_val = interpreter.concrete_vals[ptr].get();
+  auto c_ptr_val = dynamic_cast<ConcreteValPointer *>(ptr_val);
+  assert(c_ptr_val);
 
+  // check that the base pointer is inbounds. i.e points to an allocated object
+  // or to its end. How can the interpreter check whether it's pointing to an
+  // allocated object?
+
+  uint64_t max_access_size =
+      0; // FIXME: don't think this is the right way to go about this
+  max_access_size = idxs[0].first;
+
+  auto res = new ConcreteValPointer(*c_ptr_val);
+  // If the inbounds keyword is not present, the offsets are added to the base
+  // address with silently-wrapping two’s complement arithmetic. If the offsets
+  // have a different width from the pointer, they are sign-extended or
+  // truncated to the width of the pointer.
+  uint64_t base = res->getOffset();
+  uint64_t off = 0;
+  unsigned long inbounds_off = 0;
+  for (auto &[size, val] : idxs) {
+    assert(interpreter.concrete_vals.contains(val));
+    auto i_val = interpreter.concrete_vals[val].get();
+    auto i_val_int = dynamic_cast<ConcreteValInt *>(i_val);
+    assert(i_val_int);
+    auto cur_int_index = i_val_int->getVal().getSExtValue();
+    // cout << "GEP::concreteEval index size=" << size << "\n";
+    // i_val_int->print();
+    // cout << "cur_int_index = " << cur_int_index << "\n";
+    off += cur_int_index * size;
+    if (inbounds) {
+      unsigned long mul_res = 0;
+      if (size != 0) {
+        bool mul_ov = __builtin_umull_overflow(cur_int_index, size, &mul_res);
+        if (mul_ov) {
+          res->setPoison(true);
+          return shared_ptr<ConcreteVal>(res);
+        }
+      }
+
+      bool add_ov =
+          __builtin_uaddl_overflow(inbounds_off, mul_res, &inbounds_off);
+      if (add_ov) {
+        res->setPoison(true);
+        return shared_ptr<ConcreteVal>(res);
+      }
+    }
+  }
+
+  res->setOffset(base + off);
+
+  // check if the resulting pointer is inbounds based on its block size
+  if (inbounds) {
+    auto block_size = interpreter.getBlock(c_ptr_val->getBid(), c_ptr_val->getIsLocal()).size;
+    if (((uint64_t)res->getOffset()) >=
+        block_size) { // FIXME: I think ConcreteValPointer offset should be
+                      // unsigned
+      res->setPoison(true);
+      return shared_ptr<ConcreteVal>(res);
+    }
+
+    if (((uint64_t)res->getOffset()) > max_access_size) {
+      res->setPoison(true);
+      return shared_ptr<ConcreteVal>(res);
+    }
+
+    // the only in bounds address for null ptr is itself. i.e. (0,0)
+    if (c_ptr_val->getBid() == 0 && c_ptr_val->getOffset() == 0) {
+      if (res->getOffset() != 0) {
+        res->setPoison(true);
+        return shared_ptr<ConcreteVal>(res);
+      }
+    }
+  }
+
+  return shared_ptr<ConcreteVal>(res);
+}
 
 DEFINE_AS_RETZEROALIGN(Load, getMaxAllocSize);
 DEFINE_AS_RETZERO(Load, getMaxGEPOffset);
@@ -3652,7 +3737,7 @@ static util::ConcreteVal *loadIntVal(Interpreter &interpreter,
   //      << ",offset=" << ptr->getOffset()
   //      << ",poison=" << ptr->isPoison() << "\n";
   // cout << "getting block\n";
-  auto &cur_block = interpreter.getBlock(ptr->getBid());
+  auto &cur_block = interpreter.getBlock(ptr->getBid(), ptr->getIsLocal());
   // cur_block.print(cout);
   auto num_bytes = bitwidth / 8;
   if (bitwidth > (num_bytes * 8))
@@ -3692,7 +3777,8 @@ static util::ConcreteVal *loadPtrVal(Interpreter &interpreter,
 
   cout << "bytes_per_ptr = " << bytes_per_ptr << "\n";
 
-  auto &cur_block = interpreter.getBlock(ptr->getBid());
+  auto &cur_block = interpreter.getBlock(ptr->getBid(), ptr->getIsLocal());
+
   auto first_byte_ptr = cur_block.getByte(ptr->getOffset(), interpreter.UB_flag);
   if (interpreter.UB_flag)
     return nullptr;
@@ -3807,7 +3893,7 @@ static void storeIntVal(Interpreter &interpreter, util::ConcreteValPointer *ptr,
     return;
   }
 
-  auto &cur_block = interpreter.getBlock(ptr->getBid());
+  auto &cur_block = interpreter.getBlock(ptr->getBid(), ptr->getIsLocal());
   auto num_bytes = bitwidth / 8;
 
   if (bitwidth > (num_bytes * 8))
@@ -3827,12 +3913,13 @@ static void storeIntVal(Interpreter &interpreter, util::ConcreteValPointer *ptr,
   }
 }
 
+
 static void storePtrVal(Interpreter &interpreter,
                         util::ConcreteValPointer *ptr_dst,
                         util::ConcreteValPointer *ptr_val,
                         unsigned int bytes_per_ptr) {
 
-  auto &dst_block = interpreter.getBlock(ptr_dst->getBid());
+  auto &dst_block = interpreter.getBlock(ptr_dst->getBid(), ptr_dst->getIsLocal());
   // cout << "storePtrVal bytes_per_ptr= " << bytes_per_ptr << "\n";
   
   for (unsigned int i = 0; i < bytes_per_ptr; ++i) {

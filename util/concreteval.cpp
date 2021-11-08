@@ -1363,8 +1363,16 @@ namespace util{
     return bid;
   }
 
+  bool ConcreteValPointer::getIsLocal() const {
+    return is_local;
+  }
+
   void ConcreteValPointer::setBid(unsigned bid) {
     this->bid = bid;
+  }
+
+  void ConcreteValPointer::setIsLocal(bool is_local) {
+    this->is_local = is_local;
   }
 
   std::int64_t ConcreteValPointer::getOffset() const {

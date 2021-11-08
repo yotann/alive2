@@ -167,18 +167,30 @@ public:
   }
 
   void printMemory(std::ostream &os) const {
+    os << "non-local blocks:\n";
     os << "[";
     for (auto &block : mem_blocks) {
       os << "{";
       block.print(os);
       os << "}";
     }
+    os << "]\n";
+    for (auto &l_block : local_mem_blocks) {
+      os << "{";
+      l_block.print(os);
+      os << "}";
+    }
     os << "]";
+
   }
 
-  ConcreteBlock &getBlock(uint64_t index) {
-    assert(index < mem_blocks.size() && "block doesn't exist");
-    return mem_blocks[index];
+  ConcreteBlock &getBlock(uint64_t index, bool is_local=false) {
+    if (!is_local) {
+      assert(index < mem_blocks.size() && "non_local block doesn't exist");
+      return mem_blocks[index];
+    }
+    assert(index < local_mem_blocks.size() && "local block doesn't exist");
+    return local_mem_blocks[index];
   }
 
   std::map<const IR::Value *, std::shared_ptr<ConcreteVal>> concrete_vals;
@@ -190,6 +202,7 @@ public:
   std::string unsupported_reason;
   ConcreteVal *return_value = nullptr;
   std::vector<ConcreteBlock> mem_blocks;
+  std::vector<ConcreteBlock> local_mem_blocks;
 };
 
 void interp(IR::Function &f);

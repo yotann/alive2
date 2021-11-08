@@ -195,6 +195,7 @@ class ConcreteValPointer : public ConcreteVal {
 private:
   unsigned bid;
   std::int64_t offset;
+  bool is_local{false};
 
 protected:
   virtual bool equals(ConcreteVal &rhs) override {
@@ -208,7 +209,9 @@ public:
   ConcreteValPointer();
   ConcreteValPointer(bool poison, unsigned bid, std::int64_t offset);
   unsigned getBid() const;
+  bool getIsLocal() const;
   void setBid(unsigned bid);
+  void setIsLocal(bool is_local);
   std::int64_t getOffset() const;
   void setOffset(std::int64_t offset);
   void print() override;
