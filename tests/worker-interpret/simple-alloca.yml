@@ -10,10 +10,16 @@ args:
       ret i32 %2
     }
   - args:
+    memory:
+      - size: 0
+        align: 0
 expected:
   status: done
   undefined: false
   return_value: 5
+  memory:
+    - size: 0
+      align: 0
 ---
 name: alloca_float
 func: alive.interpret
