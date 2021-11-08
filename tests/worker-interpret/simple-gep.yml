@@ -41,7 +41,7 @@ args:
     memory:
       - size: 0
         align: 0
-      - size: 65536
+      - size: 824
         align: 10
 expected:
   status: done
@@ -64,7 +64,7 @@ args:
     memory:
       - size: 0
         align: 0
-      - size: 65536
+      - size: 824
         align: 10
 expected:
   status: done

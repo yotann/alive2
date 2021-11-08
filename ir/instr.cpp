@@ -3609,75 +3609,41 @@ shared_ptr<ConcreteVal> GEP::concreteEval(Interpreter &interpreter) const {
   auto c_ptr_val = dynamic_cast<ConcreteValPointer *>(ptr_val);
   assert(c_ptr_val);
 
-  // check that the base pointer is inbounds. i.e points to an allocated object
-  // or to its end. How can the interpreter check whether it's pointing to an
-  // allocated object?
-
-  uint64_t max_access_size =
-      0; // FIXME: don't think this is the right way to go about this
-  max_access_size = idxs[0].first;
-
   auto res = new ConcreteValPointer(*c_ptr_val);
-  // If the inbounds keyword is not present, the offsets are added to the base
-  // address with silently-wrapping two’s complement arithmetic. If the offsets
-  // have a different width from the pointer, they are sign-extended or
-  // truncated to the width of the pointer.
-  uint64_t base = res->getOffset();
-  uint64_t off = 0;
-  unsigned long inbounds_off = 0;
+  auto &cur_block = interpreter.getBlock(res->getBid(), res->getIsLocal());
+  auto check_in_bounds = [&]() {
+    if (!inbounds)
+      return;
+    int64_t off = res->getOffset();
+    if (off < 0 || (uint64_t)off > cur_block.size)
+      res->setPoison(true);
+  };
+
+  check_in_bounds();
+  long offsets_without_base = 0;
   for (auto &[size, val] : idxs) {
     assert(interpreter.concrete_vals.contains(val));
     auto i_val = interpreter.concrete_vals[val].get();
     auto i_val_int = dynamic_cast<ConcreteValInt *>(i_val);
     assert(i_val_int);
+    if (i_val_int->isPoison())
+      res->setPoison(true);
     auto cur_int_index = i_val_int->getVal().getSExtValue();
-    // cout << "GEP::concreteEval index size=" << size << "\n";
-    // i_val_int->print();
-    // cout << "cur_int_index = " << cur_int_index << "\n";
-    off += cur_int_index * size;
-    if (inbounds) {
-      unsigned long mul_res = 0;
-      if (size != 0) {
-        bool mul_ov = __builtin_umull_overflow(cur_int_index, size, &mul_res);
-        if (mul_ov) {
-          res->setPoison(true);
-          return shared_ptr<ConcreteVal>(res);
-        }
-      }
-
-      bool add_ov =
-          __builtin_uaddl_overflow(inbounds_off, mul_res, &inbounds_off);
-      if (add_ov) {
-        res->setPoison(true);
-        return shared_ptr<ConcreteVal>(res);
-      }
-    }
-  }
-
-  res->setOffset(base + off);
-
-  // check if the resulting pointer is inbounds based on its block size
-  if (inbounds) {
-    auto block_size = interpreter.getBlock(c_ptr_val->getBid(), c_ptr_val->getIsLocal()).size;
-    if (((uint64_t)res->getOffset()) >=
-        block_size) { // FIXME: I think ConcreteValPointer offset should be
-                      // unsigned
+    // TODO: if inbounds, check that signed truncation of i_val_int to
+    // bits_for_offset bits is equal to i_val_int.
+    long mul_res;
+    bool mul_ov = __builtin_smull_overflow(cur_int_index, size, &mul_res);
+    long new_offset;
+    bool add_ov =
+        __builtin_saddl_overflow(res->getOffset(), mul_res, &new_offset);
+    bool add_without_base_ov =
+        __builtin_saddl_overflow(offsets_without_base, mul_res, &offsets_without_base);
+    if (inbounds && (mul_ov || add_ov || add_without_base_ov))
       res->setPoison(true);
-      return shared_ptr<ConcreteVal>(res);
-    }
-
-    if (((uint64_t)res->getOffset()) > max_access_size) {
-      res->setPoison(true);
-      return shared_ptr<ConcreteVal>(res);
-    }
-
-    // the only in bounds address for null ptr is itself. i.e. (0,0)
-    if (c_ptr_val->getBid() == 0 && c_ptr_val->getOffset() == 0) {
-      if (res->getOffset() != 0) {
-        res->setPoison(true);
-        return shared_ptr<ConcreteVal>(res);
-      }
-    }
+    // TODO: ConcreteValPointer::offset should probably be unsigned (although
+    // it would only matter if an allocation took up half the address space).
+    res->setOffset(new_offset);
+    check_in_bounds();
   }
 
   return shared_ptr<ConcreteVal>(res);
