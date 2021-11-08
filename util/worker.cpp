@@ -454,7 +454,7 @@ ConcreteBlock WorkerInterpreter::loadConcreteBlock(const ojson &block) {
   ConcreteBlock c_block;
   c_block.size = block["size"].as_integer<uint64_t>();
   c_block.address = 0; // TODO where would this be used
-  c_block.align = block["align"].as_integer<uint64_t>();
+  c_block.align_bits = block["align"].as_integer<uint64_t>();
   
   if (c_block.size == 0 || !block.contains("bytes")) {
     return c_block;
@@ -574,7 +574,7 @@ static ojson storeConcreteBlock(const ConcreteBlock &block) {
   ojson result(json_object_arg);
   result["size"] = block.size;
   result["address"] = block.address;
-  result["align"] = block.align;
+  result["align"] = block.align_bits;
   ojson bytes(json_array_arg);
   for (const auto &item : block.bytes) {
     // if (item.second == block.default_byte)

@@ -42,7 +42,7 @@ args:
       - size: 0
         align: 0
       - size: 65536
-        align: 1024
+        align: 10
 expected:
   status: done
   undefined: false
@@ -65,7 +65,7 @@ args:
       - size: 0
         align: 0
       - size: 65536
-        align: 1024
+        align: 10
 expected:
   status: done
   undefined: false

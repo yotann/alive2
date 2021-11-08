@@ -3212,7 +3212,7 @@ shared_ptr<ConcreteVal> Alloc::concreteEval(Interpreter &interpreter) const {
   // cout << "allocing an int, bitwidth = " << size->getType().bits() << "\n";
   // cout << "align = " << align << "\n";
   ConcreteBlock new_block;
-  new_block.align = align;
+  new_block.align_bits = ilog2(align);
   new_block.size = size_w_padding * num_elems;
   auto res =
       new ConcreteValPointer(false, interpreter.local_mem_blocks.size(), 0);
@@ -3814,6 +3814,7 @@ static util::ConcreteVal *loadPtrVal(Interpreter &interpreter,
 
 std::shared_ptr<util::ConcreteVal>
 Load::concreteEval(Interpreter &interpreter) const {
+  // TODO: check alignment
   auto ptr_I = interpreter.concrete_vals.find(ptr);
   assert(ptr_I != interpreter.concrete_vals.end());
   auto concrete_ptr = ptr_I->second.get();
@@ -3940,6 +3941,7 @@ static void storePtrVal(Interpreter &interpreter,
 
 std::shared_ptr<util::ConcreteVal>
 Store::concreteEval(Interpreter &interpreter) const {
+  // TODO: check alignment
   auto ptr_I = interpreter.concrete_vals.find(ptr);
   assert(ptr_I != interpreter.concrete_vals.end());
   auto concrete_ptr = ptr_I->second.get();
