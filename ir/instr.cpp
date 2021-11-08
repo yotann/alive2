@@ -3191,29 +3191,30 @@ shared_ptr<ConcreteVal> Alloc::concreteEval(Interpreter &interpreter) const {
   // alloc in alive always has an int type
   assert(size->getType().isIntType());
 
-  // while langref allows allocas with size 0, I don't think alive-tv allows it
-  // hence we don't handle it here
-  uint64_t num_elems = 1;
+  uint64_t block_size = 1;
   assert(interpreter.concrete_vals.contains(size));
-  if (interpreter.concrete_vals.contains(mul)) {
+  if (mul) {
+    assert(interpreter.concrete_vals.contains(mul));
     auto mul_c_val = interpreter.concrete_vals[mul].get();
     auto mul_int_val = dynamic_cast<ConcreteValInt *>(mul_c_val);
-    num_elems = mul_int_val->getVal().getZExtValue();
+    if (mul_int_val->isPoison()) {
+      interpreter.UB_flag = true;
+      return nullptr;
+    }
+    block_size = mul_int_val->getVal().getZExtValue();
   }
 
   auto size_c_val = interpreter.concrete_vals[size].get();
   auto size_int_val = dynamic_cast<ConcreteValInt *>(size_c_val);
-  uint64_t size_w_padding =
-      round_up(size_int_val->getVal().getZExtValue(), align);
-  auto elem_in_bytes = size->getType().bits() / 8;
-  assert(size_w_padding >= elem_in_bytes);
-  // cout << "size of alloc = " << size_int_val->getVal().getZExtValue() << "\n";
-  // cout << "size of alloc with padding = " << size_w_padding << "\n";
-  // cout << "allocing an int, bitwidth = " << size->getType().bits() << "\n";
-  // cout << "align = " << align << "\n";
+  if (size_int_val->isPoison()) {
+    interpreter.UB_flag = true;
+    return nullptr;
+  }
+  block_size *= size_int_val->getVal().getZExtValue();
+  // TODO: handle initially_dead
   ConcreteBlock new_block;
   new_block.align_bits = ilog2(align);
-  new_block.size = size_w_padding * num_elems;
+  new_block.size = block_size;
   auto res =
       new ConcreteValPointer(false, interpreter.local_mem_blocks.size(), 0, true);
   interpreter.local_mem_blocks.push_back(std::move(new_block));
