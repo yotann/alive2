@@ -214,6 +214,7 @@ static ojson memoryBlockToJSON(const IR::State &state, const smt::Model &m,
     // For the default byte value, offset is null.
     ojson bytes(json_array_arg);
     smt::expr array = m[state.getMemory().getBlockInit(m.getUInt(p.getBid()))];
+    smt::expr orig_array = array;
     smt::expr idx, val;
 
     auto add_byte = [&](ojson idx, smt::expr val) {
@@ -243,10 +244,15 @@ static ojson memoryBlockToJSON(const IR::State &state, const smt::Model &m,
         bytes.emplace_back(move(tmp));
       }
     } else {
-      // TODO: can this happen?
-      stringstream ss;
-      ss << "ERROR: unknown memory value " << array;
-      bytes.emplace_back(ss.str());
+      // array must be a lambda or something. Check every index.
+      // Clear out the bytes and go back to the original array, to make sure we
+      // don't include the same byte twice.
+      // NOTE: this may time out if the array is absurdly huge.
+      bytes = ojson(json_array_arg);
+      for (uint64_t i = 0; i < size; ++i) {
+        auto byte = orig_array.load(smt::expr::mkUInt(i, IR::Pointer::bitsShortOffset())).simplify();
+        add_byte(i, byte);
+      }
     }
     result["bytes"] = move(bytes);
   }
