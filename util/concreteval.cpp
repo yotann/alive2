@@ -2,6 +2,7 @@
 // Distributed under the MIT license that can be found in the LICENSE file.
 
 #include "util/concreteval.h"
+#include "util/interp.h"
 
 using namespace std;
 using namespace IR;
@@ -1386,4 +1387,113 @@ namespace util{
   void ConcreteValPointer::print() {
     cout << "pointer(poison=" << isPoison() << ", block_id=" << bid << ", offset=" << offset << ")\n";
   }
+
+  ConcreteVal *ConcreteValPointer::evalPoison(ConcreteVal *lhs,
+                                              ConcreteVal *rhs) {
+    
+    if (lhs->isPoison() || rhs->isPoison()) {
+      auto v = new ConcreteValInt(true, llvm::APInt(1,1));
+      v->setPoison(true);
+      return v;
+    }
+    return nullptr;
+  }
+
+  bool ConcreteValPointer::icmp_cmp(llvm::APInt &lhs, llvm::APInt &rhs,
+                                    unsigned cond) {
+    bool icmp_res = false;
+    switch (cond) {
+    case ICmp::Cond::EQ:
+      icmp_res = lhs.eq(rhs);
+      break;
+    case ICmp::Cond::NE:
+      icmp_res = lhs.ne(rhs);
+      break;
+    case ICmp::Cond::SLE:
+      icmp_res = lhs.sle(rhs);
+      break;
+    case ICmp::Cond::SLT:
+      icmp_res = lhs.slt(rhs);
+      break;
+    case ICmp::Cond::SGE:
+      icmp_res = lhs.sge(rhs);
+      break;
+    case ICmp::Cond::SGT:
+      icmp_res = lhs.sgt(rhs);
+      break;
+    case ICmp::Cond::ULE:
+      icmp_res = lhs.ule(rhs);
+      break;
+    case ICmp::Cond::ULT:
+      icmp_res = lhs.ult(rhs);
+      break;
+    case ICmp::Cond::UGE:
+      icmp_res = lhs.uge(rhs);
+      break;
+    case ICmp::Cond::UGT:
+      icmp_res = lhs.ugt(rhs);
+      break;
+    case ICmp::Cond::Any:
+      UNREACHABLE();
+    }
+    return icmp_res;
+
+    UNREACHABLE();
+  }
+
+  static uint64_t compute_ptr_address(ConcreteValPointer *ptr, bool &ov,
+                                      Interpreter &interpreter) {
+    auto &ptr_block = interpreter.getBlock(ptr->getBid(), ptr->getIsLocal());
+    uint64_t addr = 0;
+    ov = __builtin_uaddl_overflow(ptr_block.address, ptr->getOffset(), &addr);
+    return addr;
+  }
+
+  ConcreteVal *ConcreteValPointer::icmp(ConcreteVal *a, ConcreteVal *b,
+                                        unsigned cond, unsigned pcmode,
+                                        Interpreter &interpreter) {
+    auto a_ptr = dynamic_cast<ConcreteValPointer *>(a);
+    auto b_ptr = dynamic_cast<ConcreteValPointer *>(b);
+    assert(a_ptr && b_ptr);
+    auto poison_res = evalPoison(a_ptr, b_ptr);
+    if (poison_res)
+      return poison_res;
+
+    bool lhs_ov = false;
+    bool rhs_ov = false;
+    bool icmp_res = false;
+
+    if (pcmode == ICmp::PtrCmpMode::INTEGRAL) {
+      auto lhs_addr = compute_ptr_address(a_ptr, lhs_ov, interpreter);
+      auto rhs_addr = compute_ptr_address(b_ptr, rhs_ov, interpreter);
+      if (lhs_ov || rhs_ov) {
+        interpreter.UB_flag = true;
+        return nullptr;
+      } else {
+        auto lhs_val = llvm::APInt(64, lhs_addr);
+        auto rhs_val = llvm::APInt(64, rhs_addr);
+        icmp_res = icmp_cmp(lhs_val, rhs_val, cond);
+      }
+    } else if (pcmode == ICmp::PtrCmpMode::PROVENANCE) {
+      assert(cond == ICmp::Cond::EQ || cond == ICmp::Cond::NE);
+      icmp_res = cond == ICmp::Cond::EQ ? *a_ptr == *b_ptr : *a_ptr != *b_ptr;
+    } else if (pcmode == ICmp::PtrCmpMode::OFFSETONLY) {
+      auto lhs_val = llvm::APInt(64, a_ptr->getOffset());
+      auto rhs_val = llvm::APInt(64, a_ptr->getOffset());
+      icmp_res = icmp_cmp(lhs_val, rhs_val, cond);
+    } else {
+      assert(false && "icmp unsupported pointer comparison mode");
+    }
+    cout << "icmp res = " << icmp_res << '\n';
+    if (icmp_res) {
+      auto v = new ConcreteValInt(false, llvm::APInt(1, 1));
+      return v;
+    } else {
+      auto v = new ConcreteValInt(false, llvm::APInt(1, 0));
+      return v;
+    }
+
+    UNREACHABLE();
+  }
 }
+
