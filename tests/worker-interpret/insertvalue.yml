@@ -35,3 +35,37 @@ expected:
   status: done
   undefined: false
   return_value: [5]
+---
+name: insertvalue_extractvalue
+func: alive.interpret
+args:
+  - {}
+  - !ir |
+    define i32 @src() {
+    %agg1 = insertvalue {i32, float} poison, i32 1, 0 
+    %res = extractvalue {i32, float} %agg1, 0
+    ret i32 %res
+    }
+  - args: []
+expected:
+  status: done
+  undefined: false
+  return_value: 1
+---
+name: insertvalue_padding_ident_mod
+func: alive.interpret
+args:
+  - {}
+  - !ir |
+    define { i8, i32 } @f({ i8*, i32 } %x) {
+      %ex = extractvalue { i8*, i32 } %x, 1
+      %ins = insertvalue { i8, i32 } undef, i32 %ex, 1
+      %ins2 = insertvalue { i8, i32 } %ins, i8 42, 0
+      ret { i8, i32 } %ins2
+    }
+
+  - args: [[[1,0], 4]]
+expected:
+  status: done
+  undefined: false
+  return_value: [42, 4]
