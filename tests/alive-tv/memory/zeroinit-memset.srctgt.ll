@@ -1,3 +1,6 @@
+; SKIP-IDENTITY
+; XFAIL: smt tactic failed
+
 ; From Transforms/MemCpyOpt/fca2memcpy.ll
 target datalayout = "e-i64:64-f80:128-n8:16:32:64"
 

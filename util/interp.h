@@ -82,14 +82,14 @@ struct ConcreteByte {
 struct ConcreteBlock {
   uint64_t size;
   uint64_t address;
-  uint64_t align;
+  uint64_t align_bits; // log value (e.g., 3 -> aligned to multiple of 8 bytes)
   std::map<uint64_t, ConcreteByte> bytes;
   ConcreteByte default_byte{};
 
   ConcreteBlock() {}
 
   void print(std::ostream &os) const {
-    os << "size:" << size << ", align:" << align;
+    os << "size:" << size << ", align_bits:" << align_bits;
     if (size == 0)
       assert(bytes.empty());
     else {
@@ -121,7 +121,7 @@ struct ConcreteBlock {
 
   bool operator==(ConcreteBlock &rhs) {
     std::cout << "operator== concreteBlock\n";
-    if ((size != rhs.size) || (address != rhs.address) || (align != rhs.align))
+    if ((size != rhs.size) || (address != rhs.address) || (align_bits != rhs.align_bits))
       return false;
     if (bytes.size() != rhs.bytes.size())
       return false;

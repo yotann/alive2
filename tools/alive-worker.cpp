@@ -315,6 +315,9 @@ calls that are submitted to the server by other programs.
 
     ojson result = evaluateAliveFunc(job);
 
+    if (result.contains("test_input"))
+      result["test_input"] = putNode(result["test_input"]);
+
     lock.lock();
     timeout_millis = 0;
     lock.unlock();

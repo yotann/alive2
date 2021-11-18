@@ -214,6 +214,7 @@ static ojson memoryBlockToJSON(const IR::State &state, const smt::Model &m,
     // For the default byte value, offset is null.
     ojson bytes(json_array_arg);
     smt::expr array = m[state.getMemory().getBlockInit(m.getUInt(p.getBid()))];
+    smt::expr orig_array = array;
     smt::expr idx, val;
 
     auto add_byte = [&](ojson idx, smt::expr val) {
@@ -243,10 +244,15 @@ static ojson memoryBlockToJSON(const IR::State &state, const smt::Model &m,
         bytes.emplace_back(move(tmp));
       }
     } else {
-      // TODO: can this happen?
-      stringstream ss;
-      ss << "ERROR: unknown memory value " << array;
-      bytes.emplace_back(ss.str());
+      // array must be a lambda or something. Check every index.
+      // Clear out the bytes and go back to the original array, to make sure we
+      // don't include the same byte twice.
+      // NOTE: this may time out if the array is absurdly huge.
+      bytes = ojson(json_array_arg);
+      for (uint64_t i = 0; i < size; ++i) {
+        auto byte = orig_array.load(smt::expr::mkUInt(i, IR::Pointer::bitsShortOffset())).simplify();
+        add_byte(i, byte);
+      }
     }
     result["bytes"] = move(bytes);
   }
@@ -439,7 +445,7 @@ ConcreteVal *WorkerInterpreter::loadConcreteVal(const IR::Type &type,
   } else if (type.isPtrType()) {
     if (val.is_array() && val.size() == 2) {
       return new ConcreteValPointer(false, val[0].as<unsigned>(),
-                                    val[1].as<int64_t>());
+                                    val[1].as<int64_t>(), false);
     }
   } else {
     setUnsupported("unknown input type");
@@ -454,7 +460,7 @@ ConcreteBlock WorkerInterpreter::loadConcreteBlock(const ojson &block) {
   ConcreteBlock c_block;
   c_block.size = block["size"].as_integer<uint64_t>();
   c_block.address = 0; // TODO where would this be used
-  c_block.align = block["align"].as_integer<uint64_t>();
+  c_block.align_bits = block["align"].as_integer<uint64_t>();
   
   if (c_block.size == 0 || !block.contains("bytes")) {
     return c_block;
@@ -474,9 +480,10 @@ ConcreteBlock WorkerInterpreter::loadConcreteBlock(const ojson &block) {
       // cout << "pointer byte\n";
       bool is_poison = nonpoison_bits == 255 ? false : true;
       auto ptr_value = json_byte[2];
-      auto concrete_ptr = ConcreteValPointer(is_poison, 
+      auto concrete_ptr = ConcreteValPointer(is_poison,
                                              ptr_value[0].as_integer<uint64_t>(),
-                                             ptr_value[1].as_integer<uint64_t>());
+                                             ptr_value[1].as_integer<uint64_t>(),
+                                             false);
       init_byte = ConcreteByte(move(concrete_ptr));
       init_byte.pointer_byte_offset = ptr_value[2].as_integer<uint64_t>();
     }
@@ -574,7 +581,7 @@ static ojson storeConcreteBlock(const ConcreteBlock &block) {
   ojson result(json_object_arg);
   result["size"] = block.size;
   result["address"] = block.address;
-  result["align"] = block.align;
+  result["align"] = block.align_bits;
   ojson bytes(json_array_arg);
   for (const auto &item : block.bytes) {
     // if (item.second == block.default_byte)

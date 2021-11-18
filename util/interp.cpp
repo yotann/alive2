@@ -69,7 +69,7 @@ ConcreteVal *Interpreter::getPoisonValue(const IR::Type &type) {
           shared_ptr<ConcreteVal>(getPoisonValue(aggregate.getChild(i))));
     return new ConcreteValAggregate(true, move(elements));
   } else if (type.isPtrType()) {
-    return new ConcreteValPointer(true, 0, 0);
+    return new ConcreteValPointer(true, 0, 0, false);
   } else {
     // unsupported
     setUnsupported("type for poison");
@@ -100,7 +100,7 @@ shared_ptr<ConcreteVal> Interpreter::getConstantValue(const Value &i) {
     // TODO
     return shared_ptr<ConcreteVal>(Interpreter::getPoisonValue(i.getType()));
   } else if (dynamic_cast<const NullPointerValue *>(&i)) {
-    return make_shared<ConcreteValPointer>(false, 0, 0);
+    return make_shared<ConcreteValPointer>(false, 0, 0, false);
   } else if (auto const_ptr = dynamic_cast<const IntConst *>(&i)) {
     // need to do this for constants that are larger than i64
     if (const_ptr->getString()) {
