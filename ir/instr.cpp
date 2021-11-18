@@ -2351,8 +2351,8 @@ ICmp::concreteEval(Interpreter &interpreter) const {
   auto concrete_b = b_I->second.get();
 
   if (a->getType().isPtrType()) {
-    interpreter.setUnsupported("pointer icmp");
-    return nullptr;
+    return shared_ptr<ConcreteVal>(ConcreteValPointer::icmp(
+        concrete_a, concrete_b, cond, pcmode, interpreter));
   } else if (a->getType().isVectorType()) {
     interpreter.setUnsupported("vector icmp");
     return nullptr;

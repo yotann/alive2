@@ -22,6 +22,7 @@ struct FastMathFlags;
 }
 
 namespace util {
+class Interpreter;
 class ConcreteVal {
 protected:
   enum Flags { None = 0, Poison = 1 << 0, Undef = 1 << 1 };
@@ -196,6 +197,7 @@ private:
   unsigned bid;
   std::int64_t offset;
   bool is_local{false};
+  static bool icmp_cmp(llvm::APInt &lhs, llvm::APInt &rhs, unsigned cond);
 
 protected:
   virtual bool equals(ConcreteVal &rhs) override {
@@ -213,5 +215,8 @@ public:
   std::int64_t getOffset() const;
   void setOffset(std::int64_t offset);
   void print() override;
+
+  static ConcreteVal *evalPoison(ConcreteVal *lhs, ConcreteVal *rhs);
+  static ConcreteVal *icmp(ConcreteVal *a, ConcreteVal *b, unsigned cond, unsigned pcmode, Interpreter &interpreter);
 };
 } // namespace util
