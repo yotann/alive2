@@ -35,7 +35,7 @@ def run_command(command_list, echo=True, timout=10):
         print("executing:" + ' '.join(command_list))
     try:
         pr = subprocess.run(command_list, capture_output=True,
-                            check=True, timeout=timout, universal_newlines=True)
+                            check=True, timeout=timout)
     except subprocess.CalledProcessError as e:
         #print(
         #    f'run_command {" ".join(e.cmd)} returned with non_zero exit code')
@@ -63,18 +63,25 @@ def run_alive_worker(yaml_path: str, alive_worker_path : str, timeout: int = 10)
     #    return stdout, timed_out
     return stdout, stderr, timed_out
 
+
 def run_directory_w_alive_worker(src_dir: str, alive_worker_path: str, timeout: int = 10):
     #print(f'run_directory_w_alive_worker src_dir={src_dir}, alive_worker_path={alive_worker_path}')
     files = os.listdir(src_dir)
-    fn_pass_count, fn_fail_count = 0, 0
+    dir_pass_count, dir_fail_count, dir_timeout_count = 0, 0, 0
+    fn_pass_count, fn_fail_count, timed_out_count = 0, 0, 0
     failed_tests = []
-    timed_out_count = 0
     timed_out_tests = []
     for src_file_dir in files:
         f_path = os.path.join(src_dir, src_file_dir)
         if os.path.isdir(f_path):
-            run_directory_w_alive_worker(f_path, alive_worker_path, timeout)
-        alive_stdout, alive_stderr, timed_out = run_alive_worker(f_path, alive_worker_path, timeout) 
+            sub_fn_pass_count, sub_fn_fail_count, sub_timed_out_count = run_directory_w_alive_worker(
+                f_path, alive_worker_path, timeout)
+            dir_pass_count+=sub_fn_pass_count
+            dir_fail_count+=sub_fn_fail_count
+            dir_timeout_count+=sub_timed_out_count
+            continue
+        alive_stdout, alive_stderr, timed_out = run_alive_worker(
+            f_path, alive_worker_path, timeout)
         failed = False
         if not timed_out:
             #print(f'alive_stdout:\n{alive_stdout}-----')
@@ -94,6 +101,9 @@ def run_directory_w_alive_worker(src_dir: str, alive_worker_path: str, timeout: 
     print(f'# functions passed: {fn_pass_count}')
     print(f'# functions failed: {fn_fail_count}')
     print(f'# tests timed out: {timed_out_count}')
+    dir_pass_count+=fn_pass_count
+    dir_fail_count+=fn_fail_count
+    dir_timeout_count+=timed_out_count
     if len(failed_tests) > 0:
         print('---failed tests---')
         for failed_test in failed_tests:
@@ -102,11 +112,46 @@ def run_directory_w_alive_worker(src_dir: str, alive_worker_path: str, timeout: 
         print('---timed out tests---')
         for timed_out_test in timed_out_tests:
             print(timed_out_test)
+    # , failed_tests, timed_out_tests
+    return dir_pass_count, dir_fail_count, dir_timeout_count
 
+
+def run_directory_w_alive_tv(src_dir: str, alive_tv_path: str, timeout: int = 10):
+    #print(f'run_directory_w_alive_tv src_dir={src_dir}, alive_tv_path={alive_tv_path}')
+    files = os.listdir(src_dir)
+    dir_return_count, dir_timeout_count = 0, 0
+    test_return_count, timed_out_count = 0, 0
+    timed_out_tests = []
+    for src_file_dir in files:
+        f_path = os.path.join(src_dir, src_file_dir)
+        if os.path.isdir(f_path):
+            sub_timed_out_count, sub_return_count = run_directory_w_alive_tv(
+                f_path, alive_tv_path, timeout)
+            dir_return_count+=sub_return_count
+            dir_timeout_count+=sub_timed_out_count
+            continue
+        _, _, _, timed_out = run_command([alive_tv_path, f_path], echo=False, timout=timeout)
+        if timed_out:
+            timed_out_count += 1
+            timed_out_tests.append(src_file_dir)
+        else: 
+            test_return_count += 1
         
+    print(f'---{src_dir} alive-tv timout result---')
+    print(f'# tests returned: {test_return_count}')
+    print(f'# tests timed out: {timed_out_count}')
+    dir_return_count+=test_return_count
+    dir_timeout_count+=timed_out_count
+    
+    if timed_out_count:
+        print('---timed out tests---')
+        for timed_out_test in timed_out_tests:
+            print(timed_out_test)
+    # , failed_tests, timed_out_tests
+    return dir_timeout_count, dir_return_count
 
 # read an .ll file and return a list of IrTag objects
-def read_alive_test_src_tgt(file_name: str):
+def read_ir_file(file_name: str):
     fns = []
     decls = []
     with open(file_name, 'r') as in_stream:
@@ -199,7 +244,7 @@ def convert_test_to_alive_tv_yaml(src_path: str, tgt_dir: str):
         tgt_path = os.path.join(tgt_dir, tgt_file)
         # print(tgt_file)
         # print(tgt_path)
-        ir_tags = read_alive_test_src_tgt(src_path)
+        ir_tags = read_ir_file(src_path)
         if (len(ir_tags) != 2):
             print(f'{src_path} has {len(ir_tags)} ir_tags, expected 2')
             return 0
@@ -208,6 +253,16 @@ def convert_test_to_alive_tv_yaml(src_path: str, tgt_dir: str):
         generate_yaml(tgt_path, tgt_file, 'alive.tv_v2',
                       [{'disable_undef_input': False, 'disable_poison_input': False}], ir_tags)
         return 2
+    elif src_file.endswith(".ll"):
+        src_prefix = src_file.index(".ll")
+        tgt_file = src_file[:src_prefix] + ".alive-tv.yaml"
+        tgt_path = os.path.join(tgt_dir, tgt_file)
+        ir_tags = read_ir_file(src_path)
+        if (len(ir_tags) == 0):
+            return 0
+        generate_yaml(tgt_path, tgt_file, 'alive.tv_v2',
+                      [{'disable_undef_input': False, 'disable_poison_input': False}], ir_tags)
+        return len(ir_tags)
     else:
         return 0
 
@@ -304,7 +359,7 @@ def convert_directory_to_alive_worker(src_dir: str, tgt_dir: str, executable_pat
 
  
 if __name__ == "__main__":
-    #ir_tags = read_alive_test_src_tgt('/home/nader/code/nader_alive2/tests/alive-tv/bugs/pr32872.srctgt.ll')
+    #ir_tags = read_ir_file('/home/nader/code/nader_alive2/tests/alive-tv/bugs/pr32872.srctgt.ll')
     #print(ir_tags)
     #exit()
     parser = argparse.ArgumentParser(
@@ -316,6 +371,8 @@ if __name__ == "__main__":
                         default=None, nargs='+')
     parser.add_argument('-e', '--exec', dest='worker_exec',
                         help='run <alive-worker-test> on contents of <input_dir>', default=None, nargs='+')
+    parser.add_argument('-tv', '--tvalidation', dest='tv_args',
+                        help='run <alive-tv> on contents of <input_dir> and report timeouts', default=None, nargs='+')
     opts = parser.parse_args()
 
     if opts.convert_tv and opts.convert_interp:
@@ -331,5 +388,18 @@ if __name__ == "__main__":
 
     if opts.worker_exec:
         print(opts.worker_exec)
-        run_directory_w_alive_worker(opts.worker_exec[1], opts.worker_exec[0])
-    
+        tests_passed, tests_fail, tests_timout = run_directory_w_alive_worker(opts.worker_exec[1], opts.worker_exec[0])
+        print(f'---aggregate result---')
+        print(f'# functions passed : {tests_passed}')
+        print(f'# functions failed : {tests_fail}')
+        print(f'# tests timedout : {tests_timout}')
+        print(f'# % functions passed: {tests_passed/(tests_passed+tests_fail+tests_timout)*100:.2f}')
+
+    if opts.tv_args:
+        print(opts.tv_args)
+        assert(opts.tv_args[2].isnumeric() and 'alive-tv timout should be an integer value')
+        tests_timout, tests_return = run_directory_w_alive_tv(opts.tv_args[1], opts.tv_args[0], int(opts.tv_args[2]) )
+        print(f'---aggregate result---')
+        print(f'# tests returned : {tests_return}')
+        print(f'# tests timed out : {tests_timout}')
+        print(f'# % functions returned : {tests_return/(tests_timout+tests_return)*100:.2f}')
