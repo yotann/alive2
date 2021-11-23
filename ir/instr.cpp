@@ -845,16 +845,15 @@ BinOp::concreteEval(Interpreter &interpreter) const {
     }
   }  
   
-  // bool firstOp = true;
-  // bool nsw_flag = flags & NSW;
-  // bool nuw_flag = flags & NUW;
-  // bool exact_flag = flags & Exact;
   auto lhs_concrete = interpreter.concrete_vals.find(lhs)->second;
   auto rhs_concrete = interpreter.concrete_vals.find(rhs)->second;
   auto lhs_vect = dynamic_cast<ConcreteValAggregate *>(lhs_concrete.get());
   if (lhs_vect) {
-    interpreter.setUnsupported("vector operand to binary operator");
-    return nullptr;
+    auto res = shared_ptr<ConcreteVal>(ConcreteValAggregate::evalBinOp(lhs_concrete.get(), rhs_concrete.get(), op, flags));
+    if (!res) {
+      interpreter.setUnsupported("vector binop issue");
+    }
+    return res;
   }
   if (op == Op::Add) {
     return shared_ptr<ConcreteVal>(
@@ -2354,11 +2353,15 @@ ICmp::concreteEval(Interpreter &interpreter) const {
     return shared_ptr<ConcreteVal>(ConcreteValPointer::icmp(
         concrete_a, concrete_b, cond, pcmode, interpreter));
   } else if (a->getType().isVectorType()) {
-    interpreter.setUnsupported("vector icmp");
-    return nullptr;
-  } else {
+    return shared_ptr<ConcreteVal>(ConcreteValAggregate::icmp(
+        concrete_a, concrete_b, cond, pcmode, interpreter));
+  } else if (a->getType().isIntType()) {
     return shared_ptr<ConcreteVal>(
         ConcreteValInt::icmp(concrete_a, concrete_b, cond));
+  }
+  else {
+    interpreter.setUnsupported("icmp type not supported");
+    return nullptr;
   }
 }
 

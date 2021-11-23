@@ -1353,6 +1353,77 @@ namespace util{
     cout << ">" << '\n';
   }
 
+  ConcreteVal *ConcreteValAggregate::evalBinOp(ConcreteVal *lhs,
+                                               ConcreteVal *rhs,
+                                               unsigned opcode, unsigned flags) {
+    auto lhs_vect = dynamic_cast<ConcreteValAggregate *>(lhs);
+    auto rhs_vect = dynamic_cast<ConcreteValAggregate *>(rhs);
+    assert(lhs_vect && rhs_vect);
+    assert(lhs_vect->elements.size() == rhs_vect->elements.size());
+    vector<shared_ptr<ConcreteVal>> elements;
+    bool all_poison = true;
+    for (unsigned i = 0; i < lhs_vect->elements.size(); i++) {
+      auto lhs_elem = lhs_vect->elements[i];
+      auto rhs_elem = rhs_vect->elements[i];
+      auto int_elem = dynamic_cast<ConcreteValInt *>(lhs_elem.get());
+      auto float_elem = dynamic_cast<ConcreteValFloat *>(lhs_elem.get());
+      assert(int_elem || float_elem);
+      ConcreteVal* res_elem = nullptr;
+      if (opcode == BinOp::Op::Add) {
+        res_elem = ConcreteValInt::add(lhs_elem.get(), rhs_elem.get(), flags);
+      }
+      else if (opcode == BinOp::Op::Xor) {
+        res_elem = ConcreteValInt::xorOp(lhs_elem.get(), rhs_elem.get());
+      }
+      else {
+        return nullptr;
+      }
+      assert(res_elem);
+      if (!res_elem->isPoison()) {
+        all_poison = false;
+      }
+      elements.push_back(shared_ptr<ConcreteVal>(res_elem));
+    }
+    auto res = new ConcreteValAggregate(all_poison, move(elements));
+    res->print();
+    return res;
+  }
+
+  ConcreteVal *ConcreteValAggregate::icmp(ConcreteVal *a, ConcreteVal *b,
+                                          unsigned cond, unsigned pcmode,
+                                          Interpreter &interpreter) {
+    auto lhs_vect = dynamic_cast<ConcreteValAggregate *>(a);
+    auto rhs_vect = dynamic_cast<ConcreteValAggregate *>(b);
+    assert(lhs_vect && rhs_vect);
+    assert(lhs_vect->elements.size() > 0 &&
+           lhs_vect->elements.size() == rhs_vect->elements.size());
+    auto first_elem = lhs_vect->elements[0].get();
+    auto int_elem = dynamic_cast<ConcreteValInt *>(first_elem);
+    auto ptr_elem = dynamic_cast<ConcreteValPointer *>(first_elem);
+    assert((int_elem || ptr_elem) &&
+           "icmp vector elements must either have int or pointer type");
+    vector<shared_ptr<ConcreteVal>> elements;
+    bool all_poison = true;
+    for (unsigned i = 0; i < lhs_vect->elements.size(); i++) {
+      auto lhs_elem = lhs_vect->elements[i];
+      auto rhs_elem = rhs_vect->elements[i];
+      if (int_elem) {
+        auto res_elem =
+            ConcreteValInt::icmp(lhs_elem.get(), rhs_elem.get(), cond);
+        elements.push_back(shared_ptr<ConcreteVal>(res_elem));
+        if (!res_elem->isPoison()) {
+          all_poison = false;
+        }
+      } else { // TODO: add support for pointer comparison
+        interpreter.setUnsupported(
+            "icmp vector pointer type not supported yet");
+        return nullptr;
+      }
+    }
+
+    return new ConcreteValAggregate(all_poison, move(elements));
+  }
+
   ConcreteValPointer::ConcreteValPointer()
       : ConcreteVal(false), bid(0), offset(0) {}
 

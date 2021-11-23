@@ -1,0 +1,31 @@
+---
+name: add_vect_i32
+func: alive.interpret
+args:
+  - {}
+  - !ir | 
+    define <2 x i8> @test9vec(<2 x i8> %a) {
+      %b = add <2 x i8> %a, <i8 12, i8 40>
+      ret <2 x i8> %b
+    }
+  - args: [[10, 11]]
+expected:
+  status: done
+  undefined: false
+  return_value: [22, 51]
+---
+name: xor_vect_i8
+func: alive.interpret
+args:
+  - {}
+  - !ir | 
+    define <2 x i1> @test9vec(<2 x i8> %a) {
+      %b = xor <2 x i8> %a, <i8 123, i8 123>
+      %c = icmp eq <2 x i8> %b, <i8 34, i8 34>
+      ret <2 x i1> %c
+    }
+  - args: [[10, 89]]
+expected:
+  status: done
+  undefined: false
+  return_value: [0, -1]
