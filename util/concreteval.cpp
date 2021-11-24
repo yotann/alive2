@@ -267,7 +267,7 @@ namespace util{
     if (poison_res) 
       return poison_res;
 
-    auto v = new ConcreteValInt(true, llvm::APInt(lhs_int->val.getBitWidth(),0));
+    auto v = new ConcreteValInt(false, llvm::APInt(lhs_int->val.getBitWidth(),0));
     bool exact_flag = flags & BinOp::Flags::Exact;
     auto remainder = llvm::APInt();
     auto quotient = llvm::APInt();
@@ -1355,7 +1355,9 @@ namespace util{
 
   ConcreteVal *ConcreteValAggregate::evalBinOp(ConcreteVal *lhs,
                                                ConcreteVal *rhs,
-                                               unsigned opcode, unsigned flags) {
+                                               unsigned opcode,
+                                               unsigned flags,
+                                               Interpreter &interpreter) {
     auto lhs_vect = dynamic_cast<ConcreteValAggregate *>(lhs);
     auto rhs_vect = dynamic_cast<ConcreteValAggregate *>(rhs);
     assert(lhs_vect && rhs_vect);
@@ -1368,17 +1370,35 @@ namespace util{
       auto int_elem = dynamic_cast<ConcreteValInt *>(lhs_elem.get());
       auto float_elem = dynamic_cast<ConcreteValFloat *>(lhs_elem.get());
       assert(int_elem || float_elem);
-      ConcreteVal* res_elem = nullptr;
-      if (opcode == BinOp::Op::Add) {
+      ConcreteVal *res_elem = nullptr;
+      switch (opcode) {
+      case BinOp::Op::Add:
         res_elem = ConcreteValInt::add(lhs_elem.get(), rhs_elem.get(), flags);
-      }
-      else if (opcode == BinOp::Op::Xor) {
+        break;
+      case BinOp::Op::Sub:
+        res_elem = ConcreteValInt::sub(lhs_elem.get(), rhs_elem.get(), flags);
+        break;
+      case BinOp::Op::Mul:
+        res_elem = ConcreteValInt::mul(lhs_elem.get(), rhs_elem.get(), flags);
+        break;
+      case BinOp::Op::SDiv:
+        res_elem = ConcreteValInt::sdiv(lhs_elem.get(), rhs_elem.get(), flags, interpreter.UB_flag);
+        break;
+      case BinOp::Op::UDiv:
+        res_elem = ConcreteValInt::udiv(lhs_elem.get(), rhs_elem.get(), flags, interpreter.UB_flag);
+        break;
+      case BinOp::Op::Xor:
         res_elem = ConcreteValInt::xorOp(lhs_elem.get(), rhs_elem.get());
+        break;
+      default:
+        res_elem = nullptr;
+        break;
       }
-      else {
+
+      if (!res_elem) {
         return nullptr;
       }
-      assert(res_elem);
+
       if (!res_elem->isPoison()) {
         all_poison = false;
       }

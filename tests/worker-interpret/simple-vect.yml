@@ -14,6 +14,21 @@ expected:
   undefined: false
   return_value: [22, 51]
 ---
+name: mul_vect_i32
+func: alive.interpret
+args:
+  - {}
+  - !ir | 
+    define <2 x i32> @pow2_multiplier_vec(<2 x i32> %A) {
+      %B = mul <2 x i32> %A, <i32 8, i32 8>
+      ret <2 x i32> %B
+    }
+  - args: [[33, 121]]
+expected:
+  status: done
+  undefined: false
+  return_value: [264, 968]
+---
 name: xor_vect_i8
 func: alive.interpret
 args:
@@ -29,3 +44,60 @@ expected:
   status: done
   undefined: false
   return_value: [0, -1]
+---
+name: sub_vect_i32
+func: alive.interpret
+args:
+  - {}
+  - !ir | 
+    define <2 x i32> @sub_constant_vec(<2 x i32> %x) {
+      %r = sub <2 x i32> %x, <i32 42, i32 -12>
+      ret <2 x i32> %r
+    }
+  - args: [[42, 12]]
+expected:
+  status: done
+  undefined: false
+  return_value: [0, 24]
+---
+name: sdiv_vect_i32
+func: alive.interpret
+args:
+  - {}
+  - !ir | 
+    define <2 x i32> @test_sdiv_canonicalize_vec(<2 x i32> %x, <2 x i32> %y) {
+    ; CHECK-LABEL: @test_sdiv_canonicalize_vec(
+    ; CHECK-NEXT:    [[SDIV1:%.*]] = sdiv <2 x i32> [[X:%.*]], [[Y:%.*]]
+    ; CHECK-NEXT:    [[SDIV:%.*]] = sub nsw <2 x i32> zeroinitializer, [[SDIV1]]
+    ; CHECK-NEXT:    ret <2 x i32> [[SDIV]]
+    ;
+      %neg = sub nsw <2 x i32> <i32 0, i32 0>, %x
+      %sdiv = sdiv <2 x i32> %neg, %y
+      ret <2 x i32> %sdiv
+    }
+  - args: [[42, 12],[2,2]]
+expected:
+  status: done
+  undefined: false
+  return_value: [-21, -6]
+---
+name: udiv_vect_i32
+func: alive.interpret
+args:
+  - {}
+  - !ir | 
+    define <2 x i32> @test_sdiv_canonicalize_vec(<2 x i32> %x, <2 x i32> %y) {
+    ; CHECK-LABEL: @test_sdiv_canonicalize_vec(
+    ; CHECK-NEXT:    [[SDIV1:%.*]] = sdiv <2 x i32> [[X:%.*]], [[Y:%.*]]
+    ; CHECK-NEXT:    [[SDIV:%.*]] = sub nsw <2 x i32> zeroinitializer, [[SDIV1]]
+    ; CHECK-NEXT:    ret <2 x i32> [[SDIV]]
+    ;
+      %neg = sub nsw <2 x i32> <i32 0, i32 0>, %x
+      %udiv = udiv <2 x i32> %neg, %y
+      ret <2 x i32> %udiv
+    }
+  - args: [[42, 12],[2,2]]
+expected:
+  status: done
+  undefined: false
+  return_value: [2147483627, 2147483642]

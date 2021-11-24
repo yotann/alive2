@@ -849,7 +849,7 @@ BinOp::concreteEval(Interpreter &interpreter) const {
   auto rhs_concrete = interpreter.concrete_vals.find(rhs)->second;
   auto lhs_vect = dynamic_cast<ConcreteValAggregate *>(lhs_concrete.get());
   if (lhs_vect) {
-    auto res = shared_ptr<ConcreteVal>(ConcreteValAggregate::evalBinOp(lhs_concrete.get(), rhs_concrete.get(), op, flags));
+    auto res = shared_ptr<ConcreteVal>(ConcreteValAggregate::evalBinOp(lhs_concrete.get(), rhs_concrete.get(), op, flags, interpreter));
     if (!res) {
       interpreter.setUnsupported("vector binop issue");
     }

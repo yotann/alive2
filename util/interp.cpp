@@ -332,6 +332,8 @@ void interp(Function &f) {
     exit(EXIT_FAILURE);
   }
   if (interpreter.isUnsupported()) {
+    cout << "ERROR: Interpreter unsupported. reason: "
+         << interpreter.unsupported_reason << '\n';
     exit(EXIT_FAILURE);
   }
 
