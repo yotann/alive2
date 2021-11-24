@@ -1387,6 +1387,30 @@ namespace util{
       case BinOp::Op::UDiv:
         res_elem = ConcreteValInt::udiv(lhs_elem.get(), rhs_elem.get(), flags, interpreter.UB_flag);
         break;
+      case BinOp::Op::SRem:
+        res_elem = ConcreteValInt::srem(lhs_elem.get(), rhs_elem.get(), flags, interpreter.UB_flag);
+        break;
+      case BinOp::Op::URem:
+        res_elem = ConcreteValInt::urem(lhs_elem.get(), rhs_elem.get(), flags, interpreter.UB_flag);
+        break;
+      case BinOp::Op::SAdd_Sat:
+        res_elem = ConcreteValInt::sAddSat(lhs_elem.get(), rhs_elem.get(), flags);
+        break;
+      case BinOp::Op::UAdd_Sat:
+        res_elem = ConcreteValInt::uAddSat(lhs_elem.get(), rhs_elem.get(), flags);
+        break;
+      case BinOp::Op::SSub_Sat:
+        res_elem = ConcreteValInt::sSubSat(lhs_elem.get(), rhs_elem.get(), flags);
+        break;
+      case BinOp::Op::USub_Sat:
+        res_elem = ConcreteValInt::uSubSat(lhs_elem.get(), rhs_elem.get(), flags);
+        break;
+      case BinOp::Op::SShl_Sat:
+        res_elem = ConcreteValInt::sShlSat(lhs_elem.get(), rhs_elem.get(), flags);
+        break;
+      case BinOp::Op::UShl_Sat:
+        res_elem = ConcreteValInt::uShlSat(lhs_elem.get(), rhs_elem.get(), flags);
+        break;
       case BinOp::Op::Xor:
         res_elem = ConcreteValInt::xorOp(lhs_elem.get(), rhs_elem.get());
         break;
