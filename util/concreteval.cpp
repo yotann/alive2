@@ -1363,7 +1363,6 @@ namespace util{
     assert(lhs_vect && rhs_vect);
     assert(lhs_vect->elements.size() == rhs_vect->elements.size());
     vector<shared_ptr<ConcreteVal>> elements;
-    bool all_poison = true;
     for (unsigned i = 0; i < lhs_vect->elements.size(); i++) {
       auto lhs_elem = lhs_vect->elements[i];
       auto rhs_elem = rhs_vect->elements[i];
@@ -1423,12 +1422,9 @@ namespace util{
         return nullptr;
       }
 
-      if (!res_elem->isPoison()) {
-        all_poison = false;
-      }
       elements.push_back(shared_ptr<ConcreteVal>(res_elem));
     }
-    auto res = new ConcreteValAggregate(all_poison, move(elements));
+    auto res = new ConcreteValAggregate(false, move(elements));
     res->print();
     return res;
   }
