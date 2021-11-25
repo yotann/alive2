@@ -843,13 +843,14 @@ BinOp::concreteEval(Interpreter &interpreter) const {
               "Aborting\n";
       assert(false);
     }
-  }  
-  
+  }
+
   auto lhs_concrete = interpreter.concrete_vals.find(lhs)->second;
   auto rhs_concrete = interpreter.concrete_vals.find(rhs)->second;
   auto lhs_vect = dynamic_cast<ConcreteValAggregate *>(lhs_concrete.get());
   if (lhs_vect) {
-    auto res = shared_ptr<ConcreteVal>(ConcreteValAggregate::evalBinOp(lhs_concrete.get(), rhs_concrete.get(), op, flags, interpreter));
+    auto res = shared_ptr<ConcreteVal>(ConcreteValAggregate::evalBinOp(
+        lhs_concrete.get(), rhs_concrete.get(), op, flags, fmath, interpreter));
     if (!res) {
       interpreter.setUnsupported("vector binop issue");
     }

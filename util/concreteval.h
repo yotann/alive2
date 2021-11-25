@@ -191,7 +191,9 @@ public:
   const std::vector<std::shared_ptr<ConcreteVal>> &getVal() const;
   void print() override;
   static ConcreteVal *evalBinOp(ConcreteVal *lhs, ConcreteVal *rhs,
-                                unsigned opcode, unsigned flags, Interpreter &interpreter);
+                                unsigned opcode, unsigned flags,
+                                IR::FastMathFlags fmath,
+                                Interpreter &interpreter);
   static ConcreteVal *icmp(ConcreteVal *a, ConcreteVal *b, unsigned cond,
                            unsigned pcmode, Interpreter &interpreter);
 };

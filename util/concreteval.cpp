@@ -956,8 +956,8 @@ namespace util{
       return fmath_input_res;
 
     auto v = new ConcreteValFloat(false, llvm::APFloat(lhs_float->val));
-    auto status = v->val.add(rhs_float->val, llvm::APFloatBase::rmNearestTiesToEven);
-    assert(status == llvm::APFloatBase::opOK);
+    v->val.add(rhs_float->val, llvm::APFloatBase::rmNearestTiesToEven);
+    // assert(status == llvm::APFloatBase::opOK);
     unOPEvalFmath(v, fmath);
     return v;
     
@@ -1103,8 +1103,8 @@ namespace util{
       return fmath_input_res;
 
     auto v = new ConcreteValFloat(false, llvm::APFloat(lhs_float->val));
-    auto status = v->val.subtract(rhs_float->val, llvm::APFloatBase::rmNearestTiesToEven);
-    assert(status == llvm::APFloatBase::opOK);
+    v->val.subtract(rhs_float->val, llvm::APFloatBase::rmNearestTiesToEven);
+    //assert(status == llvm::APFloatBase::opOK);
     unOPEvalFmath(v, fmath);
     return v;
     
@@ -1124,8 +1124,8 @@ namespace util{
       return fmath_input_res;
 
     auto v = new ConcreteValFloat(false, llvm::APFloat(lhs_float->val));
-    auto status = v->val.multiply(rhs_float->val, llvm::APFloatBase::rmNearestTiesToEven);
-    assert(status == llvm::APFloatBase::opOK);
+    v->val.multiply(rhs_float->val, llvm::APFloatBase::rmNearestTiesToEven);
+    //assert(status == llvm::APFloatBase::opOK);
     unOPEvalFmath(v, fmath);
     return v;
     
@@ -1145,8 +1145,8 @@ namespace util{
       return fmath_input_res;
 
     auto v = new ConcreteValFloat(false, llvm::APFloat(lhs_float->val));
-    auto status = v->val.divide(rhs_float->val, llvm::APFloatBase::rmNearestTiesToEven);
-    assert(status == llvm::APFloatBase::opOK);
+    v->val.divide(rhs_float->val, llvm::APFloatBase::rmNearestTiesToEven);
+    //assert(status == llvm::APFloatBase::opOK);
     unOPEvalFmath(v, fmath);
     return v;
     
@@ -1166,8 +1166,8 @@ namespace util{
       return fmath_input_res;
 
     auto v = new ConcreteValFloat(false, llvm::APFloat(lhs_float->val));
-    auto status = v->val.mod(rhs_float->val);
-    assert(status == llvm::APFloatBase::opOK);
+    v->val.mod(rhs_float->val);
+    //assert(status == llvm::APFloatBase::opOK);
     unOPEvalFmath(v, fmath);
     return v;
     
@@ -1357,6 +1357,7 @@ namespace util{
                                                ConcreteVal *rhs,
                                                unsigned opcode,
                                                unsigned flags,
+                                               IR::FastMathFlags fmath,
                                                Interpreter &interpreter) {
     auto lhs_vect = dynamic_cast<ConcreteValAggregate *>(lhs);
     auto rhs_vect = dynamic_cast<ConcreteValAggregate *>(rhs);
@@ -1409,6 +1410,18 @@ namespace util{
         break;
       case BinOp::Op::UShl_Sat:
         res_elem = ConcreteValInt::uShlSat(lhs_elem.get(), rhs_elem.get(), flags);
+        break;
+      case BinOp::Op::FAdd:
+        res_elem = ConcreteValFloat::fadd(lhs_elem.get(), rhs_elem.get(), fmath);
+        break;
+      case BinOp::Op::FSub:
+        res_elem = ConcreteValFloat::fsub(lhs_elem.get(), rhs_elem.get(), fmath);
+        break;
+      case BinOp::Op::FMul:
+        res_elem = ConcreteValFloat::fmul(lhs_elem.get(), rhs_elem.get(), fmath);
+        break;
+      case BinOp::Op::FDiv:
+        res_elem = ConcreteValFloat::fdiv(lhs_elem.get(), rhs_elem.get(), fmath);
         break;
       case BinOp::Op::Xor:
         res_elem = ConcreteValInt::xorOp(lhs_elem.get(), rhs_elem.get());
