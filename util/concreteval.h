@@ -122,6 +122,8 @@ public:
                                              std::shared_ptr<ConcreteVal> &a,
                                              std::shared_ptr<ConcreteVal> &b);
   static ConcreteVal *icmp(ConcreteVal *a, ConcreteVal *b, unsigned cond);
+  static ConcreteVal *fshl(ConcreteVal *a, ConcreteVal *b, ConcreteVal* c);
+  static ConcreteVal *fshr(ConcreteVal *a, ConcreteVal *b, ConcreteVal* c);
 };
 
 class ConcreteValFloat : public ConcreteVal {

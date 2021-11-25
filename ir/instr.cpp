@@ -836,7 +836,7 @@ bool BinOp::isDivOrRem() const {
 std::shared_ptr<util::ConcreteVal>
 BinOp::concreteEval(Interpreter &interpreter) const {
   auto v_op = operands();
-  for (auto operand: v_op){
+  for (auto operand : v_op) {
     auto I = interpreter.concrete_vals.find(operand);
     if (I == interpreter.concrete_vals.end()) {
       cout << "[BinOp::concreteEval] concrete values for operand not found. "
@@ -1383,8 +1383,8 @@ unique_ptr<Instr> TernaryOp::dup(const string &suffix) const {
 
 std::shared_ptr<util::ConcreteVal>
 TernaryOp::concreteEval(Interpreter &interpreter) const {
-  auto v_op = operands();  
-  for (auto operand: v_op){
+  auto v_op = operands();
+  for (auto operand : v_op) {
     auto I = interpreter.concrete_vals.find(operand);
     if (I == interpreter.concrete_vals.end()) {
       cout << "ERROR : [TernaryOp::concreteEval] concrete values for operand "
@@ -1398,11 +1398,18 @@ TernaryOp::concreteEval(Interpreter &interpreter) const {
   auto op_b_concrete = interpreter.concrete_vals.find(b)->second.get();
   auto op_c_concrete = interpreter.concrete_vals.find(c)->second.get();
 
-  if (op == Op::FMA){
+  if (op == Op::FMA) {
     // CHECK Should we check the opStatus from the fusedMultipyAdd?
     return shared_ptr<ConcreteVal>(
         ConcreteValFloat::fma(op_a_concrete, op_b_concrete, op_c_concrete));
-  } else {
+  } else if (op == Op::FShl) {
+    return shared_ptr<ConcreteVal>(
+        ConcreteValInt::fshl(op_a_concrete, op_b_concrete, op_c_concrete));
+  } else if (op == Op::FShr) {
+    return shared_ptr<ConcreteVal>(
+        ConcreteValInt::fshr(op_a_concrete, op_b_concrete, op_c_concrete));
+  }
+  else {
     interpreter.setUnsupported(getOpcodeName());
     return nullptr;
   }

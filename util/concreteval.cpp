@@ -847,6 +847,45 @@ namespace util{
     UNREACHABLE();
   }
 
+  ConcreteVal *ConcreteValInt::fshl(ConcreteVal *a, ConcreteVal *b,
+                                    ConcreteVal *c) {
+    auto a_int = dynamic_cast<ConcreteValInt *>(a);
+    auto b_int = dynamic_cast<ConcreteValInt *>(b);
+    auto c_int = dynamic_cast<ConcreteValInt *>(c);
+    assert(a_int && b_int && c_int);
+    auto op_bitwidth = c_int->val.getBitWidth();
+    auto poison_res = evalPoison(a, b, c);
+
+    if (poison_res)
+      return poison_res;
+
+    auto shift_amt = c_int->val.urem(op_bitwidth);
+    auto tmp_val = a_int->val.concat(b_int->val).shl(shift_amt);
+    auto res_val =
+        tmp_val.extractBits(op_bitwidth, tmp_val.getBitWidth() - op_bitwidth);
+    auto v = new ConcreteValInt(false, move(res_val));
+    return v;
+  }
+
+  ConcreteVal *ConcreteValInt::fshr(ConcreteVal *a, ConcreteVal *b,
+                                    ConcreteVal *c) {
+    auto a_int = dynamic_cast<ConcreteValInt *>(a);
+    auto b_int = dynamic_cast<ConcreteValInt *>(b);
+    auto c_int = dynamic_cast<ConcreteValInt *>(c);
+    assert(a_int && b_int && c_int);
+    auto op_bitwidth = c_int->val.getBitWidth();
+    auto poison_res = evalPoison(a, b, c);
+
+    if (poison_res)
+      return poison_res;
+
+    auto shift_amt = c_int->val.urem(op_bitwidth);
+    auto tmp_val = a_int->val.concat(b_int->val).lshr(shift_amt);
+    auto res_val = tmp_val.extractBits(op_bitwidth, 0);
+    auto v = new ConcreteValInt(false, move(res_val));
+    return v;
+  }
+
   ConcreteValFloat::ConcreteValFloat(bool poison, llvm::APFloat &&val)
   : ConcreteVal(poison), val(move(val)) {
 
@@ -1423,8 +1462,47 @@ namespace util{
       case BinOp::Op::FDiv:
         res_elem = ConcreteValFloat::fdiv(lhs_elem.get(), rhs_elem.get(), fmath);
         break;
+      case BinOp::Op::FRem:
+        res_elem = ConcreteValFloat::frem(lhs_elem.get(), rhs_elem.get(), fmath);
+        break;
+      case BinOp::Op::FMax:
+        res_elem = ConcreteValFloat::fmax(lhs_elem.get(), rhs_elem.get(), fmath);
+        break;
+      case BinOp::Op::FMin:
+        res_elem = ConcreteValFloat::fmin(lhs_elem.get(), rhs_elem.get(), fmath);
+        break;
+      case BinOp::Op::FMaximum:
+        res_elem = ConcreteValFloat::fmaximum(lhs_elem.get(), rhs_elem.get(), fmath);
+        break;
+      case BinOp::Op::FMinimum:
+        res_elem = ConcreteValFloat::fminimum(lhs_elem.get(), rhs_elem.get(), fmath);
+        break;
+      case BinOp::Op::And:
+        res_elem = ConcreteValInt::andOp(lhs_elem.get(), rhs_elem.get());
+        break;
+      case BinOp::Op::Or:
+        res_elem = ConcreteValInt::orOp(lhs_elem.get(), rhs_elem.get());
+        break;
       case BinOp::Op::Xor:
         res_elem = ConcreteValInt::xorOp(lhs_elem.get(), rhs_elem.get());
+        break;
+      case BinOp::Op::Abs:
+        res_elem = ConcreteValInt::abs(lhs_elem.get(), rhs_elem.get());
+        break;
+      case BinOp::Op::LShr:
+        res_elem = ConcreteValInt::lshr(lhs_elem.get(), rhs_elem.get(), flags);
+        break;
+      case BinOp::Op::AShr:
+        res_elem = ConcreteValInt::ashr(lhs_elem.get(), rhs_elem.get(), flags);
+        break;
+      case BinOp::Op::Shl:
+        res_elem = ConcreteValInt::shl(lhs_elem.get(), rhs_elem.get(), flags);
+        break;
+      case BinOp::Op::Cttz:
+        res_elem = ConcreteValInt::cttz(lhs_elem.get(), rhs_elem.get(), flags);
+        break;
+      case BinOp::Op::Ctlz:
+        res_elem = ConcreteValInt::ctlz(lhs_elem.get(), rhs_elem.get(), flags);
         break;
       default:
         res_elem = nullptr;
