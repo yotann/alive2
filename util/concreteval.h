@@ -112,6 +112,7 @@ public:
   static ConcreteVal *shl(ConcreteVal *lhs, ConcreteVal *rhs, unsigned flags);
   static ConcreteVal *cttz(ConcreteVal *lhs, ConcreteVal *rhs, unsigned flags);
   static ConcreteVal *ctlz(ConcreteVal *lhs, ConcreteVal *rhs, unsigned flags);
+  static ConcreteVal *arithOverflow(ConcreteVal *lhs, ConcreteVal *rhs, unsigned opcode);
   static ConcreteVal *ctpop(ConcreteVal *op);
   static ConcreteVal *bitreverse(ConcreteVal *op);
   static ConcreteVal *bswap(ConcreteVal *op);
@@ -198,6 +199,7 @@ public:
                                 Interpreter &interpreter);
   static ConcreteVal *icmp(ConcreteVal *a, ConcreteVal *b, unsigned cond,
                            unsigned pcmode, Interpreter &interpreter);
+  static ConcreteValAggregate *arithOverflow(ConcreteValAggregate *lhs_vect, ConcreteValAggregate *rhs_vect, unsigned opcode);
 };
 
 class ConcreteValPointer : public ConcreteVal {

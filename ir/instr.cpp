@@ -944,11 +944,16 @@ BinOp::concreteEval(Interpreter &interpreter) const {
     return shared_ptr<ConcreteVal>(
         ConcreteValInt::shl(lhs_concrete.get(), rhs_concrete.get(), flags));
   } else if (op == Op::Cttz) {
-    return shared_ptr<ConcreteVal>(
+    return shared_ptr<ConcreteVal>( 
         ConcreteValInt::cttz(lhs_concrete.get(), rhs_concrete.get(), flags));
   } else if (op == Op::Ctlz) {
     return shared_ptr<ConcreteVal>(
         ConcreteValInt::ctlz(lhs_concrete.get(), rhs_concrete.get(), flags));
+  } else if (op == Op::SAdd_Overflow || op == Op::UAdd_Overflow ||
+             op == Op::SSub_Overflow || op == Op::USub_Overflow ||
+             op == Op::SMul_Overflow || op == Op::UMul_Overflow) {
+    return shared_ptr<ConcreteVal>(ConcreteValInt::arithOverflow(
+        lhs_concrete.get(), rhs_concrete.get(), op));
   } else {
     interpreter.setUnsupported(getOpcodeName());
     return nullptr;

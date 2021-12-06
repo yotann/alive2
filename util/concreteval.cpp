@@ -693,6 +693,91 @@ namespace util{
     return v;
   }
 
+  ConcreteVal *ConcreteValInt::arithOverflow(ConcreteVal *lhs, ConcreteVal *rhs,
+                                             unsigned opcode) {
+    auto lhs_int = dynamic_cast<ConcreteValInt *>(lhs);
+    auto rhs_int = dynamic_cast<ConcreteValInt *>(rhs);
+    assert(lhs_int && rhs_int);
+    vector<shared_ptr<ConcreteVal>> elements;
+    if (lhs->isPoison() || rhs->isPoison()) {
+
+      elements.push_back(shared_ptr<ConcreteVal>(new ConcreteValInt(
+          true, llvm::APInt(lhs_int->val.getBitWidth(), 0))));
+      elements.push_back(
+          shared_ptr<ConcreteVal>(new ConcreteValInt(true, llvm::APInt(1, 0))));
+
+      auto v = new ConcreteValAggregate(false, move(elements));
+      return v;
+    }
+    bool ov_flag;
+    if (opcode == BinOp::SAdd_Overflow) {
+      auto ap_sum_s = lhs_int->val.sadd_ov(rhs_int->val, ov_flag);
+      elements.push_back(
+          shared_ptr<ConcreteVal>(new ConcreteValInt(false, move(ap_sum_s))));
+      auto ov_int = llvm::APInt(1, ov_flag);
+      elements.push_back(
+          shared_ptr<ConcreteVal>(new ConcreteValInt(false, move(ov_int))));
+      auto v = new ConcreteValAggregate(false, move(elements));
+      return v;
+    } else if (opcode == BinOp::UAdd_Overflow) {
+      auto ap_sum_u = lhs_int->val.uadd_ov(rhs_int->val, ov_flag);
+      elements.push_back(
+          shared_ptr<ConcreteVal>(new ConcreteValInt(false, move(ap_sum_u))));
+      auto ov_int = llvm::APInt(1, ov_flag);
+      elements.push_back(
+          shared_ptr<ConcreteVal>(new ConcreteValInt(false, move(ov_int))));
+      auto v = new ConcreteValAggregate(false, move(elements));
+      return v;
+    } else if (opcode == BinOp::SSub_Overflow) {
+      auto ap_diff_s = lhs_int->val.ssub_ov(rhs_int->val, ov_flag);
+      elements.push_back(
+          shared_ptr<ConcreteVal>(new ConcreteValInt(false, move(ap_diff_s))));
+      auto ov_int = llvm::APInt(1, ov_flag);
+      elements.push_back(
+          shared_ptr<ConcreteVal>(new ConcreteValInt(false, move(ov_int))));
+      auto v = new ConcreteValAggregate(false, move(elements));
+      return v;
+    } else if (opcode == BinOp::USub_Overflow) {
+      auto ap_diff_u = lhs_int->val.usub_ov(rhs_int->val, ov_flag);
+      elements.push_back(
+          shared_ptr<ConcreteVal>(new ConcreteValInt(false, move(ap_diff_u))));
+      auto ov_int = llvm::APInt(1, ov_flag);
+      elements.push_back(
+          shared_ptr<ConcreteVal>(new ConcreteValInt(false, move(ov_int))));
+      auto v = new ConcreteValAggregate(false, move(elements));
+      return v; 
+    } else if (opcode == BinOp::SMul_Overflow) {
+      auto ap_mul_s = lhs_int->val.smul_ov(rhs_int->val, ov_flag);
+      elements.push_back(
+          shared_ptr<ConcreteVal>(new ConcreteValInt(false, move(ap_mul_s))));
+      auto ov_int = llvm::APInt(1, ov_flag);
+      elements.push_back(
+          shared_ptr<ConcreteVal>(new ConcreteValInt(false, move(ov_int))));
+      auto v = new ConcreteValAggregate(false, move(elements));
+      return v;
+    } else if (opcode == BinOp::UMul_Overflow) {
+      auto ap_mul_u = lhs_int->val.umul_ov(rhs_int->val, ov_flag);
+      elements.push_back(
+          shared_ptr<ConcreteVal>(new ConcreteValInt(false, move(ap_mul_u))));
+      auto ov_int = llvm::APInt(1, ov_flag);
+      elements.push_back(
+          shared_ptr<ConcreteVal>(new ConcreteValInt(false, move(ov_int))));
+      auto v = new ConcreteValAggregate(false, move(elements));
+      return v;
+    } else if (opcode == BinOp::SMul_Overflow) {
+      auto ap_mul_u = lhs_int->val.smul_ov(rhs_int->val, ov_flag);
+      elements.push_back(
+          shared_ptr<ConcreteVal>(new ConcreteValInt(false, move(ap_mul_u))));
+      auto ov_int = llvm::APInt(1, ov_flag);
+      elements.push_back(
+          shared_ptr<ConcreteVal>(new ConcreteValInt(false, move(ov_int))));
+      auto v = new ConcreteValAggregate(false, move(elements));
+      return v;
+    } 
+    
+    UNREACHABLE();
+  }
+
   ConcreteVal* ConcreteValInt::ctpop(ConcreteVal* op) {
     auto op_int = dynamic_cast<ConcreteValInt *>(op);// num
     assert(op_int);
@@ -1394,8 +1479,7 @@ namespace util{
 
   ConcreteVal *ConcreteValAggregate::evalBinOp(ConcreteVal *lhs,
                                                ConcreteVal *rhs,
-                                               unsigned opcode,
-                                               unsigned flags,
+                                               unsigned opcode, unsigned flags,
                                                IR::FastMathFlags fmath,
                                                Interpreter &interpreter) {
     auto lhs_vect = dynamic_cast<ConcreteValAggregate *>(lhs);
@@ -1403,6 +1487,19 @@ namespace util{
     assert(lhs_vect && rhs_vect);
     assert(lhs_vect->elements.size() == rhs_vect->elements.size());
     vector<shared_ptr<ConcreteVal>> elements;
+
+    if (opcode == BinOp::Op::SAdd_Overflow ||
+        opcode == BinOp::Op::UAdd_Overflow ||
+        opcode == BinOp::Op::SSub_Overflow ||
+        opcode == BinOp::Op::USub_Overflow || 
+        opcode == BinOp::Op::SMul_Overflow ||
+        opcode == BinOp::Op::UMul_Overflow) {
+      auto res = arithOverflow(lhs_vect, rhs_vect, opcode);
+      // if (res)
+      //   res->print(); // TEMP
+      return res;
+    }
+
     for (unsigned i = 0; i < lhs_vect->elements.size(); i++) {
       auto lhs_elem = lhs_vect->elements[i];
       auto rhs_elem = rhs_vect->elements[i];
@@ -1421,61 +1518,80 @@ namespace util{
         res_elem = ConcreteValInt::mul(lhs_elem.get(), rhs_elem.get(), flags);
         break;
       case BinOp::Op::SDiv:
-        res_elem = ConcreteValInt::sdiv(lhs_elem.get(), rhs_elem.get(), flags, interpreter.UB_flag);
+        res_elem = ConcreteValInt::sdiv(lhs_elem.get(), rhs_elem.get(), flags,
+                                        interpreter.UB_flag);
         break;
       case BinOp::Op::UDiv:
-        res_elem = ConcreteValInt::udiv(lhs_elem.get(), rhs_elem.get(), flags, interpreter.UB_flag);
+        res_elem = ConcreteValInt::udiv(lhs_elem.get(), rhs_elem.get(), flags,
+                                        interpreter.UB_flag);
         break;
       case BinOp::Op::SRem:
-        res_elem = ConcreteValInt::srem(lhs_elem.get(), rhs_elem.get(), flags, interpreter.UB_flag);
+        res_elem = ConcreteValInt::srem(lhs_elem.get(), rhs_elem.get(), flags,
+                                        interpreter.UB_flag);
         break;
       case BinOp::Op::URem:
-        res_elem = ConcreteValInt::urem(lhs_elem.get(), rhs_elem.get(), flags, interpreter.UB_flag);
+        res_elem = ConcreteValInt::urem(lhs_elem.get(), rhs_elem.get(), flags,
+                                        interpreter.UB_flag);
         break;
       case BinOp::Op::SAdd_Sat:
-        res_elem = ConcreteValInt::sAddSat(lhs_elem.get(), rhs_elem.get(), flags);
+        res_elem =
+            ConcreteValInt::sAddSat(lhs_elem.get(), rhs_elem.get(), flags);
         break;
       case BinOp::Op::UAdd_Sat:
-        res_elem = ConcreteValInt::uAddSat(lhs_elem.get(), rhs_elem.get(), flags);
+        res_elem =
+            ConcreteValInt::uAddSat(lhs_elem.get(), rhs_elem.get(), flags);
         break;
       case BinOp::Op::SSub_Sat:
-        res_elem = ConcreteValInt::sSubSat(lhs_elem.get(), rhs_elem.get(), flags);
+        res_elem =
+            ConcreteValInt::sSubSat(lhs_elem.get(), rhs_elem.get(), flags);
         break;
       case BinOp::Op::USub_Sat:
-        res_elem = ConcreteValInt::uSubSat(lhs_elem.get(), rhs_elem.get(), flags);
+        res_elem =
+            ConcreteValInt::uSubSat(lhs_elem.get(), rhs_elem.get(), flags);
         break;
       case BinOp::Op::SShl_Sat:
-        res_elem = ConcreteValInt::sShlSat(lhs_elem.get(), rhs_elem.get(), flags);
+        res_elem =
+            ConcreteValInt::sShlSat(lhs_elem.get(), rhs_elem.get(), flags);
         break;
       case BinOp::Op::UShl_Sat:
-        res_elem = ConcreteValInt::uShlSat(lhs_elem.get(), rhs_elem.get(), flags);
+        res_elem =
+            ConcreteValInt::uShlSat(lhs_elem.get(), rhs_elem.get(), flags);
         break;
       case BinOp::Op::FAdd:
-        res_elem = ConcreteValFloat::fadd(lhs_elem.get(), rhs_elem.get(), fmath);
+        res_elem =
+            ConcreteValFloat::fadd(lhs_elem.get(), rhs_elem.get(), fmath);
         break;
       case BinOp::Op::FSub:
-        res_elem = ConcreteValFloat::fsub(lhs_elem.get(), rhs_elem.get(), fmath);
+        res_elem =
+            ConcreteValFloat::fsub(lhs_elem.get(), rhs_elem.get(), fmath);
         break;
       case BinOp::Op::FMul:
-        res_elem = ConcreteValFloat::fmul(lhs_elem.get(), rhs_elem.get(), fmath);
+        res_elem =
+            ConcreteValFloat::fmul(lhs_elem.get(), rhs_elem.get(), fmath);
         break;
       case BinOp::Op::FDiv:
-        res_elem = ConcreteValFloat::fdiv(lhs_elem.get(), rhs_elem.get(), fmath);
+        res_elem =
+            ConcreteValFloat::fdiv(lhs_elem.get(), rhs_elem.get(), fmath);
         break;
       case BinOp::Op::FRem:
-        res_elem = ConcreteValFloat::frem(lhs_elem.get(), rhs_elem.get(), fmath);
+        res_elem =
+            ConcreteValFloat::frem(lhs_elem.get(), rhs_elem.get(), fmath);
         break;
       case BinOp::Op::FMax:
-        res_elem = ConcreteValFloat::fmax(lhs_elem.get(), rhs_elem.get(), fmath);
+        res_elem =
+            ConcreteValFloat::fmax(lhs_elem.get(), rhs_elem.get(), fmath);
         break;
       case BinOp::Op::FMin:
-        res_elem = ConcreteValFloat::fmin(lhs_elem.get(), rhs_elem.get(), fmath);
+        res_elem =
+            ConcreteValFloat::fmin(lhs_elem.get(), rhs_elem.get(), fmath);
         break;
       case BinOp::Op::FMaximum:
-        res_elem = ConcreteValFloat::fmaximum(lhs_elem.get(), rhs_elem.get(), fmath);
+        res_elem =
+            ConcreteValFloat::fmaximum(lhs_elem.get(), rhs_elem.get(), fmath);
         break;
       case BinOp::Op::FMinimum:
-        res_elem = ConcreteValFloat::fminimum(lhs_elem.get(), rhs_elem.get(), fmath);
+        res_elem =
+            ConcreteValFloat::fminimum(lhs_elem.get(), rhs_elem.get(), fmath);
         break;
       case BinOp::Op::And:
         res_elem = ConcreteValInt::andOp(lhs_elem.get(), rhs_elem.get());
@@ -1516,7 +1632,7 @@ namespace util{
       elements.push_back(shared_ptr<ConcreteVal>(res_elem));
     }
     auto res = new ConcreteValAggregate(false, move(elements));
-    res->print();
+    res->print(); // TEMP
     return res;
   }
 
@@ -1553,6 +1669,60 @@ namespace util{
     }
 
     return new ConcreteValAggregate(all_poison, move(elements));
+  }
+
+  ConcreteValAggregate *
+  ConcreteValAggregate::arithOverflow(ConcreteValAggregate *lhs_vect,
+                                      ConcreteValAggregate *rhs_vect,
+                                      unsigned opcode) {
+
+    vector<shared_ptr<ConcreteVal>> res_elements;
+    vector<shared_ptr<ConcreteVal>> ov_elements;
+    for (unsigned i = 0; i < lhs_vect->elements.size(); i++) {
+      auto lhs_elem = lhs_vect->elements[i];
+      auto rhs_elem = rhs_vect->elements[i];
+      auto lhs_int = dynamic_cast<ConcreteValInt *>(lhs_elem.get());
+      auto rhs_int = dynamic_cast<ConcreteValInt *>(rhs_elem.get());
+      assert(lhs_int && rhs_int && "sAddOverflow vector elements must have int type");
+
+      if (lhs_int->isPoison() || rhs_int->isPoison()) {
+
+        res_elements.push_back(shared_ptr<ConcreteVal>(new ConcreteValInt(
+            true, llvm::APInt(lhs_int->getVal().getBitWidth(), 0))));
+        ov_elements.push_back(shared_ptr<ConcreteVal>(
+            new ConcreteValInt(true, llvm::APInt(1, 0))));
+        continue;
+      }
+
+      bool ov_flag;
+      llvm::APInt ap_res;
+      if (opcode == BinOp::SAdd_Overflow) {
+        ap_res = lhs_int->getVal().sadd_ov(rhs_int->getVal(), ov_flag);
+      } else if (opcode == BinOp::UAdd_Overflow) {
+        ap_res = lhs_int->getVal().uadd_ov(rhs_int->getVal(), ov_flag);
+      } else if (opcode == BinOp::SSub_Overflow) {
+        ap_res = lhs_int->getVal().ssub_ov(rhs_int->getVal(), ov_flag);
+      } else if (opcode == BinOp::USub_Overflow) {
+        ap_res = lhs_int->getVal().usub_ov(rhs_int->getVal(), ov_flag);
+      } else if (opcode == BinOp::SMul_Overflow) {
+        ap_res = lhs_int->getVal().smul_ov(rhs_int->getVal(), ov_flag);
+      } else if (opcode == BinOp::UMul_Overflow) {
+        ap_res = lhs_int->getVal().umul_ov(rhs_int->getVal(), ov_flag);
+      } else {
+        assert(false && "unsupported arithmetic overflow operation");
+      }
+      res_elements.push_back(shared_ptr<ConcreteVal>(new ConcreteValInt(false, move(ap_res))));
+      auto ov_int = llvm::APInt(1, ov_flag);
+      ov_elements.push_back(shared_ptr<ConcreteVal>(new ConcreteValInt(false, move(ov_int))));
+    }
+
+    auto res_vect = new ConcreteValAggregate(false, move(res_elements));
+    auto ov_vect = new ConcreteValAggregate(false, move(ov_elements));
+    vector<shared_ptr<ConcreteVal>> v_vect;
+    v_vect.push_back(shared_ptr<ConcreteVal>(res_vect));
+    v_vect.push_back(shared_ptr<ConcreteVal>(ov_vect));
+    auto v = new ConcreteValAggregate(false, move(v_vect));
+    return v;
   }
 
   ConcreteValPointer::ConcreteValPointer()
