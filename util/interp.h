@@ -12,6 +12,10 @@
 
 #include "util/concreteval.h"
 
+#include <jsoncons/json.hpp>
+#include <jsoncons/byte_string.hpp>
+#include <jsoncons/json.hpp>
+
 namespace IR {
 class BasicBlock;
 class Function;
@@ -144,6 +148,7 @@ public:
   void step();
   void run(unsigned instr_limit = 100);
   void setUnsupported(std::string reason);
+  ConcreteVal* getValue(const IR::Type &type, int64_t int_const, float fp_const);
   virtual std::shared_ptr<ConcreteVal> getInputValue(unsigned index,
                                                      const IR::Input &input);
   std::shared_ptr<ConcreteVal> getConstantValue(const IR::Value &i);
@@ -205,6 +210,6 @@ public:
   std::vector<ConcreteBlock> local_mem_blocks;
 };
 
-void interp(IR::Function &f);
+jsoncons::ojson interp(IR::Function &f);
 
 } // namespace util

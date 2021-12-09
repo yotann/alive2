@@ -13,6 +13,11 @@ using namespace IR;
 using namespace std;
 using util::config::dbg;
 
+using jsoncons::json_object_arg;
+using jsoncons::json_array_arg;
+using jsoncons::byte_string_arg;
+using jsoncons::ojson;
+
 namespace util {
 
 void Interpreter::setUnsupported(std::string reason) {
@@ -21,32 +26,49 @@ void Interpreter::setUnsupported(std::string reason) {
     unsupported_reason = reason;
 }
 
-shared_ptr<ConcreteVal> Interpreter::getInputValue(unsigned index,
-                                                   const Input &i) {
-  if (i.getType().isIntType()) {
-    // Comment this to avoid random int function arguments
-    // auto rand_int64 = get_random_int64();
-    // cout << "input param random value = " << rand_int64 << "\n";
-    return shared_ptr<ConcreteVal>(
-        new ConcreteValInt(false, llvm::APInt(i.getType().bits(), 3)));
-  } else if (i.getType().isFloatType()) {
-    if (i.bits() == 32) {
-      return shared_ptr<ConcreteVal>(
-          new ConcreteValFloat(false, llvm::APFloat(3.0f)));
-    } else if (i.bits() == 64) {
-      return shared_ptr<ConcreteVal>(
-          new ConcreteValFloat(false, llvm::APFloat(3.0)));
-    } else if (i.bits() == 16) {
-      return shared_ptr<ConcreteVal>(new ConcreteValFloat(
-          false, llvm::APFloat(llvm::APFloatBase::IEEEhalf(), "3.0")));
-    } else {
-      setUnsupported("unsupported float input type");
+ConcreteVal* Interpreter::getValue(const Type &type, int64_t int_const=3, float fp_const=3.0f) {
+  if (type.isIntType()) {
+    return new ConcreteValInt(false, llvm::APInt(type.bits(), int_const));
+  } else if (type.isFloatType()) {
+    auto fp_semantics =
+        getFloatSemantics(static_cast<const IR::FloatType &>(type));
+    if (!fp_semantics) {
+      setUnsupported("getInputValue: Unsupported float type");
       return nullptr;
     }
-  } else {
-    setUnsupported("unsupported input type");
+    llvm::APFloat tmp_fp(fp_const);
+    bool loaes_info;
+    tmp_fp.convert(*fp_semantics, llvm::APFloat::rmNearestTiesToEven,
+                   &loaes_info);
+    return new ConcreteValFloat(false, move(tmp_fp));
+  } else if (type.isAggregateType()) {
+    const auto &aggregate = static_cast<const IR::AggregateType &>(type);
+    vector<shared_ptr<ConcreteVal>> elements;
+    for (size_t i = 0; i < aggregate.numElementsConst(); ++i) {
+      if (aggregate.isPadding(i)) {
+        elements.push_back(make_shared<ConcreteValInt>(
+            false, llvm::APInt(aggregate.getChild(i).bits(), 0)));
+      }
+      else {
+        elements.push_back(shared_ptr<ConcreteVal>(getValue(aggregate.getChild(i))));
+      }
+      assert(unsupported_flag || elements.back());
+    }
+    return new ConcreteValAggregate(false, move(elements));
+  } else if (type.isPtrType()) { // TODO: generate something more meaningful than null pointers
+    return new ConcreteValPointer(false, 0, 0, false);
+  }
+
+  return nullptr;
+}
+shared_ptr<ConcreteVal> Interpreter::getInputValue(unsigned index,
+                                                   const Input &in) {
+  auto c_val = getValue(in.getType());
+  if (!c_val) {
+    setUnsupported("getInputValue: Unsupported Input type");
     return nullptr;
   }
+  return shared_ptr<ConcreteVal>(c_val);  
 }
 
 ConcreteVal *Interpreter::getPoisonValue(const IR::Type &type) {
@@ -320,24 +342,131 @@ void Interpreter::run(unsigned instr_limit) {
 
 Interpreter::~Interpreter() {}
 
-void interp(Function &f) {
-  cout << "running interp.cpp" << '\n';
+static ojson storeAPIntAsByteString(const llvm::APInt &val) {
+  // big endian
+  vector<uint8_t> tmp;
+  unsigned bytes = (val.getActiveBits() + 7) / 8;
+  tmp.reserve(bytes);
+  for (unsigned i = 0; i < bytes; ++i)
+    tmp.push_back(val.extractBitsAsZExtValue(8, 8 * (bytes - i - 1)));
+  return ojson(byte_string_arg, move(tmp));
+}
+
+static ojson storeConcreteVal(const IR::Type &type, const ConcreteVal *val) {
+  static const ojson POISON = "poison";
+  static const ojson UNDEF = "undef";
+  if (val->isPoison()) {
+    return POISON;
+  } else if (val->isUndef()) {
+    return UNDEF;
+  } else if (dynamic_cast<const ConcreteValVoid *>(val)) {
+    return nullptr;
+  } else if (auto val_int = dynamic_cast<const ConcreteValInt *>(val)) {
+    auto i = val_int->getVal();
+    if (i.isSignedIntN(64)) {
+      return i.getSExtValue();
+    } else if (i.isIntN(64)) {
+      return i.getZExtValue();
+    } else {
+      return storeAPIntAsByteString(i);
+    }
+  } else if (auto val_float = dynamic_cast<const ConcreteValFloat *>(val)) {
+    auto flt = val_float->getVal();
+    auto dbl = flt;
+    bool loses_info;
+    if (dbl.convert(llvm::APFloat::IEEEdouble(),
+                    llvm::RoundingMode::NearestTiesToEven,
+                    &loses_info) == llvm::APFloat::opOK) {
+      return dbl.convertToDouble();
+    } else {
+      return nullptr; // TODO
+    }
+  } else if (auto val_vec = dynamic_cast<const ConcreteValAggregate *>(val)) {
+    const auto &agg_type = static_cast<const IR::AggregateType &>(type);
+    const auto &vec = val_vec->getVal();
+    ojson::array tmp;
+    tmp.reserve(agg_type.numElementsConst() - agg_type.numPaddingsConst());
+    for (size_t i = 0; i < agg_type.numElementsConst(); ++i) {
+      if (agg_type.isPadding(i))
+        continue;
+      tmp.emplace_back(storeConcreteVal(agg_type.getChild(i), vec[i].get()));
+    }
+    return tmp;
+  } else if (auto val_ptr = dynamic_cast<const ConcreteValPointer *>(val)) {
+    ojson::array tmp;
+    tmp.emplace_back(val_ptr->getBid());
+    tmp.emplace_back(val_ptr->getOffset());
+    return tmp;
+  } else {
+    return nullptr;
+  }
+}
+
+static void storeConcreteByte(ojson &result, const ConcreteByte &byte) {
+  if (byte.is_pointer) {
+    result.emplace_back(byte.ptr_val.isPoison() ? 0 : 255);
+    ojson tmp(json_array_arg, {byte.ptr_val.getBid(), byte.ptr_val.getOffset(),
+                               byte.pointer_byte_offset});
+    result.emplace_back(move(tmp));
+  } else {
+    result.emplace_back(byte.byte_val.first);  // nonpoison bits
+    result.emplace_back(byte.byte_val.second); // value
+  }
+}
+
+static ojson storeConcreteBlock(const ConcreteBlock &block) {
+  ojson result(json_object_arg);
+  result["size"] = block.size;
+  result["address"] = block.address;
+  result["align"] = block.align_bits;
+  ojson bytes(json_array_arg);
+  for (const auto &item : block.bytes) {
+    // if (item.second == block.default_byte)
+    //   continue;
+    ojson tmp(json_array_arg, {item.first});
+    storeConcreteByte(tmp, item.second);
+    bytes.emplace_back(move(tmp));
+  }
+  ojson tmp(json_array_arg, {nullptr});
+  storeConcreteByte(tmp, block.default_byte);
+  bytes.emplace_back(move(tmp));
+  result["bytes"] = move(bytes);
+  return result;
+}
+
+// TODO return result of the function
+ojson interp(Function &f) {
+  
   Interpreter interpreter;
   interpreter.start(f);
 
   cout << "---run Interpreter---" << '\n';
-  interpreter.run();
-  if (!interpreter.isFinished()) {
-    cout << "ERROR: Interpreter reached instruction limit" << '\n';
-    exit(EXIT_FAILURE);
-  }
+  ojson result(json_object_arg);
+  interpreter.run(); // TODO add max_step argument from CLI
   if (interpreter.isUnsupported()) {
-    cout << "ERROR: Interpreter unsupported. reason: "
-         << interpreter.unsupported_reason << '\n';
-    exit(EXIT_FAILURE);
+    result["status"] = "unsupported";
+    result["unsupported"] = interpreter.unsupported_reason;
+  } else if (interpreter.isUndefined()) {
+    result["status"] = "done";
+    result["undefined"] = true;
+  } else if (interpreter.isReturned()) {
+    result["status"] = "done";
+    result["undefined"] = false;
+    result["return_value"] =
+        storeConcreteVal(f.getType(), interpreter.return_value);
+    //FIXME this branch is not used right now because interpreter is not initilizing memory
+    if (!interpreter.mem_blocks.empty()) {
+      ojson tmp(json_array_arg);
+      for (const auto &block : interpreter.mem_blocks)
+        tmp.emplace_back(storeConcreteBlock(block));
+      result["memory"] = move(tmp);
+    }
+  } else {
+    result["status"] = "timeout";
   }
 
   cout << "---Interpreter done---" << '\n';
+  return result;
 }
 
 } // namespace util
