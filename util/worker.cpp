@@ -377,7 +377,7 @@ class WorkerInterpreter : public Interpreter {
 public:
   WorkerInterpreter(const ojson &test_input);
   shared_ptr<ConcreteVal> getInputValue(unsigned index,
-                                        const IR::Input &input) override;
+                                        const IR::Input &input, bool rand_input) override;
 
   ConcreteVal *loadConcreteVal(const IR::Type &type, const ojson &val);
   ConcreteBlock loadConcreteBlock(const ojson &block);
@@ -601,7 +601,7 @@ WorkerInterpreter::WorkerInterpreter(const ojson &test_input)
     : test_input(test_input) {}
 
 shared_ptr<ConcreteVal>
-WorkerInterpreter::getInputValue(unsigned index, const IR::Input &input) {
+WorkerInterpreter::getInputValue(unsigned index, const IR::Input &input, bool rand_input) {
   return shared_ptr<ConcreteVal>(
       loadConcreteVal(input.getType(), test_input["args"][index]));
 }
@@ -652,7 +652,7 @@ static ojson evaluateAliveInterpret(const ojson &options, const ojson &src,
     // probably need to compute max_access_size to completely handle geps with inbound
     interpreter.loadMemory(test_input["memory"]);
   }
-  interpreter.start(*fn);
+  interpreter.start(*fn, util::Interpreter::input_type::FIXED);
   interpreter.run(max_steps);
   if (interpreter.isUnsupported()) {
     result["status"] = "unsupported";

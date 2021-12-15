@@ -74,7 +74,12 @@ llvm::cl::opt<std::string> opt_tgt_fn(LLVM_ARGS_PREFIX"tgt-fn",
 
 llvm::cl::opt<bool> opt_only_interp(
     LLVM_ARGS_PREFIX "only-interp",
-    llvm::cl::desc("Only intertret functions (default=false)"),
+    llvm::cl::desc("Only interpret functions (default=false)"),
+    llvm::cl::init(false), llvm::cl::cat(alive_cmdargs));
+
+llvm::cl::opt<bool> opt_random_input(
+    LLVM_ARGS_PREFIX "random-input",
+    llvm::cl::desc("use random inputs for interpreter (default=false)"),
     llvm::cl::init(false), llvm::cl::cat(alive_cmdargs));
 
 llvm::ExitOnError ExitOnErr;
@@ -95,7 +100,6 @@ std::unique_ptr<llvm::Module> openInputFile(llvm::LLVMContext &Context,
   return M;
 }
 
-optional<smt::smt_initializer> smt_init;
 
 ojson interpFunction(llvm::Function &F, llvm::TargetLibraryInfoWrapperPass &TLI,
                      unsigned &successCount, unsigned &errorCount) {
@@ -117,10 +121,58 @@ ojson interpFunction(llvm::Function &F, llvm::TargetLibraryInfoWrapperPass &TLI,
   if (!opt_quiet)
     Func->print(cout << "\n----------------------------------------\n");
   auto result = interp(*Func);
-  // TODO interp should return result values to correctly update successCount
+  
   cout << "interp result = " << result << '\n';
   successCount++;
   return result;
+}
+
+bool interpFunctionPair(llvm::Function &F1, llvm::Function &F2, llvm::TargetLibraryInfoWrapperPass &TLI,
+                     unsigned &successCount, unsigned &errorCount, ojson &res_1, ojson &res_2) {
+  auto Func1 =
+      llvm2alive(F1, TLI.getTLI(F1)); // FIXME change to avoid calling twice
+  auto Func2 =
+      llvm2alive(F1, TLI.getTLI(F1)); // FIXME change to avoid calling twice
+  if (!Func1) {
+    cerr << "ERROR: Could not translate '" << F1.getName().str()
+         << "' to Alive IR\n";
+    ++errorCount;
+    std::ostringstream sstr;
+    sstr << "Could not translate '" << F1.getName().str() << "' to Alive IR\n";
+    res_1["error"] = sstr.str();
+  }
+
+  if (!Func2) {
+    cerr << "ERROR: Could not translate '" << F2.getName().str()
+         << "' to Alive IR\n";
+    ++errorCount;
+    std::ostringstream sstr;
+    sstr << "Could not translate '" << F2.getName().str() << "' to Alive IR\n";
+    res_2["error"] = sstr.str();
+  }
+
+  if (!Func1 || !Func2) {
+    return false;
+  }
+
+  if (opt_print_dot) {
+    Func1->writeDot("");
+    Func2->writeDot(""); // This is pretty hacky but probably need to remove the option anyway
+  }
+  if (!opt_quiet) {
+    Func1->print(cout << "\n----------------------------------------\n");
+    Func2->print(cout << "\n----------------------------------------\n");
+  }
+
+  std::vector<std::shared_ptr<ConcreteVal>> input_vals;
+  res_1 = interp_save_load(*Func1, input_vals, true);
+  successCount++;
+  cout << "interp src result = " << res_1 << '\n';
+  res_2 = interp_save_load(*Func2, input_vals, false);
+  successCount++;
+  cout << "interp target result = " << res_2 << '\n';
+  
+  return true;
 }
 
 inline bool isDefined(ojson &res) {
@@ -257,9 +309,18 @@ ojson verify(llvm::Function &F1, llvm::Function &F2,
     return result;
   }
 
-  auto res_1 = interpFunction(F1, TLI, successCount, errorCount);
-  auto res_2 = interpFunction(F2, TLI, successCount, errorCount);
+
+  ojson res_1, res_2;
+  if (opt_random_input) {
+    interpFunctionPair(F1, F2, TLI, successCount, errorCount, res_1, res_2);
+
+  }
+  else {
+    res_1 = interpFunction(F1, TLI, successCount, errorCount);
+    res_2 = interpFunction(F2, TLI, successCount, errorCount);
+  }
   checkRefinement(res_1, res_2, result);
+  
   return result;
 }
 

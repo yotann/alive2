@@ -37,9 +37,9 @@ ConcreteVal* Interpreter::getValue(const Type &type, int64_t int_const=3, float 
       return nullptr;
     }
     llvm::APFloat tmp_fp(fp_const);
-    bool loaes_info;
+    bool loses_info;
     tmp_fp.convert(*fp_semantics, llvm::APFloat::rmNearestTiesToEven,
-                   &loaes_info);
+                   &loses_info);
     return new ConcreteValFloat(false, move(tmp_fp));
   } else if (type.isAggregateType()) {
     const auto &aggregate = static_cast<const IR::AggregateType &>(type);
@@ -61,9 +61,54 @@ ConcreteVal* Interpreter::getValue(const Type &type, int64_t int_const=3, float 
 
   return nullptr;
 }
+
+// Note: function calling this needs to handle null return values for unsupported types
+ConcreteVal* Interpreter::getRandomValue(const Type &type) {
+  if (type.isIntType()) {
+    return new ConcreteValInt(false, llvm::APInt(type.bits(), get_random_int64()));
+  } else if (type.isFloatType()) {
+    auto fp_semantics =
+        getFloatSemantics(static_cast<const IR::FloatType &>(type));
+    if (!fp_semantics) {
+      setUnsupported("getRandomValue: Unsupported float type");
+      return nullptr;
+    }
+    llvm::APFloat tmp_fp(get_random_float());
+    bool loses_info;
+    tmp_fp.convert(*fp_semantics, llvm::APFloat::rmNearestTiesToEven,
+                   &loses_info);
+    return new ConcreteValFloat(false, move(tmp_fp));
+  } else if (type.isAggregateType()) {
+    const auto &aggregate = static_cast<const IR::AggregateType &>(type);
+    vector<shared_ptr<ConcreteVal>> elements;
+    for (size_t i = 0; i < aggregate.numElementsConst(); ++i) {
+      if (aggregate.isPadding(i)) {
+        elements.push_back(make_shared<ConcreteValInt>(
+            false, llvm::APInt(aggregate.getChild(i).bits(), 0)));
+      }
+      else {
+        elements.push_back(shared_ptr<ConcreteVal>(getRandomValue(aggregate.getChild(i))));
+      }
+      assert(unsupported_flag || elements.back());
+    }
+    return new ConcreteValAggregate(false, move(elements));
+  } else if (type.isPtrType()) { // TODO: generate something more meaningful than null pointers
+    return new ConcreteValPointer(false, 0, 0, false);
+  }
+
+  return nullptr;
+}
+
 shared_ptr<ConcreteVal> Interpreter::getInputValue(unsigned index,
-                                                   const Input &in) {
-  auto c_val = getValue(in.getType());
+                                                   const Input &in,
+                                                   bool rand_input) {
+  ConcreteVal* c_val;
+  if (rand_input) {
+    c_val = getRandomValue(in.getType());
+  } else {
+    c_val = getValue(in.getType());
+  }
+  
   if (!c_val) {
     setUnsupported("getInputValue: Unsupported Input type");
     return nullptr;
@@ -205,7 +250,7 @@ shared_ptr<ConcreteVal> Interpreter::getConstantValue(const Value &i) {
 
 Interpreter::Interpreter() {}
 
-void Interpreter::start(Function &f) {
+void Interpreter::start(Function &f, unsigned input_mode=input_type::FIXED) {
   // TODO need to check for Value subclasses for inputs and constants
   // i.e. PoisonValue, UndefValue, and etc.
   // initialize inputs with concrete values
@@ -213,11 +258,27 @@ void Interpreter::start(Function &f) {
   concrete_vals[&Value::voidVal] = make_shared<ConcreteValVoid>();
 
   unsigned input_i = 0;
+  shared_ptr<ConcreteVal> new_val;
   for (auto &i : f.getInputs()) {
     assert(!concrete_vals.count(&i));
-    auto new_val = getInputValue(input_i++, *dynamic_cast<const Input *>(&i));
-    assert(new_val || unsupported_flag);
-    concrete_vals.emplace(&i, new_val);
+    if (input_mode == input_type::RANDOM) {
+      new_val = getInputValue(input_i++, *dynamic_cast<const Input *>(&i), true);
+    } else if (input_mode == input_type::FIXED) {
+      new_val = getInputValue(input_i++, *dynamic_cast<const Input *>(&i), false);
+    } 
+    
+    if (input_mode == input_type::RANDOM || input_mode == input_type::FIXED) {
+      assert(new_val || unsupported_flag);
+      concrete_vals.emplace(&i, new_val);
+    }
+    else if (input_mode == input_type::LOAD) {
+      assert(input_vals.size() > input_i && "cannot use load mode without setting input_vals in the interpreter");
+      concrete_vals.emplace(&i, input_vals[input_i++]);
+    }
+    
+    if (input_mode == input_type::RANDOM) {
+      input_vals.push_back(new_val);
+    }
   }
   for (auto &i : f.getConstants()) {
     assert(!concrete_vals.count(&i));
@@ -434,13 +495,12 @@ static ojson storeConcreteBlock(const ConcreteBlock &block) {
   return result;
 }
 
-// TODO return result of the function
 ojson interp(Function &f) {
   
   Interpreter interpreter;
   interpreter.start(f);
 
-  cout << "---run Interpreter---" << '\n';
+  cout << "---Running interpreter---" << '\n';
   ojson result(json_object_arg);
   interpreter.run(); // TODO add max_step argument from CLI
   if (interpreter.isUnsupported()) {
@@ -466,6 +526,53 @@ ojson interp(Function &f) {
   }
 
   cout << "---Interpreter done---" << '\n';
+  return result;
+}
+
+ojson interp_save_load(
+    Function &f, std::vector<std::shared_ptr<ConcreteVal>> &saved_input_vals,
+    bool save) {
+
+  Interpreter interpreter;
+  if (!save) {
+    interpreter.input_vals = move(saved_input_vals);
+    interpreter.start(f, Interpreter::input_type::LOAD);
+    cout << "---Running interpreter with fixed input generated in source "
+            "function---"
+         << '\n';
+  } else {
+    interpreter.start(f, Interpreter::input_type::RANDOM);
+    cout << "---Running interpreter with random inputs---" << '\n';
+  }
+
+  ojson result(json_object_arg);
+  interpreter.run(); // TODO add max_step argument from CLI
+  if (interpreter.isUnsupported()) {
+    result["status"] = "unsupported";
+    result["unsupported"] = interpreter.unsupported_reason;
+  } else if (interpreter.isUndefined()) {
+    result["status"] = "done";
+    result["undefined"] = true;
+  } else if (interpreter.isReturned()) {
+    result["status"] = "done";
+    result["undefined"] = false;
+    result["return_value"] =
+        storeConcreteVal(f.getType(), interpreter.return_value);
+    // FIXME this branch is not used right now because interpreter is not
+    // initilizing memory
+    if (!interpreter.mem_blocks.empty()) {
+      ojson tmp(json_array_arg);
+      for (const auto &block : interpreter.mem_blocks)
+        tmp.emplace_back(storeConcreteBlock(block));
+      result["memory"] = move(tmp);
+    }
+  } else {
+    result["status"] = "timeout";
+  }
+
+  cout << "---Interpreter done---" << '\n';
+  if (save)
+    saved_input_vals = interpreter.input_vals;
   return result;
 }
 
