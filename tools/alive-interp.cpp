@@ -77,10 +77,12 @@ llvm::cl::opt<bool> opt_only_interp(
     llvm::cl::desc("Only interpret functions (default=false)"),
     llvm::cl::init(false), llvm::cl::cat(alive_cmdargs));
 
-llvm::cl::opt<bool> opt_random_input(
+llvm::cl::opt<unsigned> opt_random_input(
     LLVM_ARGS_PREFIX "random-input",
-    llvm::cl::desc("use random inputs for interpreter (default=false)"),
-    llvm::cl::init(false), llvm::cl::cat(alive_cmdargs));
+    llvm::cl::desc(
+        "use random inputs for interpreter (default=0 uses fixed input)"),
+    llvm::cl::init(0), llvm::cl::value_desc("count"),
+    llvm::cl::cat(alive_cmdargs));
 
 llvm::ExitOnError ExitOnErr;
 
@@ -98,81 +100,6 @@ std::unique_ptr<llvm::Module> openInputFile(llvm::LLVMContext &Context,
   }
   ExitOnErr(M->materializeAll());
   return M;
-}
-
-
-ojson interpFunction(llvm::Function &F, llvm::TargetLibraryInfoWrapperPass &TLI,
-                     unsigned &successCount, unsigned &errorCount) {
-  auto Func =
-      llvm2alive(F, TLI.getTLI(F)); // FIXME change to avoid calling twice
-  if (!Func) {
-    ojson result(json_object_arg);
-    cerr << "ERROR: Could not translate '" << F.getName().str()
-         << "' to Alive IR\n";
-    ++errorCount;
-    std::ostringstream sstr;
-    sstr << "Could not translate '" << F.getName().str() << "' to Alive IR\n";
-    result["error"] = sstr.str();
-    return result;
-  }
-  if (opt_print_dot) {
-    Func->writeDot("");
-  }
-  if (!opt_quiet)
-    Func->print(cout << "\n----------------------------------------\n");
-  auto result = interp(*Func);
-  
-  cout << "interp result = " << result << '\n';
-  successCount++;
-  return result;
-}
-
-bool interpFunctionPair(llvm::Function &F1, llvm::Function &F2, llvm::TargetLibraryInfoWrapperPass &TLI,
-                     unsigned &successCount, unsigned &errorCount, ojson &res_1, ojson &res_2) {
-  auto Func1 =
-      llvm2alive(F1, TLI.getTLI(F1)); // FIXME change to avoid calling twice
-  auto Func2 =
-      llvm2alive(F1, TLI.getTLI(F1)); // FIXME change to avoid calling twice
-  if (!Func1) {
-    cerr << "ERROR: Could not translate '" << F1.getName().str()
-         << "' to Alive IR\n";
-    ++errorCount;
-    std::ostringstream sstr;
-    sstr << "Could not translate '" << F1.getName().str() << "' to Alive IR\n";
-    res_1["error"] = sstr.str();
-  }
-
-  if (!Func2) {
-    cerr << "ERROR: Could not translate '" << F2.getName().str()
-         << "' to Alive IR\n";
-    ++errorCount;
-    std::ostringstream sstr;
-    sstr << "Could not translate '" << F2.getName().str() << "' to Alive IR\n";
-    res_2["error"] = sstr.str();
-  }
-
-  if (!Func1 || !Func2) {
-    return false;
-  }
-
-  if (opt_print_dot) {
-    Func1->writeDot("");
-    Func2->writeDot(""); // This is pretty hacky but probably need to remove the option anyway
-  }
-  if (!opt_quiet) {
-    Func1->print(cout << "\n----------------------------------------\n");
-    Func2->print(cout << "\n----------------------------------------\n");
-  }
-
-  std::vector<std::shared_ptr<ConcreteVal>> input_vals;
-  res_1 = interp_save_load(*Func1, input_vals, true);
-  successCount++;
-  cout << "interp src result = " << res_1 << '\n';
-  res_2 = interp_save_load(*Func2, input_vals, false);
-  successCount++;
-  cout << "interp target result = " << res_2 << '\n';
-  
-  return true;
 }
 
 inline bool isDefined(ojson &res) {
@@ -284,6 +211,95 @@ void checkRefinement(ojson &res_src, ojson &res_tgt, ojson &res) {
   UNREACHABLE();
 }
 
+ojson interpFunction(llvm::Function &F, llvm::TargetLibraryInfoWrapperPass &TLI,
+                     unsigned &successCount, unsigned &errorCount) {
+  auto Func =
+      llvm2alive(F, TLI.getTLI(F)); // FIXME change to avoid calling twice
+  if (!Func) {
+    ojson result(json_object_arg);
+    cerr << "ERROR: Could not translate '" << F.getName().str()
+         << "' to Alive IR\n";
+    ++errorCount;
+    std::ostringstream sstr;
+    sstr << "Could not translate '" << F.getName().str() << "' to Alive IR\n";
+    result["error"] = sstr.str();
+    return result;
+  }
+  if (opt_print_dot) {
+    Func->writeDot("");
+  }
+  if (!opt_quiet)
+    Func->print(cout << "\n----------------------------------------\n");
+  auto result = interp(*Func);
+
+  cout << "interp result = " << result << '\n';
+  successCount++;
+  return result;
+}
+
+ojson interpFunctionPair(llvm::Function &F1, llvm::Function &F2,
+                         llvm::TargetLibraryInfoWrapperPass &TLI,
+                         unsigned &successCount, unsigned &errorCount) {
+  auto Func1 =
+      llvm2alive(F1, TLI.getTLI(F1)); // FIXME change to avoid calling twice
+  auto Func2 =
+      llvm2alive(F1, TLI.getTLI(F1)); // FIXME change to avoid calling twice
+  ojson result(json_object_arg);
+
+  if (!Func1) {
+    cerr << "ERROR: Could not translate '" << F1.getName().str()
+         << "' to Alive IR\n";
+    ++errorCount;
+    std::ostringstream sstr;
+    sstr << "Could not translate '" << F1.getName().str() << "' to Alive IR\n";
+    result["error"] = sstr.str();
+  }
+
+  if (!Func2) {
+    cerr << "ERROR: Could not translate '" << F2.getName().str()
+         << "' to Alive IR\n";
+    ++errorCount;
+    std::ostringstream sstr;
+    sstr << "Could not translate '" << F2.getName().str() << "' to Alive IR\n";
+    result["error"] = sstr.str();
+  }
+
+  if (!Func1 || !Func2) {
+    return result;
+  }
+
+  if (opt_print_dot) {
+    Func1->writeDot("");
+    Func2->writeDot(""); // This is pretty hacky but probably need to remove the
+                         // option anyway
+  }
+  if (!opt_quiet) {
+    Func1->print(cout << "\n----------------------------------------\n");
+    Func2->print(cout << "\n----------------------------------------\n");
+  }
+
+  std::vector<std::shared_ptr<ConcreteVal>> input_vals;
+  ojson res_1, res_2;
+  bool is_valid;
+  for (unsigned i = 0; i < opt_random_input; ++i) {
+    res_1 = interp_save_load(*Func1, input_vals, true);
+    successCount++;
+    cout << "interp src result = " << res_1 << '\n';
+    res_2 = interp_save_load(*Func2, input_vals, false);
+    successCount++;
+    cout << "interp target result = " << res_2 << '\n';
+    checkRefinement(res_1, res_2, result);
+    is_valid = result.get_with_default<bool>("valid", true);
+    if (result.contains("error") || !is_valid) {
+      cout << "result = " << result << '\n';
+      return result;
+    }
+    input_vals.clear();
+  }
+
+  return result;
+}
+
 ojson verify(llvm::Function &F1, llvm::Function &F2,
              llvm::TargetLibraryInfoWrapperPass &TLI, unsigned &successCount,
              unsigned &errorCount) {
@@ -309,18 +325,15 @@ ojson verify(llvm::Function &F1, llvm::Function &F2,
     return result;
   }
 
-
   ojson res_1, res_2;
-  if (opt_random_input) {
-    interpFunctionPair(F1, F2, TLI, successCount, errorCount, res_1, res_2);
-
-  }
-  else {
+  if (opt_random_input > 0) {
+    result = interpFunctionPair(F1, F2, TLI, successCount, errorCount);
+  } else {
     res_1 = interpFunction(F1, TLI, successCount, errorCount);
     res_2 = interpFunction(F2, TLI, successCount, errorCount);
+    checkRefinement(res_1, res_2, result);
   }
-  checkRefinement(res_1, res_2, result);
-  
+
   return result;
 }
 
