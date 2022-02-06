@@ -195,8 +195,11 @@ public:
   void print() override;
   static ConcreteVal *evalBinOp(ConcreteVal *lhs, ConcreteVal *rhs,
                                 unsigned opcode, unsigned flags,
-                                IR::FastMathFlags fmath,
                                 Interpreter &interpreter);
+  static ConcreteVal *evalFPBinOp(ConcreteVal *lhs, ConcreteVal *rhs,
+                                  unsigned opcode, IR::FastMathFlags fmath,
+                                  Interpreter &interpreter);
+
   static ConcreteVal *icmp(ConcreteVal *a, ConcreteVal *b, unsigned cond,
                            unsigned pcmode, Interpreter &interpreter);
   static ConcreteValAggregate *arithOverflow(ConcreteValAggregate *lhs_vect, ConcreteValAggregate *rhs_vect, unsigned opcode);

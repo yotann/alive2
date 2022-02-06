@@ -610,7 +610,7 @@ BinOp::concreteEval(Interpreter &interpreter) const {
   auto lhs_vect = dynamic_cast<ConcreteValAggregate *>(lhs_concrete.get());
   if (lhs_vect) {
     auto res = shared_ptr<ConcreteVal>(ConcreteValAggregate::evalBinOp(
-        lhs_concrete.get(), rhs_concrete.get(), op, flags, fmath, interpreter));
+        lhs_concrete.get(), rhs_concrete.get(), op, flags, interpreter));
     if (!res) {
       interpreter.setUnsupported("vector binop issue");
     }
@@ -655,33 +655,6 @@ BinOp::concreteEval(Interpreter &interpreter) const {
   } else if (op == Op::UShl_Sat) {
     return shared_ptr<ConcreteVal>(
         ConcreteValInt::uShlSat(lhs_concrete.get(), rhs_concrete.get(), flags));
-  } else if (op == Op::FAdd) {
-    return shared_ptr<ConcreteVal>(
-        ConcreteValFloat::fadd(lhs_concrete.get(), rhs_concrete.get(), fmath));
-  } else if (op == Op::FSub) {
-    return shared_ptr<ConcreteVal>(
-        ConcreteValFloat::fsub(lhs_concrete.get(), rhs_concrete.get(), fmath));
-  } else if (op == Op::FMul) {
-    return shared_ptr<ConcreteVal>(
-        ConcreteValFloat::fmul(lhs_concrete.get(), rhs_concrete.get(), fmath));
-  } else if (op == Op::FDiv) {
-    return shared_ptr<ConcreteVal>(
-        ConcreteValFloat::fdiv(lhs_concrete.get(), rhs_concrete.get(), fmath));
-  } else if (op == Op::FRem) {
-    return shared_ptr<ConcreteVal>(
-        ConcreteValFloat::frem(lhs_concrete.get(), rhs_concrete.get(), fmath));
-  } else if (op == Op::FMax) {
-    return shared_ptr<ConcreteVal>(
-        ConcreteValFloat::fmax(lhs_concrete.get(), rhs_concrete.get(), fmath));
-  } else if (op == Op::FMin) {
-    return shared_ptr<ConcreteVal>(
-        ConcreteValFloat::fmin(lhs_concrete.get(), rhs_concrete.get(), fmath));
-  } else if (op == Op::FMaximum) {
-    return shared_ptr<ConcreteVal>(ConcreteValFloat::fmaximum(
-        lhs_concrete.get(), rhs_concrete.get(), fmath));
-  } else if (op == Op::FMinimum) {
-    return shared_ptr<ConcreteVal>(ConcreteValFloat::fminimum(
-        lhs_concrete.get(), rhs_concrete.get(), fmath));
   } else if (op == Op::And) {
     return shared_ptr<ConcreteVal>(
         ConcreteValInt::andOp(lhs_concrete.get(), rhs_concrete.get()));
@@ -977,6 +950,63 @@ unique_ptr<Instr> FpBinOp::dup(const string &suffix) const {
                               fmath);
 }
 
+std::shared_ptr<util::ConcreteVal>
+FpBinOp::concreteEval(Interpreter &interpreter) const {
+  auto v_op = operands();
+  for (auto operand : v_op) {
+    auto I = interpreter.concrete_vals.find(operand);
+    if (I == interpreter.concrete_vals.end()) {
+      cout << "[FPBinOp::concreteEval] concrete values for operand not found. "
+              "Aborting\n";
+      assert(false);
+    }
+  }
+
+  auto lhs_concrete = interpreter.concrete_vals.find(lhs)->second;
+  auto rhs_concrete = interpreter.concrete_vals.find(rhs)->second;
+  auto lhs_vect = dynamic_cast<ConcreteValAggregate *>(lhs_concrete.get());
+  if (lhs_vect) {
+    auto res = shared_ptr<ConcreteVal>(ConcreteValAggregate::evalFPBinOp(
+        lhs_concrete.get(), rhs_concrete.get(), op, fmath, interpreter));
+    if (!res) {
+      interpreter.setUnsupported("vector binop issue");
+    }
+    return res;
+  }
+
+  if (op == Op::FAdd) {
+    return shared_ptr<ConcreteVal>(
+        ConcreteValFloat::fadd(lhs_concrete.get(), rhs_concrete.get(), fmath));
+  } else if (op == Op::FSub) {
+    return shared_ptr<ConcreteVal>(
+        ConcreteValFloat::fsub(lhs_concrete.get(), rhs_concrete.get(), fmath));
+  } else if (op == Op::FMul) {
+    return shared_ptr<ConcreteVal>(
+        ConcreteValFloat::fmul(lhs_concrete.get(), rhs_concrete.get(), fmath));
+  } else if (op == Op::FDiv) {
+    return shared_ptr<ConcreteVal>(
+        ConcreteValFloat::fdiv(lhs_concrete.get(), rhs_concrete.get(), fmath));
+  } else if (op == Op::FRem) {
+    return shared_ptr<ConcreteVal>(
+        ConcreteValFloat::frem(lhs_concrete.get(), rhs_concrete.get(), fmath));
+  } else if (op == Op::FMax) {
+    return shared_ptr<ConcreteVal>(
+        ConcreteValFloat::fmax(lhs_concrete.get(), rhs_concrete.get(), fmath));
+  } else if (op == Op::FMin) {
+    return shared_ptr<ConcreteVal>(
+        ConcreteValFloat::fmin(lhs_concrete.get(), rhs_concrete.get(), fmath));
+  } else if (op == Op::FMaximum) {
+    return shared_ptr<ConcreteVal>(ConcreteValFloat::fmaximum(
+        lhs_concrete.get(), rhs_concrete.get(), fmath));
+  } else if (op == Op::FMinimum) {
+    return shared_ptr<ConcreteVal>(ConcreteValFloat::fminimum(
+        lhs_concrete.get(), rhs_concrete.get(), fmath));
+  } else {
+    interpreter.setUnsupported(getOpcodeName());
+    return nullptr;
+  }
+  UNREACHABLE();
+}
 
 vector<Value*> UnaryOp::operands() const {
   return { val };

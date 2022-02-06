@@ -1480,7 +1480,6 @@ namespace util{
   ConcreteVal *ConcreteValAggregate::evalBinOp(ConcreteVal *lhs,
                                                ConcreteVal *rhs,
                                                unsigned opcode, unsigned flags,
-                                               IR::FastMathFlags fmath,
                                                Interpreter &interpreter) {
     auto lhs_vect = dynamic_cast<ConcreteValAggregate *>(lhs);
     auto rhs_vect = dynamic_cast<ConcreteValAggregate *>(rhs);
@@ -1504,8 +1503,7 @@ namespace util{
       auto lhs_elem = lhs_vect->elements[i];
       auto rhs_elem = rhs_vect->elements[i];
       auto int_elem = dynamic_cast<ConcreteValInt *>(lhs_elem.get());
-      auto float_elem = dynamic_cast<ConcreteValFloat *>(lhs_elem.get());
-      assert(int_elem || float_elem);
+      assert(int_elem);
       ConcreteVal *res_elem = nullptr;
       switch (opcode) {
       case BinOp::Op::Add:
@@ -1557,42 +1555,6 @@ namespace util{
         res_elem =
             ConcreteValInt::uShlSat(lhs_elem.get(), rhs_elem.get(), flags);
         break;
-      case BinOp::Op::FAdd:
-        res_elem =
-            ConcreteValFloat::fadd(lhs_elem.get(), rhs_elem.get(), fmath);
-        break;
-      case BinOp::Op::FSub:
-        res_elem =
-            ConcreteValFloat::fsub(lhs_elem.get(), rhs_elem.get(), fmath);
-        break;
-      case BinOp::Op::FMul:
-        res_elem =
-            ConcreteValFloat::fmul(lhs_elem.get(), rhs_elem.get(), fmath);
-        break;
-      case BinOp::Op::FDiv:
-        res_elem =
-            ConcreteValFloat::fdiv(lhs_elem.get(), rhs_elem.get(), fmath);
-        break;
-      case BinOp::Op::FRem:
-        res_elem =
-            ConcreteValFloat::frem(lhs_elem.get(), rhs_elem.get(), fmath);
-        break;
-      case BinOp::Op::FMax:
-        res_elem =
-            ConcreteValFloat::fmax(lhs_elem.get(), rhs_elem.get(), fmath);
-        break;
-      case BinOp::Op::FMin:
-        res_elem =
-            ConcreteValFloat::fmin(lhs_elem.get(), rhs_elem.get(), fmath);
-        break;
-      case BinOp::Op::FMaximum:
-        res_elem =
-            ConcreteValFloat::fmaximum(lhs_elem.get(), rhs_elem.get(), fmath);
-        break;
-      case BinOp::Op::FMinimum:
-        res_elem =
-            ConcreteValFloat::fminimum(lhs_elem.get(), rhs_elem.get(), fmath);
-        break;
       case BinOp::Op::And:
         res_elem = ConcreteValInt::andOp(lhs_elem.get(), rhs_elem.get());
         break;
@@ -1619,6 +1581,76 @@ namespace util{
         break;
       case BinOp::Op::Ctlz:
         res_elem = ConcreteValInt::ctlz(lhs_elem.get(), rhs_elem.get(), flags);
+        break;
+      default:
+        res_elem = nullptr;
+        break;
+      }
+
+      if (!res_elem) {
+        return nullptr;
+      }
+
+      elements.push_back(shared_ptr<ConcreteVal>(res_elem));
+    }
+    auto res = new ConcreteValAggregate(false, move(elements));
+    res->print(); // TEMP
+    return res;
+  }
+
+  ConcreteVal *ConcreteValAggregate::evalFPBinOp(ConcreteVal *lhs,
+                                                 ConcreteVal *rhs,
+                                                 unsigned opcode, 
+                                                 IR::FastMathFlags fmath,
+                                                 Interpreter &interpreter) {
+    auto lhs_vect = dynamic_cast<ConcreteValAggregate *>(lhs);
+    auto rhs_vect = dynamic_cast<ConcreteValAggregate *>(rhs);
+    assert(lhs_vect && rhs_vect);
+    assert(lhs_vect->elements.size() == rhs_vect->elements.size());
+    vector<shared_ptr<ConcreteVal>> elements;
+
+    for (unsigned i = 0; i < lhs_vect->elements.size(); i++) {
+      auto lhs_elem = lhs_vect->elements[i];
+      auto rhs_elem = rhs_vect->elements[i];
+      auto float_elem = dynamic_cast<ConcreteValFloat *>(lhs_elem.get());
+      assert(float_elem);
+      ConcreteVal *res_elem = nullptr;
+      switch (opcode) {
+      case FpBinOp::Op::FAdd:
+        res_elem =
+            ConcreteValFloat::fadd(lhs_elem.get(), rhs_elem.get(), fmath);
+        break;
+      case FpBinOp::Op::FSub:
+        res_elem =
+            ConcreteValFloat::fsub(lhs_elem.get(), rhs_elem.get(), fmath);
+        break;
+      case FpBinOp::Op::FMul:
+        res_elem =
+            ConcreteValFloat::fmul(lhs_elem.get(), rhs_elem.get(), fmath);
+        break;
+      case FpBinOp::Op::FDiv:
+        res_elem =
+            ConcreteValFloat::fdiv(lhs_elem.get(), rhs_elem.get(), fmath);
+        break;
+      case FpBinOp::Op::FRem:
+        res_elem =
+            ConcreteValFloat::frem(lhs_elem.get(), rhs_elem.get(), fmath);
+        break;
+      case FpBinOp::Op::FMax:
+        res_elem =
+            ConcreteValFloat::fmax(lhs_elem.get(), rhs_elem.get(), fmath);
+        break;
+      case FpBinOp::Op::FMin:
+        res_elem =
+            ConcreteValFloat::fmin(lhs_elem.get(), rhs_elem.get(), fmath);
+        break;
+      case FpBinOp::Op::FMaximum:
+        res_elem =
+            ConcreteValFloat::fmaximum(lhs_elem.get(), rhs_elem.get(), fmath);
+        break;
+      case FpBinOp::Op::FMinimum:
+        res_elem =
+            ConcreteValFloat::fminimum(lhs_elem.get(), rhs_elem.get(), fmath);
         break;
       default:
         res_elem = nullptr;
