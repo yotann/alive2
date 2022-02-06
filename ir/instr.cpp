@@ -131,61 +131,23 @@ std::string Instr::getOpcodeName() const {
 }
 
 BinOp::BinOp(Type &type, string &&name, Value &lhs, Value &rhs, Op op,
-             unsigned flags, FastMathFlags fmath)
-  : Instr(type, move(name)), lhs(&lhs), rhs(&rhs), op(op), flags(flags),
-    fmath(fmath) {
+             unsigned flags)
+  : Instr(type, move(name)), lhs(&lhs), rhs(&rhs), op(op), flags(flags) {
   switch (op) {
   case Add:
   case Sub:
   case Mul:
   case Shl:
     assert((flags & (NSW | NUW)) == flags);
-    assert(fmath.isNone());
     break;
   case SDiv:
   case UDiv:
   case AShr:
   case LShr:
     assert((flags & Exact) == flags);
-    assert(fmath.isNone());
     break;
-  case FAdd:
-  case FSub:
-  case FMul:
-  case FDiv:
-  case FRem:
-  case FMin:
-  case FMax:
-  case FMinimum:
-  case FMaximum:
+  default:
     assert(flags == None);
-    break;
-  case SRem:
-  case URem:
-  case SAdd_Sat:
-  case UAdd_Sat:
-  case SSub_Sat:
-  case USub_Sat:
-  case SShl_Sat:
-  case UShl_Sat:
-  case And:
-  case Or:
-  case Xor:
-  case Cttz:
-  case Ctlz:
-  case SAdd_Overflow:
-  case UAdd_Overflow:
-  case SSub_Overflow:
-  case USub_Overflow:
-  case SMul_Overflow:
-  case UMul_Overflow:
-  case UMin:
-  case UMax:
-  case SMin:
-  case SMax:
-  case Abs:
-    assert(flags == None);
-    assert(fmath.isNone());
     break;
   }
 }
@@ -233,22 +195,11 @@ void BinOp::print(ostream &os) const {
   case USub_Overflow: str = "usub_overflow "; break;
   case SMul_Overflow: str = "smul_overflow "; break;
   case UMul_Overflow: str = "umul_overflow "; break;
-  case FAdd:          str = "fadd "; break;
-  case FSub:          str = "fsub "; break;
-  case FMul:          str = "fmul "; break;
-  case FDiv:          str = "fdiv "; break;
-  case FRem:          str = "frem "; break;
-  case FMax:          str = "fmax "; break;
-  case FMin:          str = "fmin "; break;
-  case FMaximum:      str = "fmaximum "; break;
-  case FMinimum:      str = "fminimum "; break;
   case UMin:          str = "umin "; break;
   case UMax:          str = "umax "; break;
   case SMin:          str = "smin "; break;
   case SMax:          str = "smax "; break;
-  case Abs:
-    str = "abs ";
-    break;
+  case Abs:           str = "abs "; break;
   }
 
   os << getName() << " = " << str;
@@ -259,7 +210,7 @@ void BinOp::print(ostream &os) const {
     os << "nuw ";
   if (flags & Exact)
     os << "exact ";
-  os << fmath << *lhs << ", " << rhs->getName();
+  os << *lhs << ", " << rhs->getName();
 }
 
 static void div_ub(State &s, const expr &a, const expr &b, const expr &ap,
@@ -268,100 +219,6 @@ static void div_ub(State &s, const expr &a, const expr &b, const expr &ap,
   s.addUB(b != 0);
   if (sign)
     s.addUB((ap && a != expr::IntSMin(b.bits())) || b != expr::mkInt(-1, b));
-}
-
-static expr any_fp_zero(State &s, const expr &v) {
-  expr is_zero = v.isFPZero();
-  if (is_zero.isFalse())
-    return v;
-
-  expr var = expr::mkFreshVar("anyzero", true);
-  s.addQuantVar(var);
-  return expr::mkIf(var && is_zero, v.fneg(), v);
-}
-
-static StateValue fm_poison(State &s, const expr &a, const expr &ap,
-                            const expr &b, const expr &bp, const expr &c,
-                            function<expr(expr&,expr&,expr&)> fn,
-                            FastMathFlags fmath, bool only_input,
-                            int nary = 3) {
-  expr new_a, new_b, new_c;
-  if (fmath.flags & FastMathFlags::NSZ) {
-    new_a = any_fp_zero(s, a);
-    if (nary >= 2) {
-      new_b = any_fp_zero(s, b);
-      if (nary == 3)
-        new_c = any_fp_zero(s, c);
-    }
-  } else {
-    new_a = a;
-    new_b = b;
-    new_c = c;
-  }
-
-  expr val = fn(new_a, new_b, new_c);
-  AndExpr non_poison;
-  non_poison.add(ap);
-  if (nary >= 2)
-    non_poison.add(bp);
-
-  if (fmath.flags & FastMathFlags::NNaN) {
-    non_poison.add(!a.isNaN());
-    if (nary >= 2) {
-      non_poison.add(!b.isNaN());
-      if (nary == 3)
-        non_poison.add(!c.isNaN());
-    }
-    if (!only_input)
-      non_poison.add(!val.isNaN());
-  }
-  if (fmath.flags & FastMathFlags::NInf) {
-    non_poison.add(!a.isInf());
-    if (nary >= 2) {
-      non_poison.add(!b.isInf());
-      if (nary == 3)
-        non_poison.add(!c.isInf());
-    }
-    if (!only_input)
-      non_poison.add(!val.isInf());
-  }
-  if (fmath.flags & FastMathFlags::ARCP) {
-    val = expr::mkUF("arcp", { val }, val);
-    s.doesApproximation("arcp", val);
-  }
-  if (fmath.flags & FastMathFlags::Contract) {
-    val = expr::mkUF("contract", { val }, val);
-    s.doesApproximation("contract", val);
-  }
-  if (fmath.flags & FastMathFlags::Reassoc) {
-    val = expr::mkUF("reassoc", { val }, val);
-    s.doesApproximation("reassoc", val);
-  }
-  if (fmath.flags & FastMathFlags::AFN) {
-    val = expr::mkUF("afn", { val }, val);
-    s.doesApproximation("afn", val);
-  }
-  if (fmath.flags & FastMathFlags::NSZ && !only_input)
-    val = any_fp_zero(s, move(val));
-
-  return { move(val), non_poison() };
-}
-
-static StateValue fm_poison(State &s, const expr &a, const expr &ap,
-                            const expr &b, const expr &bp,
-                            function<expr(expr&,expr&)> fn,
-                            FastMathFlags fmath, bool only_input) {
-  return fm_poison(s, move(a), ap, move(b), bp, expr(),
-                   [&](expr &a, expr &b, expr &c) { return fn(a, b); },
-                   fmath, only_input, 2);
-}
-
-static StateValue fm_poison(State &s, const expr &a, const expr &ap,
-                            function<expr(expr&)> fn,
-                            FastMathFlags fmath, bool only_input) {
-  return fm_poison(s, move(a), ap, expr(), expr(), expr(),
-                   [&](expr &a, expr &b, expr &c) { return fn(a); },
-                   fmath, only_input, 1);
 }
 
 StateValue BinOp::toSMT(State &s) const {
@@ -577,89 +434,6 @@ StateValue BinOp::toSMT(State &s) const {
     };
     break;
 
-  case FAdd:
-    fn = [&](auto a, auto ap, auto b, auto bp) -> StateValue {
-      return fm_poison(s, a, ap, b, bp,
-                       [](expr &a, expr &b) { return a.fadd(b); },
-                       fmath, false);
-    };
-    break;
-
-  case FSub:
-    fn = [&](auto a, auto ap, auto b, auto bp) -> StateValue {
-      return fm_poison(s, a, ap, b, bp,
-                       [](expr &a, expr &b) { return a.fsub(b); },
-                       fmath, false);
-    };
-    break;
-
-  case FMul:
-    fn = [&](auto a, auto ap, auto b, auto bp) -> StateValue {
-      return fm_poison(s, a, ap, b, bp,
-                       [](expr &a, expr &b) { return a.fmul(b); },
-                       fmath, false);
-    };
-    break;
-
-  case FDiv:
-    fn = [&](auto a, auto ap, auto b, auto bp) -> StateValue {
-      return fm_poison(s, a, ap, b, bp,
-                       [](expr &a, expr &b) { return a.fdiv(b); },
-                       fmath, false);
-    };
-    break;
-
-  case FRem:
-    fn = [&](auto a, auto ap, auto b, auto bp) -> StateValue {
-      // TODO; Z3 has no support for LLVM's frem which is actually an fmod
-      return fm_poison(s, a, ap, b, bp,
-                       [&](expr &a, expr &b) {
-                         auto val = expr::mkUF("fmod", {a, b}, a);
-                         s.doesApproximation("frem", val);
-                         return val;
-                       },
-                       fmath, false);
-    };
-    break;
-
-  case FMin:
-  case FMax:
-    fn = [&](auto a, auto ap, auto b, auto bp) -> StateValue {
-      expr ndet = expr::mkFreshVar("maxminnondet", true);
-      s.addQuantVar(ndet);
-      auto ndz = expr::mkIf(ndet, expr::mkNumber("0", a),
-                            expr::mkNumber("-0", a));
-
-      auto v = [&](expr &a, expr &b) {
-        expr z = a.isFPZero() && b.isFPZero();
-        expr cmp = (op == FMin) ? a.fole(b) : a.foge(b);
-        return expr::mkIf(a.isNaN(), b,
-                          expr::mkIf(b.isNaN(), a,
-                                     expr::mkIf(z, ndz,
-                                                expr::mkIf(cmp, a, b))));
-      };
-      return fm_poison(s, a, ap, b, bp, v, fmath, false);
-    };
-    break;
-
-  case FMinimum:
-  case FMaximum:
-    fn = [&](auto a, auto ap, auto b, auto bp) -> StateValue {
-      auto v = [&](expr &a, expr &b) {
-        expr zpos = expr::mkNumber("0", a), zneg = expr::mkNumber("-0", a);
-        expr cmp = (op == FMinimum) ? a.fole(b) : a.foge(b);
-        expr neg_cond = op == FMinimum ? (a.isFPNegative() || b.isFPNegative())
-                                       : (a.isFPNegative() && b.isFPNegative());
-        expr e = expr::mkIf(a.isFPZero() && b.isFPZero(),
-                            expr::mkIf(neg_cond, zneg, zpos),
-                            expr::mkIf(cmp, a, b));
-
-        return expr::mkIf(a.isNaN(), a, expr::mkIf(b.isNaN(), b, e));
-      };
-      return fm_poison(s, a, ap, b, bp, v, fmath, false);
-    };
-    break;
-
   case UMin:
   case UMax:
   case SMin:
@@ -794,19 +568,6 @@ expr BinOp::getTypeConstraints(const Function &f) const {
                   getType() == lhs->getType() &&
                   rhs->getType().enforceIntType(1);
     break;
-  case FAdd:
-  case FSub:
-  case FMul:
-  case FDiv:
-  case FRem:
-  case FMax:
-  case FMin:
-  case FMaximum:
-  case FMinimum:
-    instrconstr = getType().enforceFloatOrVectorType() &&
-                  getType() == lhs->getType() &&
-                  getType() == rhs->getType();
-    break;
   default:
     instrconstr = getType().enforceIntOrVectorType() &&
                   getType() == lhs->getType() &&
@@ -817,8 +578,7 @@ expr BinOp::getTypeConstraints(const Function &f) const {
 }
 
 unique_ptr<Instr> BinOp::dup(const string &suffix) const {
-  return make_unique<BinOp>(getType(), getName()+suffix, *lhs, *rhs, op, flags,
-                            fmath);
+  return make_unique<BinOp>(getType(), getName()+suffix, *lhs, *rhs, op, flags);
 }
 
 bool BinOp::isDivOrRem() const {
@@ -961,6 +721,263 @@ BinOp::concreteEval(Interpreter &interpreter) const {
   UNREACHABLE();
 }
 
+vector<Value*> FpBinOp::operands() const {
+  return { lhs, rhs };
+}
+
+bool FpBinOp::propagatesPoison() const {
+  return true;
+}
+
+void FpBinOp::rauw(const Value &what, Value &with) {
+  RAUW(lhs);
+  RAUW(rhs);
+}
+
+void FpBinOp::print(ostream &os) const {
+  const char *str = nullptr;
+  switch (op) {
+  case FAdd:     str = "fadd "; break;
+  case FSub:     str = "fsub "; break;
+  case FMul:     str = "fmul "; break;
+  case FDiv:     str = "fdiv "; break;
+  case FRem:     str = "frem "; break;
+  case FMax:     str = "fmax "; break;
+  case FMin:     str = "fmin "; break;
+  case FMaximum: str = "fmaximum "; break;
+  case FMinimum: str = "fminimum "; break;
+  }
+  os << getName() << " = " << str << fmath << *lhs << ", " << rhs->getName()
+     << ", rounding=" << rm;
+}
+
+static expr any_fp_zero(State &s, const expr &v) {
+  expr is_zero = v.isFPZero();
+  if (is_zero.isFalse())
+    return v;
+
+  expr var = expr::mkFreshVar("anyzero", true);
+  s.addQuantVar(var);
+  return expr::mkIf(var && is_zero, v.fneg(), v);
+}
+
+static StateValue fm_poison(State &s, const expr &a, const expr &ap,
+                            const expr &b, const expr &bp, const expr &c,
+                            function<expr(expr&,expr&,expr&)> fn,
+                            FastMathFlags fmath, bool only_input,
+                            int nary = 3) {
+  expr new_a, new_b, new_c;
+  if (fmath.flags & FastMathFlags::NSZ) {
+    new_a = any_fp_zero(s, a);
+    if (nary >= 2) {
+      new_b = any_fp_zero(s, b);
+      if (nary == 3)
+        new_c = any_fp_zero(s, c);
+    }
+  } else {
+    new_a = a;
+    new_b = b;
+    new_c = c;
+  }
+
+  expr val = fn(new_a, new_b, new_c);
+  AndExpr non_poison;
+  non_poison.add(ap);
+  if (nary >= 2)
+    non_poison.add(bp);
+
+  if (fmath.flags & FastMathFlags::NNaN) {
+    non_poison.add(!a.isNaN());
+    if (nary >= 2) {
+      non_poison.add(!b.isNaN());
+      if (nary == 3)
+        non_poison.add(!c.isNaN());
+    }
+    if (!only_input)
+      non_poison.add(!val.isNaN());
+  }
+  if (fmath.flags & FastMathFlags::NInf) {
+    non_poison.add(!a.isInf());
+    if (nary >= 2) {
+      non_poison.add(!b.isInf());
+      if (nary == 3)
+        non_poison.add(!c.isInf());
+    }
+    if (!only_input)
+      non_poison.add(!val.isInf());
+  }
+  if (fmath.flags & FastMathFlags::ARCP) {
+    val = expr::mkUF("arcp", { val }, val);
+    s.doesApproximation("arcp", val);
+  }
+  if (fmath.flags & FastMathFlags::Contract) {
+    val = expr::mkUF("contract", { val }, val);
+    s.doesApproximation("contract", val);
+  }
+  if (fmath.flags & FastMathFlags::Reassoc) {
+    val = expr::mkUF("reassoc", { val }, val);
+    s.doesApproximation("reassoc", val);
+  }
+  if (fmath.flags & FastMathFlags::AFN) {
+    val = expr::mkUF("afn", { val }, val);
+    s.doesApproximation("afn", val);
+  }
+  if (fmath.flags & FastMathFlags::NSZ && !only_input)
+    val = any_fp_zero(s, move(val));
+
+  return { move(val), non_poison() };
+}
+
+static StateValue fm_poison(State &s, const expr &a, const expr &ap,
+                            const expr &b, const expr &bp,
+                            function<expr(expr&,expr&)> fn,
+                            FastMathFlags fmath, bool only_input) {
+  return fm_poison(s, move(a), ap, move(b), bp, expr(),
+                   [&](expr &a, expr &b, expr &c) { return fn(a, b); },
+                   fmath, only_input, 2);
+}
+
+static StateValue fm_poison(State &s, const expr &a, const expr &ap,
+                            function<expr(expr&)> fn,
+                            FastMathFlags fmath, bool only_input) {
+  return fm_poison(s, move(a), ap, expr(), expr(), expr(),
+                   [&](expr &a, expr &b, expr &c) { return fn(a); },
+                   fmath, only_input, 1);
+}
+
+StateValue FpBinOp::toSMT(State &s) const {
+  function<StateValue(const expr&, const expr&, const expr&, const expr&,
+                      FpRoundingMode)> fn;
+
+  switch (op) {
+  case FAdd:
+    fn = [&](auto a, auto ap, auto b, auto bp, auto rm) -> StateValue {
+      return fm_poison(s, a, ap, b, bp,
+                       [&](expr &a, expr &b) { return a.fadd(b, rm.toSMT()); },
+                       fmath, false);
+    };
+    break;
+
+  case FSub:
+    fn = [&](auto a, auto ap, auto b, auto bp, auto rm) -> StateValue {
+      return fm_poison(s, a, ap, b, bp,
+                       [&](expr &a, expr &b) { return a.fsub(b, rm.toSMT()); },
+                       fmath, false);
+    };
+    break;
+
+  case FMul:
+    fn = [&](auto a, auto ap, auto b, auto bp, auto rm) -> StateValue {
+      return fm_poison(s, a, ap, b, bp,
+                       [&](expr &a, expr &b) { return a.fmul(b, rm.toSMT()); },
+                       fmath, false);
+    };
+    break;
+
+  case FDiv:
+    fn = [&](auto a, auto ap, auto b, auto bp, auto rm) -> StateValue {
+      return fm_poison(s, a, ap, b, bp,
+                       [&](expr &a, expr &b) { return a.fdiv(b, rm.toSMT()); },
+                       fmath, false);
+    };
+    break;
+
+  case FRem:
+    fn = [&](auto a, auto ap, auto b, auto bp, auto rm) -> StateValue {
+      // TODO; Z3 has no support for LLVM's frem which is actually an fmod
+      return fm_poison(s, a, ap, b, bp,
+                       [&](expr &a, expr &b) {
+                         auto val = expr::mkUF("fmod", {a, b}, a);
+                         s.doesApproximation("frem", val);
+                         return val;
+                       },
+                       fmath, false);
+    };
+    break;
+
+  case FMin:
+  case FMax:
+    fn = [&](auto a, auto ap, auto b, auto bp, auto rm) -> StateValue {
+      expr ndet = expr::mkFreshVar("maxminnondet", true);
+      s.addQuantVar(ndet);
+      auto ndz = expr::mkIf(ndet, expr::mkNumber("0", a),
+                            expr::mkNumber("-0", a));
+
+      auto v = [&](expr &a, expr &b) {
+        expr z = a.isFPZero() && b.isFPZero();
+        expr cmp = op == FMin ? a.fole(b) : a.foge(b);
+        return expr::mkIf(a.isNaN(), b,
+                          expr::mkIf(b.isNaN(), a,
+                                     expr::mkIf(z, ndz,
+                                                expr::mkIf(cmp, a, b))));
+      };
+      return fm_poison(s, a, ap, b, bp, v, fmath, false);
+    };
+    break;
+
+  case FMinimum:
+  case FMaximum:
+    fn = [&](auto a, auto ap, auto b, auto bp, auto rm) -> StateValue {
+      auto v = [&](expr &a, expr &b) {
+        expr zpos = expr::mkNumber("0", a), zneg = expr::mkNumber("-0", a);
+        expr cmp = (op == FMinimum) ? a.fole(b) : a.foge(b);
+        expr neg_cond = op == FMinimum ? (a.isFPNegative() || b.isFPNegative())
+                                       : (a.isFPNegative() && b.isFPNegative());
+        expr e = expr::mkIf(a.isFPZero() && b.isFPZero(),
+                            expr::mkIf(neg_cond, zneg, zpos),
+                            expr::mkIf(cmp, a, b));
+
+        return expr::mkIf(a.isNaN(), a, expr::mkIf(b.isNaN(), b, e));
+      };
+      return fm_poison(s, a, ap, b, bp, v, fmath, false);
+    };
+    break;
+  }
+
+  auto scalar = [&](auto &a, auto &ap, auto &b, auto &bp) {
+    if (!rm.isDynamic())
+      return fn(a, ap, b, bp, rm);
+
+    auto &var = s.getFpRoundingMode();
+    DisjointExpr<StateValue> vals;
+    for (auto rm : { FpRoundingMode::RNE, FpRoundingMode::RNA,
+                     FpRoundingMode::RTP, FpRoundingMode::RTN,
+                     FpRoundingMode::RTZ }) {
+      vals.add(fn(a, ap, b, bp, rm), var == rm);
+    }
+    return *vals();
+  };
+
+  auto &a = s[*lhs];
+  auto &b = s[*rhs];
+
+  if (lhs->getType().isVectorType()) {
+    auto retty = getType().getAsAggregateType();
+    vector<StateValue> vals;
+    for (unsigned i = 0, e = retty->numElementsConst(); i != e; ++i) {
+      auto ai = retty->extract(a, i);
+      auto bi = retty->extract(b, i);
+      vals.emplace_back(
+        scalar(ai.value, ai.non_poison, bi.value, bi.non_poison));
+    }
+    return retty->aggregateVals(vals);
+  }
+  return scalar(a.value, a.non_poison, b.value, b.non_poison);
+}
+
+expr FpBinOp::getTypeConstraints(const Function &f) const {
+  return Value::getTypeConstraints() &&
+         getType().enforceFloatOrVectorType() &&
+         getType() == lhs->getType() &&
+         getType() == rhs->getType();
+}
+
+unique_ptr<Instr> FpBinOp::dup(const string &suffix) const {
+  return make_unique<FpBinOp>(getType(), getName()+suffix, *lhs, *rhs, op,
+                              fmath);
+}
+
+
 vector<Value*> UnaryOp::operands() const {
   return { val };
 }
@@ -1058,19 +1075,22 @@ StateValue UnaryOp::toSMT(State &s) const {
   case Round:
     fn = [&](auto v, auto np) -> StateValue {
       return fm_poison(s, v, np,
-                       [](expr &v) { return v.roundna(); }, fmath, true);
+                       [](expr &v) { return v.round(expr::rna()); },
+                       fmath, true);
     };
     break;
   case RoundEven:
     fn = [&](auto v, auto np) -> StateValue {
       return fm_poison(s, v, np,
-                       [](expr &v) { return v.roundne(); }, fmath, true);
+                       [](expr &v) { return v.round(expr::rne()); },
+                       fmath, true);
     };
     break;
   case Trunc:
     fn = [&](auto v, auto np) -> StateValue {
       return fm_poison(s, v, np,
-                       [](expr &v) { return v.roundtz(); }, fmath, true);
+                       [](expr &v) { return v.round(expr::rtz()); },
+                       fmath, true);
     };
     break;
   case Sqrt:
@@ -1493,15 +1513,18 @@ StateValue ConversionOp::toSMT(State &s) const {
     fn = [](auto &&val, auto &to_type) -> StateValue {
       expr bv  = val.fp2sint(to_type.bits());
       expr fp2 = bv.sint2fp(val);
-      // -0.0 is converted to 0 and then to 0.0, though -0.0 is ok to convert
-      return { move(bv), val.isFPZero() || fp2 == val.roundtz() };
+      // -0.xx is converted to 0 and then to 0.0, though -0.xx is ok to convert
+      expr valrtz = val.round(expr::rtz());
+      return { move(bv), valrtz.isFPZero() || fp2 == valrtz };
     };
     break;
   case FPToUInt:
     fn = [](auto &&val, auto &to_type) -> StateValue {
       expr bv  = val.fp2uint(to_type.bits());
       expr fp2 = bv.uint2fp(val);
-      return { move(bv), fp2 == val.roundtz() };
+      // -0.xx must be converted to 0, not poison.
+      expr valrtz = val.round(expr::rtz());
+      return { move(bv), valrtz.isFPZero() || fp2 == valrtz };
     };
     break;
   case FPExt:
@@ -2115,20 +2138,9 @@ StateValue FnCall::toSMT(State &s) const {
   vector<StateValue> inputs;
   vector<Memory::PtrInput> ptr_inputs;
   vector<Type*> out_types;
-  bool argmemonly = attrs.has(FnAttrs::ArgMemOnly);
-  bool caller_argmemonly = s.getFn().getFnAttrs().has(FnAttrs::ArgMemOnly);
 
-  // There's at least one bug in argmemonly handling (see FIXME above) that can
-  // cause Alive2 to report unsound transformations as sound, and I suspect
-  // there are more.
-  if (argmemonly || caller_argmemonly) {
-    s.doesApproximation("argmemonly");
-    if (!s.isSource()) {
-      // Force the transformation to be unsound (assuming the source function
-      // doesn't always have undefined behavior).
-      s.addUB(expr(false));
-    }
-  }
+  bool argmemonly_fn   = s.getFn().getFnAttrs().has(FnAttrs::ArgMemOnly);
+  bool argmemonly_call = hasAttribute(FnAttrs::ArgMemOnly);
 
   ostringstream fnName_mangled;
   fnName_mangled << fnName;
@@ -2147,7 +2159,7 @@ StateValue FnCall::toSMT(State &s) const {
       sv2 = s[*arg];
     }
 
-    unpack_inputs(s, *arg, arg->getType(), flags, argmemonly, move(sv),
+    unpack_inputs(s, *arg, arg->getType(), flags, argmemonly_fn, move(sv),
                   move(sv2), inputs, ptr_inputs);
     fnName_mangled << '#' << arg->getType();
   }
@@ -2155,12 +2167,20 @@ StateValue FnCall::toSMT(State &s) const {
   if (!isVoid())
     unpack_ret_ty(out_types, getType());
 
-  auto check_access = [&]() {
-    if (argmemonly) {
+  auto check = [&](FnAttrs::Attribute attr) {
+    return s.getFn().getFnAttrs().has(attr) && !hasAttribute(attr);
+  };
+
+  auto check_implies = [&](FnAttrs::Attribute attr) {
+    if (!check(attr))
+      return;
+
+    if (argmemonly_call) {
       for (auto &p : ptr_inputs) {
         if (!p.byval) {
           Pointer ptr(s.getMemory(), p.val.value);
-          s.addUB(p.val.non_poison.implies(ptr.isLocal()));
+          s.addUB(p.val.non_poison.implies(
+                    ptr.isLocal() || ptr.isConstGlobal()));
         }
       }
     } else {
@@ -2168,25 +2188,19 @@ StateValue FnCall::toSMT(State &s) const {
     }
   };
 
-  if (!attrs.has(FnAttrs::NoRead)) {
-    if (s.getFn().getFnAttrs().has(FnAttrs::NoRead))
-      check_access();
-  }
-
-  if (!attrs.has(FnAttrs::NoWrite)) {
-    if (s.getFn().getFnAttrs().has(FnAttrs::NoWrite))
-      check_access();
-  }
+  check_implies(FnAttrs::NoRead);
+  check_implies(FnAttrs::NoWrite);
+  check_implies(FnAttrs::NoFree);
 
   // Check attributes that calles must have if caller has them
-  auto check = [&](FnAttrs::Attribute attr) {
-    return s.getFn().getFnAttrs().has(attr) && !attrs.has(attr);
-  };
-
   if (check(FnAttrs::ArgMemOnly) ||
-      check(FnAttrs::NoFree) ||
       check(FnAttrs::NoThrow) ||
-      check(FnAttrs::WillReturn))
+      check(FnAttrs::WillReturn) ||
+      check(FnAttrs::InaccessibleMemOnly))
+    s.addUB(expr(false));
+
+  // can't have both!
+  if (attrs.has(FnAttrs::ArgMemOnly) && attrs.has(FnAttrs::InaccessibleMemOnly))
     s.addUB(expr(false));
 
   unsigned idx = 0;

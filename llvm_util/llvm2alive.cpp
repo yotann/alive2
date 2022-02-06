@@ -28,6 +28,19 @@ using llvm::LLVMContext;
 
 namespace {
 
+FpRoundingMode parse_rounding(llvm::Instruction &i) {
+  auto *fp = cast<llvm::ConstrainedFPIntrinsic>(&i);
+  switch (fp->getRoundingMode().getValue()) {
+  case llvm::RoundingMode::Dynamic:           return FpRoundingMode::Dynamic;
+  case llvm::RoundingMode::NearestTiesToAway: return FpRoundingMode::RNA;
+  case llvm::RoundingMode::NearestTiesToEven: return FpRoundingMode::RNE;
+  case llvm::RoundingMode::TowardNegative:    return FpRoundingMode::RTN;
+  case llvm::RoundingMode::TowardPositive:    return FpRoundingMode::RTP;
+  case llvm::RoundingMode::TowardZero:        return FpRoundingMode::RTZ;
+  default: UNREACHABLE();
+  }
+}
+
 unsigned constexpr_idx;
 unsigned copy_idx;
 unsigned alignopbundle_idx;
@@ -159,6 +172,8 @@ public:
   RetTy visitBinaryOperator(llvm::BinaryOperator &i) {
     PARSE_BINOP();
     BinOp::Op alive_op;
+    FpBinOp::Op fp_op;
+    bool is_fp = false;
     switch (i.getOpcode()) {
     case llvm::Instruction::Add:  alive_op = BinOp::Add; break;
     case llvm::Instruction::Sub:  alive_op = BinOp::Sub; break;
@@ -173,14 +188,18 @@ public:
     case llvm::Instruction::And:  alive_op = BinOp::And; break;
     case llvm::Instruction::Or:   alive_op = BinOp::Or; break;
     case llvm::Instruction::Xor:  alive_op = BinOp::Xor; break;
-    case llvm::Instruction::FAdd: alive_op = BinOp::FAdd; break;
-    case llvm::Instruction::FSub: alive_op = BinOp::FSub; break;
-    case llvm::Instruction::FMul: alive_op = BinOp::FMul; break;
-    case llvm::Instruction::FDiv: alive_op = BinOp::FDiv; break;
-    case llvm::Instruction::FRem: alive_op = BinOp::FRem; break;
+    case llvm::Instruction::FAdd: fp_op = FpBinOp::FAdd; is_fp = true; break;
+    case llvm::Instruction::FSub: fp_op = FpBinOp::FSub; is_fp = true; break;
+    case llvm::Instruction::FMul: fp_op = FpBinOp::FMul; is_fp = true; break;
+    case llvm::Instruction::FDiv: fp_op = FpBinOp::FDiv; is_fp = true; break;
+    case llvm::Instruction::FRem: fp_op = FpBinOp::FRem; is_fp = true; break;
     default:
       return error(i);
     }
+
+    if (is_fp)
+      RETURN_IDENTIFIER(make_unique<FpBinOp>(*ty, value_name(i), *a, *b, fp_op,
+                                             parse_fmath(i)));
 
     unsigned flags = BinOp::None;
     if (isa<llvm::OverflowingBinaryOperator>(i) && i.hasNoSignedWrap())
@@ -190,7 +209,7 @@ public:
     if (isa<llvm::PossiblyExactOperator>(i) && i.isExact())
       flags = BinOp::Exact;
     RETURN_IDENTIFIER(make_unique<BinOp>(*ty, value_name(i), *a, *b, alive_op,
-                                         flags, parse_fmath(i)));
+                                         flags));
   }
 
   RetTy visitCastInst(llvm::CastInst &i) {
@@ -650,7 +669,7 @@ public:
         // or objects passed as pointer arguments
         return llvm::isa<llvm::Argument>(V) ||
                llvm::isa<llvm::GlobalVariable>(V) ||
-               llvm::isMallocLikeFn(V, &TLI, false); }))
+               llvm::isAllocLikeFn(V, &TLI); }))
       return LIFETIME_FILLPOISON;
 
     Objs.clear();
@@ -898,16 +917,35 @@ public:
     case llvm::Intrinsic::maximum:
     {
       PARSE_BINOP();
-      BinOp::Op op;
+      FpBinOp::Op op;
       switch (i.getIntrinsicID()) {
-      case llvm::Intrinsic::minnum:   op = BinOp::FMin; break;
-      case llvm::Intrinsic::maxnum:   op = BinOp::FMax; break;
-      case llvm::Intrinsic::minimum:  op = BinOp::FMinimum; break;
-      case llvm::Intrinsic::maximum:  op = BinOp::FMaximum; break;
+      case llvm::Intrinsic::minnum:  op = FpBinOp::FMin; break;
+      case llvm::Intrinsic::maxnum:  op = FpBinOp::FMax; break;
+      case llvm::Intrinsic::minimum: op = FpBinOp::FMinimum; break;
+      case llvm::Intrinsic::maximum: op = FpBinOp::FMaximum; break;
       default: UNREACHABLE();
       }
-      RETURN_IDENTIFIER(make_unique<BinOp>(*ty, value_name(i), *a, *b,
-                                           op, BinOp::None, parse_fmath(i)));
+      RETURN_IDENTIFIER(make_unique<FpBinOp>(*ty, value_name(i), *a, *b, op,
+                                             parse_fmath(i)));
+    }
+    case llvm::Intrinsic::experimental_constrained_fadd:
+    case llvm::Intrinsic::experimental_constrained_fsub:
+    case llvm::Intrinsic::experimental_constrained_fmul:
+    case llvm::Intrinsic::experimental_constrained_fdiv:
+    {
+      PARSE_BINOP();
+      FpBinOp::Op op;
+      switch (i.getIntrinsicID()) {
+      case llvm::Intrinsic::experimental_constrained_fadd: op = FpBinOp::FAdd; break;
+      case llvm::Intrinsic::experimental_constrained_fsub: op = FpBinOp::FSub; break;
+      case llvm::Intrinsic::experimental_constrained_fmul: op = FpBinOp::FMul; break;
+      case llvm::Intrinsic::experimental_constrained_fdiv: op = FpBinOp::FDiv; break;
+      default: UNREACHABLE();
+      }
+      // TODO: missing support for exceptions
+      RETURN_IDENTIFIER(
+        make_unique<FpBinOp>(*ty, value_name(i), *a, *b, op, parse_fmath(i),
+                             parse_rounding(i)));
     }
     case llvm::Intrinsic::lifetime_start:
     case llvm::Intrinsic::lifetime_end:
@@ -929,13 +967,18 @@ public:
         return error(i);
       }
     }
-    case llvm::Intrinsic::trap:
-    {
+    case llvm::Intrinsic::sideeffect: {
+      FnAttrs attrs;
+      attrs.set(FnAttrs::InaccessibleMemOnly);
+      attrs.set(FnAttrs::WillReturn);
+      attrs.set(FnAttrs::NoThrow);
+      return make_unique<FnCall>(Type::voidTy, "", "#sideeffect", move(attrs));
+    }
+    case llvm::Intrinsic::trap: {
       FnAttrs attrs;
       attrs.set(FnAttrs::NoReturn);
-      attrs.set(FnAttrs::NoWrite);
-      return make_unique<FnCall>(*llvm_type2alive(i.getType()),
-                                 "", "#trap", move(attrs));
+      attrs.set(FnAttrs::NoThrow);
+      return make_unique<FnCall>(Type::voidTy, "", "#trap", move(attrs));
     }
     case llvm::Intrinsic::vastart: {
       PARSE_UNOP();
@@ -1228,6 +1271,10 @@ public:
 
       case llvm::Attribute::ArgMemOnly:
         attrs.set(FnAttrs::ArgMemOnly);
+        break;
+
+      case llvm::Attribute::InaccessibleMemOnly:
+        attrs.set(FnAttrs::InaccessibleMemOnly);
         break;
 
       case llvm::Attribute::NoFree:
