@@ -9,7 +9,10 @@
 #include "smt/exprs.h"
 #include "smt/solver.h"
 #include "util/compiler.h"
+#include "util/interp.h"
 #include <functional>
+#include <iostream>
+#include <memory>
 #include <numeric>
 #include <sstream>
 
@@ -106,6 +109,26 @@ expr Instr::getTypeConstraints() const {
   return {};
 }
 
+std::shared_ptr<util::ConcreteVal>
+Instr::concreteEval(Interpreter &interpreter) const {
+  interpreter.setUnsupported(getOpcodeName());
+  return nullptr;
+}
+
+std::string Instr::getOpcodeName() const {
+  // TODO: modify Instr subclasses to override this method, so we don't have to
+  // parse the output of print().
+  ostringstream name_stream;
+  print(name_stream);
+  string name = name_stream.str();
+  auto i = name.find(" = ");
+  if (i != string::npos)
+    name = string(name.begin() + i + 3, name.end());
+  i = name.find(' ');
+  if (i != string::npos)
+    name.resize(i);
+  return name;
+}
 
 BinOp::BinOp(Type &type, string &&name, Value &lhs, Value &rhs, Op op,
              unsigned flags)
@@ -570,6 +593,106 @@ bool BinOp::isDivOrRem() const {
   }
 }
 
+std::shared_ptr<util::ConcreteVal>
+BinOp::concreteEval(Interpreter &interpreter) const {
+  auto v_op = operands();
+  for (auto operand : v_op) {
+    auto I = interpreter.concrete_vals.find(operand);
+    if (I == interpreter.concrete_vals.end()) {
+      cout << "[BinOp::concreteEval] concrete values for operand not found. "
+              "Aborting\n";
+      assert(false);
+    }
+  }
+
+  auto lhs_concrete = interpreter.concrete_vals.find(lhs)->second;
+  auto rhs_concrete = interpreter.concrete_vals.find(rhs)->second;
+  auto lhs_vect = dynamic_cast<ConcreteValAggregate *>(lhs_concrete.get());
+  if (lhs_vect) {
+    auto res = shared_ptr<ConcreteVal>(ConcreteValAggregate::evalBinOp(
+        lhs_concrete.get(), rhs_concrete.get(), op, flags, interpreter));
+    if (!res) {
+      interpreter.setUnsupported("vector binop issue");
+    }
+    return res;
+  }
+  if (op == Op::Add) {
+    return shared_ptr<ConcreteVal>(
+        ConcreteValInt::add(lhs_concrete.get(), rhs_concrete.get(), flags));
+  } else if (op == Op::Sub) {
+    return shared_ptr<ConcreteVal>(
+        ConcreteValInt::sub(lhs_concrete.get(), rhs_concrete.get(), flags));
+  } else if (op == Op::Mul) {
+    return shared_ptr<ConcreteVal>(
+        ConcreteValInt::mul(lhs_concrete.get(), rhs_concrete.get(), flags));
+  } else if (op == Op::SDiv) {
+    return shared_ptr<ConcreteVal>(ConcreteValInt::sdiv(
+        lhs_concrete.get(), rhs_concrete.get(), flags, interpreter.UB_flag));
+  } else if (op == Op::UDiv) {
+    return shared_ptr<ConcreteVal>(ConcreteValInt::udiv(
+        lhs_concrete.get(), rhs_concrete.get(), flags, interpreter.UB_flag));
+  } else if (op == Op::SRem) {
+    return shared_ptr<ConcreteVal>(ConcreteValInt::srem(
+        lhs_concrete.get(), rhs_concrete.get(), flags, interpreter.UB_flag));
+  } else if (op == Op::URem) {
+    return shared_ptr<ConcreteVal>(ConcreteValInt::urem(
+        lhs_concrete.get(), rhs_concrete.get(), flags, interpreter.UB_flag));
+  } else if (op == Op::SAdd_Sat) {
+    return shared_ptr<ConcreteVal>(
+        ConcreteValInt::sAddSat(lhs_concrete.get(), rhs_concrete.get(), flags));
+  } else if (op == Op::UAdd_Sat) {
+    return shared_ptr<ConcreteVal>(
+        ConcreteValInt::uAddSat(lhs_concrete.get(), rhs_concrete.get(), flags));
+  } else if (op == Op::SSub_Sat) {
+    return shared_ptr<ConcreteVal>(
+        ConcreteValInt::sSubSat(lhs_concrete.get(), rhs_concrete.get(), flags));
+  } else if (op == Op::USub_Sat) {
+    return shared_ptr<ConcreteVal>(
+        ConcreteValInt::uSubSat(lhs_concrete.get(), rhs_concrete.get(), flags));
+  } else if (op == Op::SShl_Sat) {
+    return shared_ptr<ConcreteVal>(
+        ConcreteValInt::sShlSat(lhs_concrete.get(), rhs_concrete.get(), flags));
+  } else if (op == Op::UShl_Sat) {
+    return shared_ptr<ConcreteVal>(
+        ConcreteValInt::uShlSat(lhs_concrete.get(), rhs_concrete.get(), flags));
+  } else if (op == Op::And) {
+    return shared_ptr<ConcreteVal>(
+        ConcreteValInt::andOp(lhs_concrete.get(), rhs_concrete.get()));
+  } else if (op == Op::Or) {
+    return shared_ptr<ConcreteVal>(
+        ConcreteValInt::orOp(lhs_concrete.get(), rhs_concrete.get()));
+  } else if (op == Op::Xor) {
+    return shared_ptr<ConcreteVal>(
+        ConcreteValInt::xorOp(lhs_concrete.get(), rhs_concrete.get()));
+  } else if (op == Op::Abs) {
+    return shared_ptr<ConcreteVal>(
+        ConcreteValInt::abs(lhs_concrete.get(), rhs_concrete.get()));
+  } else if (op == Op::LShr) {
+    return shared_ptr<ConcreteVal>(
+        ConcreteValInt::lshr(lhs_concrete.get(), rhs_concrete.get(), flags));
+  } else if (op == Op::AShr) {
+    return shared_ptr<ConcreteVal>(
+        ConcreteValInt::ashr(lhs_concrete.get(), rhs_concrete.get(), flags));
+  } else if (op == Op::Shl) {
+    return shared_ptr<ConcreteVal>(
+        ConcreteValInt::shl(lhs_concrete.get(), rhs_concrete.get(), flags));
+  } else if (op == Op::Cttz) {
+    return shared_ptr<ConcreteVal>( 
+        ConcreteValInt::cttz(lhs_concrete.get(), rhs_concrete.get(), flags));
+  } else if (op == Op::Ctlz) {
+    return shared_ptr<ConcreteVal>(
+        ConcreteValInt::ctlz(lhs_concrete.get(), rhs_concrete.get(), flags));
+  } else if (op == Op::SAdd_Overflow || op == Op::UAdd_Overflow ||
+             op == Op::SSub_Overflow || op == Op::USub_Overflow ||
+             op == Op::SMul_Overflow || op == Op::UMul_Overflow) {
+    return shared_ptr<ConcreteVal>(ConcreteValInt::arithOverflow(
+        lhs_concrete.get(), rhs_concrete.get(), op));
+  } else {
+    interpreter.setUnsupported(getOpcodeName());
+    return nullptr;
+  }
+  UNREACHABLE();
+}
 
 vector<Value*> FpBinOp::operands() const {
   return { lhs, rhs };
@@ -849,6 +972,63 @@ unique_ptr<Instr> FpBinOp::dup(const string &suffix) const {
                               fmath);
 }
 
+std::shared_ptr<util::ConcreteVal>
+FpBinOp::concreteEval(Interpreter &interpreter) const {
+  auto v_op = operands();
+  for (auto operand : v_op) {
+    auto I = interpreter.concrete_vals.find(operand);
+    if (I == interpreter.concrete_vals.end()) {
+      cout << "[FPBinOp::concreteEval] concrete values for operand not found. "
+              "Aborting\n";
+      assert(false);
+    }
+  }
+
+  auto lhs_concrete = interpreter.concrete_vals.find(lhs)->second;
+  auto rhs_concrete = interpreter.concrete_vals.find(rhs)->second;
+  auto lhs_vect = dynamic_cast<ConcreteValAggregate *>(lhs_concrete.get());
+  if (lhs_vect) {
+    auto res = shared_ptr<ConcreteVal>(ConcreteValAggregate::evalFPBinOp(
+        lhs_concrete.get(), rhs_concrete.get(), op, fmath, interpreter));
+    if (!res) {
+      interpreter.setUnsupported("vector binop issue");
+    }
+    return res;
+  }
+
+  if (op == Op::FAdd) {
+    return shared_ptr<ConcreteVal>(
+        ConcreteValFloat::fadd(lhs_concrete.get(), rhs_concrete.get(), fmath));
+  } else if (op == Op::FSub) {
+    return shared_ptr<ConcreteVal>(
+        ConcreteValFloat::fsub(lhs_concrete.get(), rhs_concrete.get(), fmath));
+  } else if (op == Op::FMul) {
+    return shared_ptr<ConcreteVal>(
+        ConcreteValFloat::fmul(lhs_concrete.get(), rhs_concrete.get(), fmath));
+  } else if (op == Op::FDiv) {
+    return shared_ptr<ConcreteVal>(
+        ConcreteValFloat::fdiv(lhs_concrete.get(), rhs_concrete.get(), fmath));
+  } else if (op == Op::FRem) {
+    return shared_ptr<ConcreteVal>(
+        ConcreteValFloat::frem(lhs_concrete.get(), rhs_concrete.get(), fmath));
+  } else if (op == Op::FMax) {
+    return shared_ptr<ConcreteVal>(
+        ConcreteValFloat::fmax(lhs_concrete.get(), rhs_concrete.get(), fmath));
+  } else if (op == Op::FMin) {
+    return shared_ptr<ConcreteVal>(
+        ConcreteValFloat::fmin(lhs_concrete.get(), rhs_concrete.get(), fmath));
+  } else if (op == Op::FMaximum) {
+    return shared_ptr<ConcreteVal>(ConcreteValFloat::fmaximum(
+        lhs_concrete.get(), rhs_concrete.get(), fmath));
+  } else if (op == Op::FMinimum) {
+    return shared_ptr<ConcreteVal>(ConcreteValFloat::fminimum(
+        lhs_concrete.get(), rhs_concrete.get(), fmath));
+  } else {
+    interpreter.setUnsupported(getOpcodeName());
+    return nullptr;
+  }
+  UNREACHABLE();
+}
 
 vector<Value*> UnaryOp::operands() const {
   return { val };
@@ -1081,6 +1261,55 @@ unique_ptr<Instr> FpUnaryOp::dup(const string &suffix) const {
     make_unique<FpUnaryOp>(getType(), getName() + suffix, *val, op, fmath, rm);
 }
 
+bool UnaryOp::isFPInstr() const{
+  if (op == Op::FAbs || 
+      op == Op::FNeg ||
+      op == Op::Ceil ||
+      op == Op::Floor ||
+      op == Op::Round ||
+      op == Op::RoundEven ||
+      op == Op::Trunc || 
+      op == Op::Sqrt)
+      return true;
+  return false;
+}
+
+std::shared_ptr<util::ConcreteVal>
+UnaryOp::concreteEval(Interpreter &interpreter) const {
+  auto I = interpreter.concrete_vals.find(val);
+  if (I == interpreter.concrete_vals.end()) {
+    cout << "[Unary::concreteEval] concrete value for operand not found. Aborting" << '\n';
+    assert(false);
+  }
+
+  auto operand = I->second.get();
+  if (op == Op::FAbs) {
+    return shared_ptr<ConcreteVal>(ConcreteValFloat::fabs(operand, fmath));
+  } else if (op == Op::FNeg) {
+    return shared_ptr<ConcreteVal>(ConcreteValFloat::fneg(operand, fmath));
+  } else if (op == Op::Ceil) {
+    return shared_ptr<ConcreteVal>(ConcreteValFloat::ceil(operand, fmath));
+  } else if (op == Op::Floor) {
+    return shared_ptr<ConcreteVal>(ConcreteValFloat::floor(operand, fmath));
+  } else if (op == Op::Round) {
+    return shared_ptr<ConcreteVal>(ConcreteValFloat::round(operand, fmath));
+  } else if (op == Op::RoundEven) {
+    return shared_ptr<ConcreteVal>(ConcreteValFloat::roundEven(operand, fmath));
+  } else if (op == Op::Trunc) {
+    return shared_ptr<ConcreteVal>(ConcreteValFloat::trunc(operand, fmath));
+  } else if (op == Op::Ctpop) {
+    return shared_ptr<ConcreteVal>(ConcreteValInt::ctpop(operand));
+  } else if (op == Op::BitReverse) {
+    return shared_ptr<ConcreteVal>(ConcreteValInt::bitreverse(operand));
+  } else if (op == Op::BSwap) {
+    return shared_ptr<ConcreteVal>(ConcreteValInt::bswap(operand));
+  } else {
+    interpreter.setUnsupported(getOpcodeName());
+    return nullptr;
+  }
+
+  UNREACHABLE();
+}
 
 vector<Value*> UnaryReductionOp::operands() const {
   return { val };
@@ -1310,6 +1539,41 @@ unique_ptr<Instr> FpTernaryOp::dup(const string &suffix) const {
                                   fmath, rm);
 }
 
+std::shared_ptr<util::ConcreteVal>
+TernaryOp::concreteEval(Interpreter &interpreter) const {
+  auto v_op = operands();
+  for (auto operand : v_op) {
+    auto I = interpreter.concrete_vals.find(operand);
+    if (I == interpreter.concrete_vals.end()) {
+      cout << "ERROR : [TernaryOp::concreteEval] concrete values for operand "
+              "not found. Aborting!"
+           << '\n';
+      assert(false);
+    }
+  }
+
+  auto op_a_concrete = interpreter.concrete_vals.find(a)->second.get();
+  auto op_b_concrete = interpreter.concrete_vals.find(b)->second.get();
+  auto op_c_concrete = interpreter.concrete_vals.find(c)->second.get();
+
+  if (op == Op::FMA) {
+    // CHECK Should we check the opStatus from the fusedMultipyAdd?
+    return shared_ptr<ConcreteVal>(
+        ConcreteValFloat::fma(op_a_concrete, op_b_concrete, op_c_concrete));
+  } else if (op == Op::FShl) {
+    return shared_ptr<ConcreteVal>(
+        ConcreteValInt::fshl(op_a_concrete, op_b_concrete, op_c_concrete));
+  } else if (op == Op::FShr) {
+    return shared_ptr<ConcreteVal>(
+        ConcreteValInt::fshr(op_a_concrete, op_b_concrete, op_c_concrete));
+  }
+  else {
+    interpreter.setUnsupported(getOpcodeName());
+    return nullptr;
+  }
+
+  UNREACHABLE();
+}
 
 vector<Value*> ConversionOp::operands() const {
   return { val };
@@ -1596,6 +1860,42 @@ unique_ptr<Instr> FpConversionOp::dup(const string &suffix) const {
     make_unique<FpConversionOp>(getType(), getName() + suffix, *val, op, rm);
 }
 
+std::shared_ptr<util::ConcreteVal>
+ConversionOp::concreteEval(Interpreter &interpreter) const {
+  auto I = interpreter.concrete_vals.find(val);
+  if (I == interpreter.concrete_vals.end()) {
+    cout << "ERROR: [ConversionOp::concreteEval] concrete value for operand not found. Aborting" << '\n';
+    assert(false);
+  }
+
+  auto op_concrete = I->second.get();
+  auto tgt_bitwidth = getType().bits();
+
+  if (dynamic_cast<ConcreteValAggregate *>(op_concrete)) {
+    interpreter.setUnsupported("vector operand to conversion operator");
+    return nullptr;
+  }
+
+  if (op == Op::Trunc) {
+    return shared_ptr<ConcreteVal>(
+        ConcreteValInt::iTrunc(op_concrete, tgt_bitwidth));
+  } else if (op == Op::ZExt) {
+    return shared_ptr<ConcreteVal>(
+        ConcreteValInt::zext(op_concrete, tgt_bitwidth));
+  } else if (op == Op::SExt) {
+    return shared_ptr<ConcreteVal>(
+        ConcreteValInt::sext(op_concrete, tgt_bitwidth));
+  } else if (op == Op::BitCast) {
+    if (getType().isPtrType() && val->getType().isPtrType())
+      return I->second;
+    interpreter.setUnsupported("bitcast on non-pointers");
+    return nullptr;
+  } else {
+    interpreter.setUnsupported(getOpcodeName());
+    return nullptr;
+  }
+  UNREACHABLE();
+}
 
 vector<Value*> Select::operands() const {
   return { cond, a, b };
@@ -1652,6 +1952,19 @@ unique_ptr<Instr> Select::dup(const string &suffix) const {
   return make_unique<Select>(getType(), getName() + suffix, *cond, *a, *b);
 }
 
+std::shared_ptr<util::ConcreteVal>
+Select::concreteEval(Interpreter &interpreter) const {
+  auto a_I = interpreter.concrete_vals.find(a);
+  assert(a_I != interpreter.concrete_vals.end());
+  auto &concrete_a = a_I->second;
+  auto b_I = interpreter.concrete_vals.find(b);
+  assert(b_I != interpreter.concrete_vals.end());
+  auto &concrete_b = b_I->second;
+  auto cond_I = interpreter.concrete_vals.find(cond);
+  assert(cond_I != interpreter.concrete_vals.end());
+  auto concrete_cond = cond_I->second.get();
+  return ConcreteValInt::select(concrete_cond, concrete_a, concrete_b);
+}
 
 void ExtractValue::addIdx(unsigned idx) {
   idxs.emplace_back(idx);
@@ -1713,6 +2026,16 @@ unique_ptr<Instr> ExtractValue::dup(const string &suffix) const {
   return ret;
 }
 
+shared_ptr<ConcreteVal>
+ExtractValue::concreteEval(Interpreter &interpreter) const {
+  shared_ptr<ConcreteVal> v = interpreter.concrete_vals[val];
+  for (unsigned idx : idxs) {
+    auto &agg = static_cast<ConcreteValAggregate &>(*v).getVal();
+    assert(idx < agg.size());
+    v = agg[idx];
+  }
+  return v;
+}
 
 void InsertValue::addIdx(unsigned idx) {
   idxs.emplace_back(idx);
@@ -1796,6 +2119,26 @@ unique_ptr<Instr> InsertValue::dup(const string &suffix) const {
     ret->addIdx(idx);
   }
   return ret;
+}
+
+static shared_ptr<ConcreteVal> InsertValueImpl(ConcreteVal *val,
+                                               shared_ptr<ConcreteVal> &elt,
+                                               const vector<unsigned> &idxs,
+                                               unsigned i) {
+  if (i >= idxs.size())
+    return elt;
+  vector<shared_ptr<ConcreteVal>> elements =
+      static_cast<ConcreteValAggregate &>(*val).getVal();
+  assert(idxs[i] < elements.size());
+  elements[idxs[i]] =
+      InsertValueImpl(elements[idxs[i]].get(), elt, idxs, i + 1);
+  return make_shared<ConcreteValAggregate>(false, move(elements));
+}
+
+shared_ptr<ConcreteVal>
+InsertValue::concreteEval(Interpreter &interpreter) const {
+  return InsertValueImpl(interpreter.concrete_vals[val].get(),
+                         interpreter.concrete_vals[elt], idxs, 0);
 }
 
 DEFINE_AS_RETZEROALIGN(FnCall, getMaxAllocSize);
@@ -1943,6 +2286,9 @@ static void unpack_inputs(State &s, Value &argv, Type &ty,
     value.non_poison = std::move(new_non_poison);
 
     if (ty.isPtrType()) {
+      // FIXME: This is definitely incorrect. If the *callee* has argmemonly,
+      // this checks whether the argument is one of the *caller's* arguments.
+      // https://github.com/AliveToolkit/alive2/issues/763
       if (argmemonly)
         value.non_poison
           &= ptr_only_args(s, Pointer(s.getMemory(), value.value));
@@ -2007,6 +2353,7 @@ StateValue FnCall::toSMT(State &s) const {
   vector<StateValue> inputs;
   vector<Memory::PtrInput> ptr_inputs;
   vector<Type*> out_types;
+
   bool argmemonly_fn   = s.getFn().getFnAttrs().has(FnAttrs::ArgMemOnly);
   bool argmemonly_call = hasAttribute(FnAttrs::ArgMemOnly);
 
@@ -2235,6 +2582,30 @@ unique_ptr<Instr> ICmp::dup(const string &suffix) const {
   return make_unique<ICmp>(getType(), getName() + suffix, cond, *a, *b);
 }
 
+std::shared_ptr<util::ConcreteVal>
+ICmp::concreteEval(Interpreter &interpreter) const {
+  auto a_I = interpreter.concrete_vals.find(a);
+  assert(a_I != interpreter.concrete_vals.end());
+  auto concrete_a = a_I->second.get();
+  auto b_I = interpreter.concrete_vals.find(b);
+  assert(b_I != interpreter.concrete_vals.end());
+  auto concrete_b = b_I->second.get();
+
+  if (a->getType().isPtrType()) {
+    return shared_ptr<ConcreteVal>(ConcreteValPointer::icmp(
+        concrete_a, concrete_b, cond, pcmode, interpreter));
+  } else if (a->getType().isVectorType()) {
+    return shared_ptr<ConcreteVal>(ConcreteValAggregate::icmp(
+        concrete_a, concrete_b, cond, pcmode, interpreter));
+  } else if (a->getType().isIntType()) {
+    return shared_ptr<ConcreteVal>(
+        ConcreteValInt::icmp(concrete_a, concrete_b, cond));
+  }
+  else {
+    interpreter.setUnsupported("icmp type not supported");
+    return nullptr;
+  }
+}
 
 vector<Value*> FCmp::operands() const {
   return { a, b };
@@ -2322,6 +2693,137 @@ unique_ptr<Instr> FCmp::dup(const string &suffix) const {
   return make_unique<FCmp>(getType(), getName() + suffix, cond, *a, *b, fmath);
 }
 
+std::shared_ptr<util::ConcreteVal>
+FCmp::concreteEval(Interpreter &interpreter) const {
+  interpreter.setUnsupported(getOpcodeName());
+  return nullptr;
+  //TODO support fcmp with vector operands
+  /*
+  auto v = new ConcreteVal();
+  auto a_I = concrete_vals.find(a);
+  assert(a_I != concrete_vals.end());
+  auto concrete_a = a_I->second;
+  auto b_I = concrete_vals.find(b);
+  assert(b_I != concrete_vals.end());
+  auto concrete_b = b_I->second;
+  if (concrete_a->isPoison() || concrete_b->isPoison()){
+    v->setPoison(true);
+    return v;
+  }
+  bool fcmp_res = false;
+  auto compare_res = concrete_a->getValFloat().compare(concrete_b->getValFloat());
+  switch (cond) {
+    case OEQ:
+      if ( ( compare_res == llvm::APFloatBase::cmpEqual ) && 
+           !( concrete_a->getValFloat().isNaN() && !concrete_a->getValFloat().isSignaling()) &&
+           !( concrete_b->getValFloat().isNaN() && !concrete_b->getValFloat().isSignaling()) ) {
+            fcmp_res = true;  
+           }
+      break;
+    case OGT:  
+      if ( ( compare_res == llvm::APFloatBase::cmpGreaterThan ) && 
+           !( concrete_a->getValFloat().isNaN() && !concrete_a->getValFloat().isSignaling()) &&
+           !( concrete_b->getValFloat().isNaN() && !concrete_b->getValFloat().isSignaling()) ) {
+            fcmp_res = true;  
+           }
+      break;
+    case OGE: 
+      if ( ( compare_res == llvm::APFloatBase::cmpGreaterThan || compare_res == llvm::APFloatBase::cmpEqual ) && 
+           !( concrete_a->getValFloat().isNaN() && !concrete_a->getValFloat().isSignaling()) &&
+           !( concrete_b->getValFloat().isNaN() && !concrete_b->getValFloat().isSignaling()) ) {
+            fcmp_res = true;  
+           }
+      break;
+    case OLT: 
+      if ( ( compare_res == llvm::APFloatBase::cmpLessThan ) && 
+           !( concrete_a->getValFloat().isNaN() && !concrete_a->getValFloat().isSignaling()) &&
+           !( concrete_b->getValFloat().isNaN() && !concrete_b->getValFloat().isSignaling()) ) {
+            fcmp_res = true;  
+           }
+      break;
+    case OLE: 
+      if ( ( compare_res == llvm::APFloatBase::cmpLessThan || compare_res == llvm::APFloatBase::cmpEqual ) && 
+           !( concrete_a->getValFloat().isNaN() && !concrete_a->getValFloat().isSignaling()) &&
+           !( concrete_b->getValFloat().isNaN() && !concrete_b->getValFloat().isSignaling()) ) {
+            fcmp_res = true;  
+           }
+      break;
+    case ONE: 
+      if ( ( compare_res != llvm::APFloatBase::cmpEqual ) && 
+           !( concrete_a->getValFloat().isNaN() && !concrete_a->getValFloat().isSignaling()) &&
+           !( concrete_b->getValFloat().isNaN() && !concrete_b->getValFloat().isSignaling()) ) {
+            fcmp_res = true;  
+           }
+      break;
+    case ORD:
+      if ( !( concrete_a->getValFloat().isNaN() && !concrete_a->getValFloat().isSignaling()) &&
+           !( concrete_b->getValFloat().isNaN() && !concrete_b->getValFloat().isSignaling()) ) {
+            fcmp_res = true;  
+           }
+      break;
+    case UEQ: 
+      if ( ( concrete_a->getValFloat().isNaN() && !concrete_a->getValFloat().isSignaling()) ||
+           ( concrete_b->getValFloat().isNaN() && !concrete_b->getValFloat().isSignaling()) ||
+           ( compare_res == llvm::APFloatBase::cmpEqual ) ) {
+            fcmp_res = true;  
+           }
+      break;
+    case UGT: 
+      if ( ( concrete_a->getValFloat().isNaN() && !concrete_a->getValFloat().isSignaling()) ||
+           ( concrete_b->getValFloat().isNaN() && !concrete_b->getValFloat().isSignaling()) ||
+           ( compare_res == llvm::APFloatBase::cmpGreaterThan ) ) {
+            fcmp_res = true;  
+           }
+      break;
+    case UGE: 
+      if ( ( concrete_a->getValFloat().isNaN() && !concrete_a->getValFloat().isSignaling()) ||
+           ( concrete_b->getValFloat().isNaN() && !concrete_b->getValFloat().isSignaling()) ||
+           ( compare_res == llvm::APFloatBase::cmpGreaterThan || compare_res == llvm::APFloatBase::cmpEqual) ) {
+            fcmp_res = true;  
+           }
+      break;
+    case ULT:
+      if ( ( concrete_a->getValFloat().isNaN() && !concrete_a->getValFloat().isSignaling()) ||
+           ( concrete_b->getValFloat().isNaN() && !concrete_b->getValFloat().isSignaling()) ||
+           ( compare_res == llvm::APFloatBase::cmpLessThan ) ) {
+            fcmp_res = true;  
+           }
+      break;
+    case ULE:
+      if ( ( concrete_a->getValFloat().isNaN() && !concrete_a->getValFloat().isSignaling()) ||
+           ( concrete_b->getValFloat().isNaN() && !concrete_b->getValFloat().isSignaling()) ||
+           ( compare_res == llvm::APFloatBase::cmpLessThan || compare_res == llvm::APFloatBase::cmpEqual ) ) {
+            fcmp_res = true;  
+           }
+      break;
+    case UNE:
+      if ( ( concrete_a->getValFloat().isNaN() && !concrete_a->getValFloat().isSignaling()) ||
+           ( concrete_b->getValFloat().isNaN() && !concrete_b->getValFloat().isSignaling()) ||
+           ( compare_res != llvm::APFloatBase::cmpEqual ) ) {
+            fcmp_res = true;  
+           }
+      break;
+    case UNO:
+      if ( ( concrete_a->getValFloat().isNaN() && !concrete_a->getValFloat().isSignaling()) ||
+           ( concrete_b->getValFloat().isNaN() && !concrete_b->getValFloat().isSignaling()) ) {
+            fcmp_res = true;  
+           }
+      break;
+    default:
+        UNREACHABLE();
+  }
+  if (fcmp_res){
+    auto ap_true = llvm::APInt(1,1);
+    v->setVal(ap_true);
+  }
+  else{
+    auto ap_false = llvm::APInt(1,0);
+    v->setVal(ap_false);
+  }
+    
+  return v;
+  */
+}
 
 vector<Value*> Freeze::operands() const {
   return { val };
@@ -2789,6 +3291,33 @@ unique_ptr<Instr> Assume::dup(const string &suffix) const {
   return make_unique<Assume>(vector<Value *>(args), kind);
 }
 
+std::shared_ptr<util::ConcreteVal>
+Assume::concreteEval(util::Interpreter &interpreter) const {
+  auto &arg = *interpreter.concrete_vals[args[0]];
+  switch (kind) {
+  case AndNonPoison:
+    if (arg.isPoison() || arg.isUndef() ||
+        !static_cast<const ConcreteValInt &>(arg).getBoolVal())
+      interpreter.UB_flag = true;
+    break;
+  case IfNonPoison:
+    if (!arg.isPoison() &&
+        !static_cast<const ConcreteValInt &>(arg).getBoolVal())
+      interpreter.UB_flag = true;
+    break;
+  case WellDefined:
+    if (arg.isPoison())
+      interpreter.UB_flag = true;
+    break;
+  case Align:
+    interpreter.setUnsupported("assume.align");
+    break;
+  case NonNull:
+    interpreter.setUnsupported("assume.nonnull");
+    break;
+  }
+  return make_shared<ConcreteValVoid>();
+}
 
 MemInstr::ByteAccessInfo MemInstr::ByteAccessInfo::intOnly(unsigned bytesz) {
   ByteAccessInfo info;
@@ -2917,6 +3446,40 @@ unique_ptr<Instr> Alloc::dup(const string &suffix) const {
   return a;
 }
 
+shared_ptr<ConcreteVal> Alloc::concreteEval(Interpreter &interpreter) const {
+
+  // alloc in alive always has an int type
+  assert(size->getType().isIntType());
+
+  uint64_t block_size = 1;
+  assert(interpreter.concrete_vals.contains(size));
+  if (mul) {
+    assert(interpreter.concrete_vals.contains(mul));
+    auto mul_c_val = interpreter.concrete_vals[mul].get();
+    auto mul_int_val = dynamic_cast<ConcreteValInt *>(mul_c_val);
+    if (mul_int_val->isPoison()) {
+      interpreter.UB_flag = true;
+      return nullptr;
+    }
+    block_size = mul_int_val->getVal().getZExtValue();
+  }
+
+  auto size_c_val = interpreter.concrete_vals[size].get();
+  auto size_int_val = dynamic_cast<ConcreteValInt *>(size_c_val);
+  if (size_int_val->isPoison()) {
+    interpreter.UB_flag = true;
+    return nullptr;
+  }
+  block_size *= size_int_val->getVal().getZExtValue();
+  // TODO: handle initially_dead
+  ConcreteBlock new_block;
+  new_block.align_bits = ilog2(align);
+  new_block.size = block_size;
+  auto res =
+      new ConcreteValPointer(false, interpreter.local_mem_blocks.size(), 0, true);
+  interpreter.local_mem_blocks.push_back(std::move(new_block));
+  return shared_ptr<ConcreteVal>(res);
+}
 
 DEFINE_AS_RETZERO(Malloc, getMaxAccessSize);
 DEFINE_AS_RETZERO(Malloc, getMaxGEPOffset);
@@ -3301,6 +3864,51 @@ unique_ptr<Instr> GEP::dup(const string &suffix) const {
   return dup;
 }
 
+shared_ptr<ConcreteVal> GEP::concreteEval(Interpreter &interpreter) const {
+  assert(interpreter.concrete_vals.contains(ptr));
+  auto ptr_val = interpreter.concrete_vals[ptr].get();
+  auto c_ptr_val = dynamic_cast<ConcreteValPointer *>(ptr_val);
+  assert(c_ptr_val);
+
+  auto res = new ConcreteValPointer(*c_ptr_val);
+  auto &cur_block = interpreter.getBlock(res->getBid(), res->getIsLocal());
+  auto check_in_bounds = [&]() {
+    if (!inbounds)
+      return;
+    int64_t off = res->getOffset();
+    if (off < 0 || (uint64_t)off > cur_block.size)
+      res->setPoison(true);
+  };
+
+  check_in_bounds();
+  long offsets_without_base = 0;
+  for (auto &[size, val] : idxs) {
+    assert(interpreter.concrete_vals.contains(val));
+    auto i_val = interpreter.concrete_vals[val].get();
+    auto i_val_int = dynamic_cast<ConcreteValInt *>(i_val);
+    assert(i_val_int);
+    if (i_val_int->isPoison())
+      res->setPoison(true);
+    auto cur_int_index = i_val_int->getVal().getSExtValue();
+    // TODO: if inbounds, check that signed truncation of i_val_int to
+    // bits_for_offset bits is equal to i_val_int.
+    long mul_res;
+    bool mul_ov = __builtin_smull_overflow(cur_int_index, size, &mul_res);
+    long new_offset;
+    bool add_ov =
+        __builtin_saddl_overflow(res->getOffset(), mul_res, &new_offset);
+    bool add_without_base_ov =
+        __builtin_saddl_overflow(offsets_without_base, mul_res, &offsets_without_base);
+    if (inbounds && (mul_ov || add_ov || add_without_base_ov))
+      res->setPoison(true);
+    // TODO: ConcreteValPointer::offset should probably be unsigned (although
+    // it would only matter if an allocation took up half the address space).
+    res->setOffset(new_offset);
+    check_in_bounds();
+  }
+
+  return shared_ptr<ConcreteVal>(res);
+}
 
 DEFINE_AS_RETZEROALIGN(Load, getMaxAllocSize);
 DEFINE_AS_RETZERO(Load, getMaxGEPOffset);
@@ -3344,6 +3952,116 @@ unique_ptr<Instr> Load::dup(const string &suffix) const {
   return make_unique<Load>(getType(), getName() + suffix, *ptr, align);
 }
 
+static util::ConcreteVal *loadIntVal(Interpreter &interpreter,
+                                     util::ConcreteValPointer *ptr,
+                                     unsigned int bitwidth) {
+  if ((bitwidth < 8) || ((bitwidth % 8) != 0)) { // TODO Relax this constraint
+    interpreter.setUnsupported("loadIntVal unsupported int bitwidth");
+    return nullptr;
+  }
+  // cout << "loadIntVal\n";
+  // cout << "ptr bid= " << ptr->getBid()
+  //      << ",offset=" << ptr->getOffset()
+  //      << ",poison=" << ptr->isPoison() << "\n";
+  // cout << "getting block\n";
+  auto &cur_block = interpreter.getBlock(ptr->getBid(), ptr->getIsLocal());
+  // cur_block.print(cout);
+  auto num_bytes = bitwidth / 8;
+  if (bitwidth > (num_bytes * 8))
+    num_bytes += 1;
+
+  auto res = new ConcreteValInt(false, llvm::APInt(bitwidth, 0));
+  for (unsigned int i = 0; i < num_bytes; ++i) {
+    auto &cur_byte = cur_block.getByte(ptr->getOffset() + i, interpreter.UB_flag);
+    if (interpreter.UB_flag)
+      return nullptr;
+    if (cur_byte.is_pointer) {
+      // We should do ptrtoint here and extract the bits we need, but it isn't
+      // implemented yet.
+      interpreter.setUnsupported("load pointer as integer");
+      return nullptr;
+    }
+
+    if (cur_byte.intValue().first == 0) {
+      // if (cur_byte == cur_block.default_byte ||
+      // cur_byte.intValue().isPoison()) { cout << "encountered default byte\n";
+      res->setPoison(true);
+      return res;
+    } else {
+      auto byte_val_int = llvm::APInt(bitwidth, cur_byte.intValue().second);
+      byte_val_int <<= (i * 8);
+      res->setVal(res->getVal() += byte_val_int);
+    }
+  }
+  return res;
+}
+
+static util::ConcreteVal *loadPtrVal(Interpreter &interpreter,
+                                     util::ConcreteValPointer *ptr,
+                                     unsigned int bytes_per_ptr) {
+
+  assert(bytes_per_ptr != 0 && "bytes_per_ptr must be non-zero");
+
+  cout << "bytes_per_ptr = " << bytes_per_ptr << "\n";
+
+  auto &cur_block = interpreter.getBlock(ptr->getBid(), ptr->getIsLocal());
+
+  auto first_byte_ptr = cur_block.getByte(ptr->getOffset(), interpreter.UB_flag);
+  if (interpreter.UB_flag)
+    return nullptr;
+  if (!first_byte_ptr.is_pointer) {
+    // It's possible the program could have run ptrtoint and stored the result
+    // to memory, so we need to do inttoptr now. But it isn't implemented yet.
+    interpreter.setUnsupported("load an integer as a pointer");
+    return nullptr;
+  }
+  if (first_byte_ptr.pointer_byte_offset != 0) {
+    interpreter.UB_flag = true;
+    return nullptr;
+  }
+
+  for (unsigned int i = 1; i < bytes_per_ptr; ++i) {
+    auto &cur_ptr_byte = cur_block.getByte(ptr->getOffset() + i, interpreter.UB_flag);
+
+    if (interpreter.UB_flag || !cur_ptr_byte.is_pointer ||
+        cur_ptr_byte.pointerValue() != first_byte_ptr.pointerValue() ||
+        cur_ptr_byte.pointer_byte_offset != i) {
+      // Technically, I'm not sure if this is UB if the program stored one copy
+      // of a pointer directly and one copy using ptrtoint and mixed up the
+      // bytes of both. But that's such a rare case that we shouldn't worry
+      // about it.
+      interpreter.UB_flag = true;
+      return nullptr;
+    }
+  }
+
+  auto res = new ConcreteValPointer(first_byte_ptr.pointerValue());
+  return res;
+}
+
+std::shared_ptr<util::ConcreteVal>
+Load::concreteEval(Interpreter &interpreter) const {
+  // TODO: check alignment
+  auto ptr_I = interpreter.concrete_vals.find(ptr);
+  assert(ptr_I != interpreter.concrete_vals.end());
+  auto concrete_ptr = ptr_I->second.get();
+  auto c_ptr = dynamic_cast<ConcreteValPointer *>(concrete_ptr);
+  assert(c_ptr);
+
+  if (getType().isIntType()) {
+    // todo handle multiple integer bitwidth
+    return shared_ptr<ConcreteVal>(
+        loadIntVal(interpreter, c_ptr, getType().bits()));
+  } else if (getType().isPtrType()) {
+    return shared_ptr<ConcreteVal>(
+        loadPtrVal(interpreter, c_ptr, bits_program_pointer / bits_byte));
+  } else { // floating point, etc
+    interpreter.setUnsupported("load a value unsupported type");
+    return nullptr;
+  }
+
+  UNREACHABLE();
+}
 
 DEFINE_AS_RETZEROALIGN(Store, getMaxAllocSize);
 DEFINE_AS_RETZERO(Store, getMaxGEPOffset);
@@ -3394,6 +4112,82 @@ unique_ptr<Instr> Store::dup(const string &suffix) const {
   return make_unique<Store>(*ptr, *val, align);
 }
 
+static void storeIntVal(Interpreter &interpreter, util::ConcreteValPointer *ptr,
+                        util::ConcreteValInt *int_val) {
+  // ptr->print();
+  auto bitwidth = int_val->getVal().getBitWidth();
+  if ((bitwidth % 8) != 0) { // FIXME relax this constraint
+    interpreter.setUnsupported("storeIntVal unsupported bitwidth");
+    return;
+  }
+
+  auto &cur_block = interpreter.getBlock(ptr->getBid(), ptr->getIsLocal());
+  auto num_bytes = bitwidth / 8;
+
+  if (bitwidth > (num_bytes * 8))
+    num_bytes += 1;
+
+  auto tgt_val = int_val->getVal();
+  for (unsigned int i = 0; i < num_bytes; ++i) {
+    auto &cur_byte =
+        cur_block.getByte(ptr->getOffset() + i, interpreter.UB_flag);
+    if (interpreter.UB_flag)
+      return;
+
+    // This will fail for types that are non multiples of 8
+    auto tgt_byte = tgt_val.extractBits(8, i * 8);
+    cur_byte = ConcreteByte(
+        DataByteVal(int_val->isPoison() ? 0 : 255, tgt_byte.getZExtValue()));
+  }
+}
+
+
+static void storePtrVal(Interpreter &interpreter,
+                        util::ConcreteValPointer *ptr_dst,
+                        util::ConcreteValPointer *ptr_val,
+                        unsigned int bytes_per_ptr) {
+
+  auto &dst_block = interpreter.getBlock(ptr_dst->getBid(), ptr_dst->getIsLocal());
+  // cout << "storePtrVal bytes_per_ptr= " << bytes_per_ptr << "\n";
+  
+  for (unsigned int i = 0; i < bytes_per_ptr; ++i) {
+    auto &dst_deref_byte =
+        dst_block.getByte(ptr_dst->getOffset() + i, interpreter.UB_flag);
+
+    if (interpreter.UB_flag)
+      return;
+    dst_deref_byte.is_pointer = true;
+    dst_deref_byte.pointer_byte_offset = i;
+    dst_deref_byte.pointerValue() = *ptr_val;
+  }
+
+  return;
+}
+
+std::shared_ptr<util::ConcreteVal>
+Store::concreteEval(Interpreter &interpreter) const {
+  // TODO: check alignment
+  auto ptr_I = interpreter.concrete_vals.find(ptr);
+  assert(ptr_I != interpreter.concrete_vals.end());
+  auto concrete_ptr = ptr_I->second.get();
+  auto c_ptr = dynamic_cast<ConcreteValPointer *>(concrete_ptr);
+  auto val_I = interpreter.concrete_vals.find(val);
+  assert(val_I != interpreter.concrete_vals.end());
+  auto concrete_store_val = val_I->second.get();
+
+  if (val->getType().isPtrType()) {
+    auto c_ptr_val = dynamic_cast<ConcreteValPointer *>(concrete_store_val);
+    storePtrVal(interpreter, c_ptr, c_ptr_val,
+                bits_program_pointer / bits_byte);
+  } else if (val->getType().isIntType()) {
+    auto c_int_val = dynamic_cast<ConcreteValInt *>(concrete_store_val);
+    storeIntVal(interpreter, c_ptr, c_int_val);
+  } else {
+    interpreter.setUnsupported("store to value");
+  }
+
+  return nullptr;
+}
 
 DEFINE_AS_RETZEROALIGN(Memset, getMaxAllocSize);
 DEFINE_AS_RETZERO(Memset, getMaxGEPOffset);

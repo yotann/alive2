@@ -262,13 +262,17 @@ struct TVLegacyPass final : public llvm::ModulePass {
       assert(types.hasSingleTyping());
     }
 
-    if (Errors errs = verifier.verify()) {
-      *out << "Transformation doesn't verify!\n" << errs << endl;
-      has_failure |= errs.isUnsound();
-      if (opt_error_fatal && has_failure)
-        finalize();
-    } else {
-      *out << "Transformation seems to be correct!\n\n";
+    {
+      Errors errs;
+      verifier.verify(errs);
+      if (errs) {
+        *out << "Transformation doesn't verify!\n" << errs << endl;
+        has_failure |= errs.isUnsound();
+        if (opt_error_fatal && has_failure)
+          finalize();
+      } else {
+        *out << "Transformation seems to be correct!\n\n";
+      }
     }
 
     // Regenerate tgt because preprocessing may have changed it
@@ -587,7 +591,7 @@ llvmGetPassPluginInfo() {
       // ClangTVFinalizePass internally checks whether we're running clang tv
       // and finalizes resources then.
       PB.registerOptimizerLastEPCallback(
-          [](llvm::ModulePassManager &MPM, llvm::OptimizationLevel) {
+          [](llvm::ModulePassManager &MPM, auto) {
             MPM.addPass(ClangTVFinalizePass());
           });
 
