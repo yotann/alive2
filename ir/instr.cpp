@@ -1139,6 +1139,29 @@ unique_ptr<Instr> UnaryOp::dup(const string &suffix) const {
   return make_unique<UnaryOp>(getType(), getName() + suffix, *val, op);
 }
 
+std::shared_ptr<util::ConcreteVal>
+UnaryOp::concreteEval(Interpreter &interpreter) const {
+  auto I = interpreter.concrete_vals.find(val);
+  if (I == interpreter.concrete_vals.end()) {
+    cout << "[Unary::concreteEval] concrete value for operand not found. Aborting" << '\n';
+    assert(false);
+  }
+
+  auto operand = I->second.get();
+  if (op == Op::Ctpop) {
+    return shared_ptr<ConcreteVal>(ConcreteValInt::ctpop(operand));
+  } else if (op == Op::BitReverse) {
+    return shared_ptr<ConcreteVal>(ConcreteValInt::bitreverse(operand));
+  } else if (op == Op::BSwap) {
+    return shared_ptr<ConcreteVal>(ConcreteValInt::bswap(operand));
+  } else {
+    interpreter.setUnsupported(getOpcodeName());
+    return nullptr;
+  }
+
+  UNREACHABLE();
+}
+
 
 vector<Value*> FpUnaryOp::operands() const {
   return { val };
@@ -1261,24 +1284,11 @@ unique_ptr<Instr> FpUnaryOp::dup(const string &suffix) const {
     make_unique<FpUnaryOp>(getType(), getName() + suffix, *val, op, fmath, rm);
 }
 
-bool UnaryOp::isFPInstr() const{
-  if (op == Op::FAbs || 
-      op == Op::FNeg ||
-      op == Op::Ceil ||
-      op == Op::Floor ||
-      op == Op::Round ||
-      op == Op::RoundEven ||
-      op == Op::Trunc || 
-      op == Op::Sqrt)
-      return true;
-  return false;
-}
-
 std::shared_ptr<util::ConcreteVal>
-UnaryOp::concreteEval(Interpreter &interpreter) const {
+FpUnaryOp::concreteEval(Interpreter &interpreter) const {
   auto I = interpreter.concrete_vals.find(val);
   if (I == interpreter.concrete_vals.end()) {
-    cout << "[Unary::concreteEval] concrete value for operand not found. Aborting" << '\n';
+    cout << "[FpUnary::concreteEval] concrete value for operand not found. Aborting" << '\n';
     assert(false);
   }
 
@@ -1297,12 +1307,6 @@ UnaryOp::concreteEval(Interpreter &interpreter) const {
     return shared_ptr<ConcreteVal>(ConcreteValFloat::roundEven(operand, fmath));
   } else if (op == Op::Trunc) {
     return shared_ptr<ConcreteVal>(ConcreteValFloat::trunc(operand, fmath));
-  } else if (op == Op::Ctpop) {
-    return shared_ptr<ConcreteVal>(ConcreteValInt::ctpop(operand));
-  } else if (op == Op::BitReverse) {
-    return shared_ptr<ConcreteVal>(ConcreteValInt::bitreverse(operand));
-  } else if (op == Op::BSwap) {
-    return shared_ptr<ConcreteVal>(ConcreteValInt::bswap(operand));
   } else {
     interpreter.setUnsupported(getOpcodeName());
     return nullptr;
@@ -1450,6 +1454,36 @@ unique_ptr<Instr> TernaryOp::dup(const string &suffix) const {
   return make_unique<TernaryOp>(getType(), getName() + suffix, *a, *b, *c, op);
 }
 
+std::shared_ptr<util::ConcreteVal>
+TernaryOp::concreteEval(Interpreter &interpreter) const {
+  auto v_op = operands();
+  for (auto operand : v_op) {
+    auto I = interpreter.concrete_vals.find(operand);
+    if (I == interpreter.concrete_vals.end()) {
+      cout << "ERROR : [TernaryOp::concreteEval] concrete values for operand "
+              "not found. Aborting!"
+           << '\n';
+      assert(false);
+    }
+  }
+
+  auto op_a_concrete = interpreter.concrete_vals.find(a)->second.get();
+  auto op_b_concrete = interpreter.concrete_vals.find(b)->second.get();
+  auto op_c_concrete = interpreter.concrete_vals.find(c)->second.get();
+
+  if (op == Op::FShl) {
+    return shared_ptr<ConcreteVal>(
+        ConcreteValInt::fshl(op_a_concrete, op_b_concrete, op_c_concrete));
+  } else if (op == Op::FShr) {
+    return shared_ptr<ConcreteVal>(
+        ConcreteValInt::fshr(op_a_concrete, op_b_concrete, op_c_concrete));
+  } else {
+    interpreter.setUnsupported(getOpcodeName());
+    return nullptr;
+  }
+
+  UNREACHABLE();
+}
 
 vector<Value*> FpTernaryOp::operands() const {
   return { a, b, c };
@@ -1540,7 +1574,7 @@ unique_ptr<Instr> FpTernaryOp::dup(const string &suffix) const {
 }
 
 std::shared_ptr<util::ConcreteVal>
-TernaryOp::concreteEval(Interpreter &interpreter) const {
+FpTernaryOp::concreteEval(Interpreter &interpreter) const {
   auto v_op = operands();
   for (auto operand : v_op) {
     auto I = interpreter.concrete_vals.find(operand);
@@ -1560,14 +1594,7 @@ TernaryOp::concreteEval(Interpreter &interpreter) const {
     // CHECK Should we check the opStatus from the fusedMultipyAdd?
     return shared_ptr<ConcreteVal>(
         ConcreteValFloat::fma(op_a_concrete, op_b_concrete, op_c_concrete));
-  } else if (op == Op::FShl) {
-    return shared_ptr<ConcreteVal>(
-        ConcreteValInt::fshl(op_a_concrete, op_b_concrete, op_c_concrete));
-  } else if (op == Op::FShr) {
-    return shared_ptr<ConcreteVal>(
-        ConcreteValInt::fshr(op_a_concrete, op_b_concrete, op_c_concrete));
-  }
-  else {
+  } else {
     interpreter.setUnsupported(getOpcodeName());
     return nullptr;
   }
