@@ -13,16 +13,6 @@ namespace util{
     setPoison(poison);
   }
 
-  //ConcreteVal::ConcreteVal(bool poison, llvm::APInt val) 
-  //: val(val) {
-  //  setPoison(poison);
-  //}
-
-  //ConcreteVal::ConcreteVal(bool poison, llvm::APFloat val) 
-  //: val(val) {
-  //  setPoison(poison);
-  //}
-
   ConcreteVal::~ConcreteVal() {}
 
   void ConcreteVal::setPoison(bool poison){
@@ -44,52 +34,6 @@ namespace util{
 
   bool ConcreteVal::isUndef() const {
     return flags & Flags::Undef;
-  }
-
-  //void ConcreteVal::setVal(ConcreteVal& v){
-  //   *this = v;
-  //}
-
-  //void ConcreteVal::setVal(llvm::APInt& v){
-  //  val = v;
-  //}
-
-  //void ConcreteVal::setVal(llvm::APFloat& v){
-  //  val = v;
-  //}
-
-  //ConcreteVal& ConcreteVal::getVal() {
-  //  return *this;
-
-  //  return *(std::get_if<llvm::APInt>(&val));
-  //}
-
-  //llvm::APFloat& ConcreteVal::getValFloat(){
-  //  return *(std::get_if<llvm::APFloat>(&val));
-  //}
-
-  void ConcreteVal::print(){
-    cout << "!!! Should not happend " << '\n';
-    //if (auto val_ptr = std::get_if<llvm::APInt>(&val)){
-    //  llvm::SmallString<40> S, U;
-    //  val_ptr->toStringUnsigned(U);
-    //  val_ptr->toStringSigned(S);
-    //  std::cout << "ConcreteVal( poison=" << isPoison() << ", " << val_ptr->getBitWidth() << "b, "
-    //            << U.c_str() << "u " << S.c_str() << "s)\n";
-    //}
-    //else if (auto val_ptr = std::get_if<llvm::APFloat>(&val)){
-    //  llvm::SmallVector<char, 16> Buffer;
-    //  val_ptr->toString(Buffer);
-    //  auto bits = val_ptr->getSizeInBits(val_ptr->getSemantics());
-    //  std::string F(Buffer.begin(),Buffer.end());
-    //  std::cout << "ConcreteVal( poison=" << isPoison() << ", " 
-    //            << bits << "b, " << F << "F)\n";
-    //}
-    //else{
-    //  UNREACHABLE();
-    //}
-    
-    return;
   }
 
   ConcreteValVoid::ConcreteValVoid() : ConcreteVal(false) {}
@@ -1154,7 +1098,7 @@ namespace util{
     
     auto v = new ConcreteValFloat(false, llvm::APFloat(op_float->val));
     v->val.roundToIntegral(llvm::RoundingMode::TowardNegative);
-    // CHECK can this every be true?
+    // CHECK can this ever be true?
     unOPEvalFmath(v, fmath);
     return v;   
   }
@@ -1208,7 +1152,7 @@ namespace util{
     
     auto v = new ConcreteValFloat(false, llvm::APFloat(op_float->val));
     v->val.roundToIntegral(llvm::RoundingMode::TowardZero);
-    // CHECK can this every be true?
+    // CHECK can this ever be true?
     unOPEvalFmath(v, fmath);
     return v;   
   }

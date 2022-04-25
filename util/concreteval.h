@@ -32,10 +32,7 @@ protected:
   }
 
 public:
-  // ConcreteVal(): flags(Flags::None), val() {}
   ConcreteVal(bool poison);
-  // ConcreteVal(bool poison, llvm::APInt val);
-  // ConcreteVal(bool poison, llvm::APFloat val);
   ConcreteVal(ConcreteVal &l) = default;
   ConcreteVal &operator=(ConcreteVal &l) = default;
   ConcreteVal(ConcreteVal &&r) = default;
@@ -45,7 +42,7 @@ public:
   virtual void setUndef();
   virtual bool isPoison() const;
   virtual bool isUndef() const;
-  virtual void print();
+  virtual void print() = 0;
   bool operator==(ConcreteVal &rhs) {
     return equals(rhs);
   }
