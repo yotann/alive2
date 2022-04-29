@@ -2,33 +2,43 @@ let
   default_nixpkgs = (import <nixpkgs> {}).fetchFromGitHub {
     owner = "NixOS";
     repo = "nixpkgs";
-    rev = "248936ea5700b25cfa9b7eaf8abe13a11fe15617";
-    sha256 = "1hsmyzd0194l279pm8ahz2lp0lfmaza05j7cjmlz7ryji15zvcyx";
+    rev = "f712cdd62e0e6763897096e62627f72061b2e6a3";
+    sha256 = "s241WS3CI8470TOi9pLRQMzVdyqMEdOZXM3PKwIL6zM=";
   };
+
+  ehLLVM = llvm: llvm.overrideAttrs (o: {
+    # Alive2 requires LLVM to have RTTI and exception support, which aren't
+    # normally enabled.
+    cmakeFlags = o.cmakeFlags ++ [
+      "-DLLVM_ENABLE_EH=ON"
+      "-DLLVM_ENABLE_RTTI=ON"
+    ];
+    doCheck = false; # reduce build time
+  });
+
+  assertLLVM = llvm: llvm.overrideAttrs (o: {
+    # Enable LLVM's assertions to catch bugs in the way Alive2 uses it.
+    cmakeFlags = o.cmakeFlags ++ [
+      "-DLLVM_ENABLE_ASSERTIONS=ON"
+      "-DLLVM_BUILD_TESTS=OFF"
+    ];
+    doCheck = false; # reduce build time
+  });
 in
 { nixpkgs ? default_nixpkgs }:
 
 with import nixpkgs {};
 rec {
-  llvm = (llvmPackages_13.libllvm.override {
-    debugVersion = true;
-  }).overrideAttrs (o: {
-    # Alive2 requires LLVM to have RTTI and exception support, which aren't
-    # normally enabled.
-    cmakeFlags = o.cmakeFlags ++ [
-      "-DLLVM_ENABLE_RTTI=ON"
-      "-DLLVM_ENABLE_EH=ON"
-    ];
-    doCheck = false; # reduce build time
-  });
+  llvm = assertLLVM (ehLLVM llvmPackages_14.libllvm);
 
   z3 = (import nixpkgs {}).z3.overrideAttrs (o: {
     src = fetchFromGitHub {
-      # 2021-10-24
+      # 2022-04-29
       owner  = "Z3Prover";
       repo   = "z3";
-      rev    = "3a3cef8fcef58f31e9ec6495346eb065b816b155";
-      sha256 = "1zg4mym7iiwyq1pddqmahsfr2yzd1j2c2vjizpk0v9805g8y4xk0";
+      rev    = "5a9b0dd747a2fc26513fcb15181678781e6667a7";
+      sha256 = "vMq8iknvGpxxOmdoFFlQg1c+ML9DvXLHMNh0Ss4WsDQ=";
+      fetchSubmodules = true;
     };
   });
 
