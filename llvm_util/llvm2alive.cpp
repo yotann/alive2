@@ -349,11 +349,7 @@ public:
         if (i.getArgOperand(argidx)->getType()->isAggregateType())
           // TODO: noundef aggregate should be supported; it can have undef
           // padding
-#if LLVM_VERSION_MAJOR >= 14
           return errorAttr(i.getAttributeAtIndex(argidx, llvm::Attribute::NoUndef));
-#else
-          return errorAttr(i.getAttribute(argidx, llvm::Attribute::NoUndef));
-#endif
       }
 
       if (i.paramHasAttr(argidx, llvm::Attribute::Returned)) {
