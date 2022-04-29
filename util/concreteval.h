@@ -22,6 +22,7 @@ struct FastMathFlags;
 }
 
 namespace util {
+class Interpreter;
 class ConcreteVal {
 protected:
   enum Flags { None = 0, Poison = 1 << 0, Undef = 1 << 1 };
@@ -31,10 +32,7 @@ protected:
   }
 
 public:
-  // ConcreteVal(): flags(Flags::None), val() {}
   ConcreteVal(bool poison);
-  // ConcreteVal(bool poison, llvm::APInt val);
-  // ConcreteVal(bool poison, llvm::APFloat val);
   ConcreteVal(ConcreteVal &l) = default;
   ConcreteVal &operator=(ConcreteVal &l) = default;
   ConcreteVal(ConcreteVal &&r) = default;
@@ -44,7 +42,7 @@ public:
   virtual void setUndef();
   virtual bool isPoison() const;
   virtual bool isUndef() const;
-  virtual void print();
+  virtual void print() = 0;
   bool operator==(ConcreteVal &rhs) {
     return equals(rhs);
   }
@@ -111,6 +109,7 @@ public:
   static ConcreteVal *shl(ConcreteVal *lhs, ConcreteVal *rhs, unsigned flags);
   static ConcreteVal *cttz(ConcreteVal *lhs, ConcreteVal *rhs, unsigned flags);
   static ConcreteVal *ctlz(ConcreteVal *lhs, ConcreteVal *rhs, unsigned flags);
+  static ConcreteVal *arithOverflow(ConcreteVal *lhs, ConcreteVal *rhs, unsigned opcode);
   static ConcreteVal *ctpop(ConcreteVal *op);
   static ConcreteVal *bitreverse(ConcreteVal *op);
   static ConcreteVal *bswap(ConcreteVal *op);
@@ -121,6 +120,8 @@ public:
                                              std::shared_ptr<ConcreteVal> &a,
                                              std::shared_ptr<ConcreteVal> &b);
   static ConcreteVal *icmp(ConcreteVal *a, ConcreteVal *b, unsigned cond);
+  static ConcreteVal *fshl(ConcreteVal *a, ConcreteVal *b, ConcreteVal* c);
+  static ConcreteVal *fshr(ConcreteVal *a, ConcreteVal *b, ConcreteVal* c);
 };
 
 class ConcreteValFloat : public ConcreteVal {
@@ -189,6 +190,16 @@ public:
   ~ConcreteValAggregate();
   const std::vector<std::shared_ptr<ConcreteVal>> &getVal() const;
   void print() override;
+  static ConcreteVal *evalBinOp(ConcreteVal *lhs, ConcreteVal *rhs,
+                                unsigned opcode, unsigned flags,
+                                Interpreter &interpreter);
+  static ConcreteVal *evalFPBinOp(ConcreteVal *lhs, ConcreteVal *rhs,
+                                  unsigned opcode, IR::FastMathFlags fmath,
+                                  Interpreter &interpreter);
+
+  static ConcreteVal *icmp(ConcreteVal *a, ConcreteVal *b, unsigned cond,
+                           unsigned pcmode, Interpreter &interpreter);
+  static ConcreteValAggregate *arithOverflow(ConcreteValAggregate *lhs_vect, ConcreteValAggregate *rhs_vect, unsigned opcode);
 };
 
 class ConcreteValPointer : public ConcreteVal {
@@ -196,6 +207,7 @@ private:
   unsigned bid;
   std::int64_t offset;
   bool is_local{false};
+  static bool icmp_cmp(llvm::APInt &lhs, llvm::APInt &rhs, unsigned cond);
 
 protected:
   virtual bool equals(ConcreteVal &rhs) override {
@@ -213,5 +225,8 @@ public:
   std::int64_t getOffset() const;
   void setOffset(std::int64_t offset);
   void print() override;
+
+  static ConcreteVal *evalPoison(ConcreteVal *lhs, ConcreteVal *rhs);
+  static ConcreteVal *icmp(ConcreteVal *a, ConcreteVal *b, unsigned cond, unsigned pcmode, Interpreter &interpreter);
 };
 } // namespace util

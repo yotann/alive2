@@ -12,6 +12,10 @@
 
 #include "util/concreteval.h"
 
+#include <jsoncons/json.hpp>
+#include <jsoncons/byte_string.hpp>
+#include <jsoncons/json.hpp>
+
 namespace IR {
 class BasicBlock;
 class Function;
@@ -136,16 +140,20 @@ struct ConcreteBlock {
   }
 };
 
+
 class Interpreter {
 public:
+  enum input_type { FIXED, RANDOM, LOAD };
   Interpreter();
   virtual ~Interpreter();
-  void start(IR::Function &f);
+  void start(IR::Function &f, unsigned input_mode);
   void step();
   void run(unsigned instr_limit = 100);
   void setUnsupported(std::string reason);
+  ConcreteVal* getValue(const IR::Type &type, int64_t int_const, float fp_const);
+  ConcreteVal* getRandomValue(const IR::Type &type);
   virtual std::shared_ptr<ConcreteVal> getInputValue(unsigned index,
-                                                     const IR::Input &input);
+                                                     const IR::Input &input, bool rand_input);
   std::shared_ptr<ConcreteVal> getConstantValue(const IR::Value &i);
   ConcreteVal *getPoisonValue(const IR::Type &type);
   static const llvm::fltSemantics *getFloatSemantics(const IR::FloatType &type);
@@ -194,6 +202,7 @@ public:
   }
 
   std::map<const IR::Value *, std::shared_ptr<ConcreteVal>> concrete_vals;
+  std::vector<std::shared_ptr<ConcreteVal>> input_vals;
   const IR::BasicBlock *pred_block = nullptr;
   const IR::BasicBlock *cur_block = nullptr;
   unsigned pos_in_block = 0;
@@ -205,6 +214,16 @@ public:
   std::vector<ConcreteBlock> local_mem_blocks;
 };
 
-void interp(IR::Function &f);
+// class SavedInterpreter : public Interpreter {
+// public:
+//   SavedInterpreter();
+//   const std::vector<std::shared_ptr<ConcreteVal>> input_vals;
+// };
+
+jsoncons::ojson interp(IR::Function &f);
+jsoncons::ojson
+interp_save_load(IR::Function &f,
+                 std::vector<std::shared_ptr<ConcreteVal>> &saved_input_vals,
+                 bool save);
 
 } // namespace util

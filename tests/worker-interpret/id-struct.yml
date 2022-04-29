@@ -10,6 +10,17 @@ expected:
   undefined: false
   return_value: []
 ---
+name: id_struct_anon_empty_2
+func: alive.interpret
+args:
+  - {}
+  - !ir 'define {} @src({} %v, {} %w) { ret {} %v }'
+  - args: [[], []]
+expected:
+  status: done
+  undefined: false
+  return_value: []
+---
 name: id_struct_anon
 func: alive.interpret
 args:
