@@ -14,3 +14,6 @@ define i1 @tgt() {
 
 declare i8* @malloc(i64)
 declare void @unknown(i8*)
+
+; SKIP-IDENTITY
+; XFAIL: call with escaped locals

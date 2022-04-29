@@ -14,3 +14,6 @@ define i8 @tgt() {
   %r = call i8 @f(i8* @y)
   ret i8 %r
 }
+
+; SKIP-IDENTITY
+; XFAIL: call with escaped locals

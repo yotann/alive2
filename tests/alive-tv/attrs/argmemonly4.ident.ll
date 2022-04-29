@@ -5,3 +5,6 @@ define void @fn(i8* %p, i8* %q) {
 }
 
 declare void @f(i8*)
+
+; SKIP-IDENTITY
+; XFAIL: call with escaped locals

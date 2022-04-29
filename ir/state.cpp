@@ -825,6 +825,10 @@ State::addFnCall(const string &name, vector<StateValue> &&inputs,
     // cases where the callee could modify our local variables. This must come
     // after the escapeLocalPtr() calls above.
     //
+    // Examples of tests where Alive2 would return incorrect results otherwise:
+    // - alive-tv/bugs/pr41949-2.srctgt.ll
+    // - alive-tv/calls/call-movestr2.src.ll
+    //
     // TODO: actually handle this more accurately in Memory::mkCallState().
     doesApproximation("call with escaped locals");
     if (!isSource()) {

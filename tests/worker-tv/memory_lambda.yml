@@ -137,23 +137,3 @@ expected:
   status: unsound
   valid: false
   errs: "ERROR: Source is more defined than target\n"
-  test_input:
-    args: [0, poison, poison, poison, poison]
-    memory:
-      - size: 0
-        align: 0
-      - size: 8
-        align: 3
-        bytes:
-          - [0,255,[0,0,0]]
-          - [1,255,[0,0,1]]
-          - [2,255,[0,0,2]]
-          - [3,255,[0,0,3]]
-          - [4,255,[0,0,4]]
-          - [5,255,[0,0,5]]
-          - [6,255,[0,0,6]]
-          - [7,255,[0,0,7]]
-      - size: 8
-        align: 32
-        bytes:
-          - [null,0,[0,0,2]]

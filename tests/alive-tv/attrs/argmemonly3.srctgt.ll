@@ -11,3 +11,6 @@ define void @tgt() readnone {
 }
 
 declare void @f(i8*) argmemonly
+
+; SKIP-IDENTITY
+; XFAIL: call with escaped locals
