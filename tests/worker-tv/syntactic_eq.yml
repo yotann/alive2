@@ -16,3 +16,21 @@ args:
 expected:
   status: syntactic_eq
   valid: true
+---
+name: verify_syntactic_eq
+func: alive.tv_v2
+args:
+  - verify_syntactic_eq: true
+  - !ir |
+    define float @f(float %x) {
+      %y = fadd float 0.0, %x
+      ret float %y
+    }
+  - !ir |
+    define float @f(float %x) {
+      %y = fadd float 0.0, %x
+      ret float %y
+    }
+expected:
+  status: sound
+  valid: true

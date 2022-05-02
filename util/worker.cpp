@@ -50,6 +50,12 @@ static llvm::Function &getSoleDefinition(llvm::Module &m) {
 }
 
 namespace {
+struct VerifyOptions {
+  bool verify_syntactic_eq = false;
+};
+} // end anonymous namespace
+
+namespace {
 struct VerifyResults : public Errors {
   Transform t;
   ojson result;
@@ -250,7 +256,10 @@ static ojson memoryBlockToJSON(const IR::State &state, const smt::Model &m,
       // NOTE: this may time out if the array is absurdly huge.
       bytes = ojson(json_array_arg);
       for (uint64_t i = 0; i < size; ++i) {
-        auto byte = orig_array.load(smt::expr::mkUInt(i, IR::Pointer::bitsShortOffset())).simplify();
+        auto byte =
+            orig_array
+                .load(smt::expr::mkUInt(i, IR::Pointer::bitsShortOffset()))
+                .simplify();
         add_byte(i, byte);
       }
     }
@@ -318,7 +327,8 @@ bool VerifyResults::addSolverSat(const IR::State &src_state,
 }
 
 static VerifyResults verify(llvm::Function &f1, llvm::Function &f2,
-                            llvm::TargetLibraryInfoWrapperPass &tli) {
+                            llvm::TargetLibraryInfoWrapperPass &tli,
+                            const VerifyOptions &options) {
   VerifyResults r;
   auto fn1 = llvm2alive(f1, tli.getTLI(f1));
   auto fn2 = llvm2alive(f2, tli.getTLI(f2));
@@ -331,13 +341,15 @@ static VerifyResults verify(llvm::Function &f1, llvm::Function &f2,
   r.t.src = move(*fn1);
   r.t.tgt = move(*fn2);
 
-  stringstream ss1, ss2;
-  r.t.src.print(ss1);
-  r.t.tgt.print(ss2);
-  if (ss1.str() == ss2.str()) {
-    r.result["status"] = "syntactic_eq";
-    r.result["valid"] = true;
-    return r;
+  if (!options.verify_syntactic_eq) {
+    stringstream ss1, ss2;
+    r.t.src.print(ss1);
+    r.t.tgt.print(ss2);
+    if (ss1.str() == ss2.str()) {
+      r.result["status"] = "syntactic_eq";
+      r.result["valid"] = true;
+      return r;
+    }
   }
 
   if (smt_init)
@@ -361,8 +373,9 @@ static VerifyResults verify(llvm::Function &f1, llvm::Function &f2,
 }
 
 static ojson compareFunctions(llvm::Function &f1, llvm::Function &f2,
-                              llvm::TargetLibraryInfoWrapperPass &tli) {
-  auto r = verify(f1, f2, tli);
+                              llvm::TargetLibraryInfoWrapperPass &tli,
+                              const VerifyOptions &options) {
+  auto r = verify(f1, f2, tli, options);
   if (r) {
     std::ostringstream sstr;
     sstr << r;
@@ -376,13 +389,13 @@ namespace {
 class WorkerInterpreter : public Interpreter {
 public:
   WorkerInterpreter(const ojson &test_input);
-  shared_ptr<ConcreteVal> getInputValue(unsigned index,
-                                        const IR::Input &input, bool rand_input) override;
+  shared_ptr<ConcreteVal> getInputValue(unsigned index, const IR::Input &input,
+                                        bool rand_input) override;
 
   ConcreteVal *loadConcreteVal(const IR::Type &type, const ojson &val);
   ConcreteBlock loadConcreteBlock(const ojson &block);
   void loadMemory(const ojson &mem);
-  
+
   const ojson &test_input;
 };
 } // namespace
@@ -455,18 +468,17 @@ ConcreteVal *WorkerInterpreter::loadConcreteVal(const IR::Type &type,
   return nullptr;
 }
 
-
 ConcreteBlock WorkerInterpreter::loadConcreteBlock(const ojson &block) {
   ConcreteBlock c_block;
   c_block.size = block["size"].as_integer<uint64_t>();
   c_block.address = 0; // TODO where would this be used
   c_block.align_bits = block["align"].as_integer<uint64_t>();
-  
+
   if (c_block.size == 0 || !block.contains("bytes")) {
     return c_block;
   }
-  
-  for (auto& json_byte : block["bytes"].array_range()) {
+
+  for (auto &json_byte : block["bytes"].array_range()) {
     assert(json_byte.size() == 3 && "each byte must contains 3 elements");
 
     ConcreteByte init_byte;
@@ -474,20 +486,18 @@ ConcreteBlock WorkerInterpreter::loadConcreteBlock(const ojson &block) {
     if (json_byte[2].is_int64()) { // value byte
       uint8_t value = json_byte[2].as_integer<uint8_t>();
       init_byte = DataByteVal(nonpoison_bits, value);
-    }
-    else if (json_byte[2].is_array()) { // ptr byte
-      assert(json_byte[2].size() == 3 && "each ptr value must contain 3 elements");
+    } else if (json_byte[2].is_array()) { // ptr byte
+      assert(json_byte[2].size() == 3 &&
+             "each ptr value must contain 3 elements");
       // cout << "pointer byte\n";
       bool is_poison = nonpoison_bits == 255 ? false : true;
       auto ptr_value = json_byte[2];
-      auto concrete_ptr = ConcreteValPointer(is_poison,
-                                             ptr_value[0].as_integer<uint64_t>(),
-                                             ptr_value[1].as_integer<uint64_t>(),
-                                             false);
+      auto concrete_ptr =
+          ConcreteValPointer(is_poison, ptr_value[0].as_integer<uint64_t>(),
+                             ptr_value[1].as_integer<uint64_t>(), false);
       init_byte = ConcreteByte(move(concrete_ptr));
       init_byte.pointer_byte_offset = ptr_value[2].as_integer<uint64_t>();
-    }
-    else {
+    } else {
       UNREACHABLE();
     }
 
@@ -504,7 +514,7 @@ ConcreteBlock WorkerInterpreter::loadConcreteBlock(const ojson &block) {
 }
 
 void WorkerInterpreter::loadMemory(const ojson &mem) {
-  for (auto& mem_block : mem.array_range()) {
+  for (auto &mem_block : mem.array_range()) {
     auto c_init_block = loadConcreteBlock(mem_block);
     mem_blocks.push_back(std::move(c_init_block));
   }
@@ -600,8 +610,9 @@ static ojson storeConcreteBlock(const ConcreteBlock &block) {
 WorkerInterpreter::WorkerInterpreter(const ojson &test_input)
     : test_input(test_input) {}
 
-shared_ptr<ConcreteVal>
-WorkerInterpreter::getInputValue(unsigned index, const IR::Input &input, bool rand_input) {
+shared_ptr<ConcreteVal> WorkerInterpreter::getInputValue(unsigned index,
+                                                         const IR::Input &input,
+                                                         bool rand_input) {
   return shared_ptr<ConcreteVal>(
       loadConcreteVal(input.getType(), test_input["args"][index]));
 }
@@ -648,8 +659,9 @@ static ojson evaluateAliveInterpret(const ojson &options, const ojson &src,
   if (test_input.contains("memory")) {
     IR::bits_program_pointer = fn->bitsPointers();
     IR::bits_byte = 8; // interpreter doesn't support larger values
-    // TODO: I think we need to set IR::bits_for_offset and 
-    // probably need to compute max_access_size to completely handle geps with inbound
+    // TODO: I think we need to set IR::bits_for_offset and
+    // probably need to compute max_access_size to completely handle geps with
+    // inbound
     interpreter.loadMemory(test_input["memory"]);
   }
   interpreter.start(*fn, util::Interpreter::input_type::FIXED);
@@ -679,6 +691,9 @@ static ojson evaluateAliveInterpret(const ojson &options, const ojson &src,
 
 static ojson evaluateAliveTV(const ojson &options, const ojson &src,
                              const ojson &tgt) {
+  VerifyOptions verify_options;
+  verify_options.verify_syntactic_eq =
+      options.get_with_default<bool>("verify_syntactic_eq", false);
   uint64_t smt_timeout =
       options.get_with_default<uint64_t>("smt_timeout", 10000);
   uint64_t smt_max_mem =
@@ -726,7 +741,7 @@ static ojson evaluateAliveTV(const ojson &options, const ojson &src,
 
   auto &f1 = getSoleDefinition(*m1);
   auto &f2 = getSoleDefinition(*m2);
-  auto result = compareFunctions(f1, f2, tli);
+  auto result = compareFunctions(f1, f2, tli, verify_options);
   return result;
 }
 
